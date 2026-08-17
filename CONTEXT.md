@@ -49,7 +49,7 @@ The single installable and versioned Python distribution for v0. It installs the
 _Avoid_: Python package, separately versioned layer
 
 **Public Import Package**:
-One of `oh_my_ai`, `oh_my_agent_core`, or `oh_my_coding_agent`: a separately importable and callable public namespace with its own public seam inside the omh Distribution. Co-installation neither permits cross-layer public imports nor collapses the three seams.
+One of `oh_my_llm`, `oh_my_core`, or `oh_my_coding_agent`: a separately importable and callable public namespace with its own public seam inside the omh Distribution. Co-installation neither permits cross-layer public imports nor collapses the three seams.
 _Avoid_: Distribution, independently installable package
 
 **Public Import Surface**:

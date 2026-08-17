@@ -57,7 +57,7 @@ All Reference evidence below is pinned to `0e6909f050eeb15e8f6c05185511f3788357d
 
 1. **Scope**: Python Public Import Roots. Canonical input loads the three package roots and accesses the v0-selected symbols. A/L/T/E/C: `none`.
 2. **Reference evidence**: `packages/ai/package.json#L2-L20` and `packages/ai/src/index.ts#L1-L30` expose `@earendil-works/pi-ai`; `packages/agent/package.json#L2-L17` and `packages/agent/src/index.ts#L1-L46` expose `@earendil-works/pi-agent-core`; `packages/coding-agent/package.json#L2-L21` and `packages/coding-agent/src/index.ts#L1-L25,#L190-L245` expose `@earendil-works/pi-coding-agent`.
-3. **omh rule and reason**: the corresponding roots are `oh_my_ai`, `oh_my_agent_core`, and `oh_my_coding_agent` because omh has an independent product identity. This record authorizes only the root-identity mapping; it authorizes neither child-symbol renaming nor additional exports.
+3. **omh rule and reason**: the corresponding package identities are `oh-my-llm`/`oh_my_llm`, `oh-my-core`/`oh_my_core`, and `oh-my-coding-agent`/`oh_my_coding_agent` because omh has an independent product identity. This record authorizes only the root-identity mapping; it authorizes neither child-symbol renaming nor additional exports.
 4. **Comparator**: compare the explicit three-root mapping, layer ownership, and public reachability of only the symbols selected by their owning interface decisions. Do not compare root strings. Separately assert that omh public identity does not leak Reference product naming.
 5. **Verification**: installed-distribution import and selected-public-export conformance rows.
 6. **Authority**: [Choose the v0 Behavioral Parity policy](02-choose-v0-parity-policy.md).

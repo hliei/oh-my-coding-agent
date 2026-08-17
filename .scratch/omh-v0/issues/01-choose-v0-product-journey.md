@@ -10,7 +10,7 @@ What exact end-to-end journey makes omh v0 a usable product rather than a collec
 
 ## Answer
 
-The **v0 Product Journey** is a bounded, verified code change in an existing local repository. The full journey must be achievable through both the simple REPL and the `oh_my_coding_agent` programmatic session entry point. They promise the same user outcome, not the same REPL UX. `oh_my_agent_core` and `oh_my_ai` remain independently callable and prove their own layer behaviour; they do not each reproduce the repository journey.
+The **v0 Product Journey** is a bounded, verified code change in an existing local repository. The full journey must be achievable through both the simple REPL and the `oh_my_coding_agent` programmatic session entry point. They promise the same user outcome, not the same REPL UX. `oh_my_core` and `oh_my_llm` remain independently callable and prove their own layer behaviour; they do not each reproduce the repository journey.
 
 ### Core journey
 
