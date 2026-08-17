@@ -17,7 +17,7 @@ Define the v0 user journey, public interfaces, Python semantic adaptations, mode
 - Evidence, research, compatibility matrices, source citations, and licensing or provenance documents may name Pi directly when factual. The Pi naming restriction applies to omh product identity, runtime code, public namespaces, configuration, and concrete implementation names; never weaken or obscure evidence merely to avoid the word.
 - The product, CLI, configuration, runtime modules, and public names use `omh`; Python import packages use `oh_my_ai`, `oh_my_agent_core`, and `oh_my_coding_agent`; product configuration lives under `.omh/`.
 - The long-term Target Compatibility Surface covers the Reference Revision's `ai`, the non-Harness runtime path in `agent`, and `coding-agent` observable behaviour. It excludes every `harness/**` export, `AgentHarness`, the standalone reusable `tui` package interface, and the experimental `orchestrator` package.
-- `AgentSession` directly composes `Agent`; coding-agent owns compaction, sessions, and skills. Both callback/list-returning loop functions and both `EventStream`-returning loop functions remain candidates for the v0 public interface.
+- `AgentSession` directly composes `Agent`; coding-agent owns compaction, sessions, and skills.
 - Terminal capability required by v0 is a simple REPL implemented inside `oh_my_coding_agent`; omh does not publish an independent TUI package.
 - Extensions are Python modules loaded dynamically from `.py` sources, including project-local `.omh/extensions/`; TypeScript extension source compatibility is not a goal.
 - The Reference Revision already contains coding-agent telemetry and update-check behaviour. v0 excludes them deliberately; telemetry is not assumed to be HEAD-only.
@@ -26,6 +26,7 @@ Define the v0 user journey, public interfaces, Python semantic adaptations, mode
 
 - [Choose the v0 product journey](issues/01-choose-v0-product-journey.md) — Anchor v0 on a verified local code change through the REPL and programmatic session, with explicit companion paths and a bounded later-version surface.
 - [Choose the v0 Behavioral Parity policy](issues/02-choose-v0-parity-policy.md) — Require closed five-dimensional semantic parity, narrow Python adaptations, and a decision-ticket-owned Ledger seeded with five accepted records.
+- [Choose the public Python interface](issues/03-choose-public-python-interface.md) — Publish one atomic distribution with three closed import seams, explicit AI/Agent/Session interfaces, four low-level loops, and the sole `continue_` naming adaptation.
 
 ## Not yet specified
 
