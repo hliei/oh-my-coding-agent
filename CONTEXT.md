@@ -21,5 +21,25 @@ The canonical end-to-end user outcome anchoring the v0 Release Surface: completi
 _Avoid_: Feature list, generic agent demo
 
 **Behavioral Parity**:
-Equivalent observable results at a named public interface for the same canonical inputs, except where an explicitly accepted Python adaptation says otherwise.
+Closed semantic equivalence at a named public interface for the same canonical inputs. Each interface declares an observation envelope covering admission or rejection, causally ordered lifecycle observations, terminal classification and returned values, external effects, and post-terminal continuity where applicable. Observations outside that envelope carry no v0 parity promise. Within it, every difference is a parity gap unless an explicitly named Python adaptation or Accepted Behavioral Deviation permits it.
 _Avoid_: Line-by-line translation, structural similarity
+
+**Python Adaptation**:
+A named difference in how a Reference Revision behaviour is represented through a Python interface without changing any dimension of its accepted semantic trace or merging distinctions the Reference Revision exposes. Permitted mappings are closed rather than inferred from general Python style. Names remain one-to-one except for independent product identity, Python-illegal identifiers, or a difference individually accepted by the owning public-interface decision.
+_Avoid_: Bulk PEP 8 translation, Accepted Behavioral Deviation, implementation difference
+
+**Accepted Behavioral Deviation**:
+A deliberately accepted difference from the Reference Revision within a declared observation envelope.
+_Avoid_: Python Adaptation, Surface Exclusion
+
+**Surface Exclusion**:
+A Reference Revision capability outside the v0 Release Surface, for which v0 makes no Behavioral Parity promise.
+_Avoid_: Accepted Behavioral Deviation, Parity Gap
+
+**Parity Gap**:
+An observed difference within a declared observation envelope that is neither an applicable Python Adaptation nor an Accepted Behavioral Deviation.
+_Avoid_: Accepted difference, out-of-scope capability
+
+**Parity Ledger**:
+The closed set of Python Adaptation and Accepted Behavioral Deviation records. Each record is written in full on the decision ticket that accepts it; a later specification only compiles those authoritative records. Surface Exclusions do not enter the ledger, and an unrecorded difference within an observation envelope is a Parity Gap.
+_Avoid_: Specification-owned exception list, test-name-only evidence

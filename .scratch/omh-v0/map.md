@@ -25,6 +25,7 @@ Define the v0 user journey, public interfaces, Python semantic adaptations, mode
 ## Decisions so far
 
 - [Choose the v0 product journey](issues/01-choose-v0-product-journey.md) — Anchor v0 on a verified local code change through the REPL and programmatic session, with explicit companion paths and a bounded later-version surface.
+- [Choose the v0 Behavioral Parity policy](issues/02-choose-v0-parity-policy.md) — Require closed five-dimensional semantic parity, narrow Python adaptations, and a decision-ticket-owned Ledger seeded with five accepted records.
 
 ## Not yet specified
 
