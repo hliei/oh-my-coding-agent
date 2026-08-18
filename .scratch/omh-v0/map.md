@@ -27,6 +27,7 @@ Define the v0 user journey, public interfaces, Python semantic adaptations, mode
 - [Choose the v0 product journey](issues/01-choose-v0-product-journey.md) — Anchor v0 on a verified local code change through the REPL and programmatic session, with explicit companion paths and a bounded later-version surface.
 - [Choose the v0 Behavioral Parity policy](issues/02-choose-v0-parity-policy.md) — Require closed five-dimensional semantic parity, narrow Python adaptations, and a decision-ticket-owned Ledger seeded with five accepted records.
 - [Choose the public Python interface](issues/03-choose-public-python-interface.md) — Publish one atomic distribution with three closed import seams, explicit AI/Agent/Session interfaces, four low-level loops, and the sole `continue_` naming adaptation.
+- [Choose the async, stream, and cancellation contract](issues/04-choose-async-stream-cancellation-contract.md) — Use lazy owner-managed asyncio operations with single-consumer managed streams, explicit cancellation and settlement barriers, ordered callback failure handling, deterministic Tool scheduling, and fail-closed Product Session cleanup.
 
 ## Not yet specified
 
