@@ -10,4 +10,5 @@ What discovery order, module contract, registration interface, event set, depend
 
 ## Comments
 
+- 2026-08-20 — Upstream [Choose the Agent loop and Tool lifecycle](07-choose-agent-loop-and-tool-lifecycle.md) excludes the public `beforeToolCall` / `afterToolCall` hook group and requires expected public Tool failures to return validated `AgentToolResult` values while raised exceptions are redacted. Extension registration/events may not reopen those Core hooks, bypass Tool correlation/preflight/cancellation barriers, or inject arbitrary exception text into Agent history.
 - 2026-08-18 — Upstream [Choose the async, stream, and cancellation contract](04-choose-async-stream-cancellation-contract.md) requires `createAgentSession()` to publish a Session only after all selected initialization succeeds and to clean every live resource on pre-publication failure or cancellation. This decision must classify Extension discovery/load/initialization side effects and define their rollback or retained-effects policy; the async contract alone guarantees no live task or resource leak.

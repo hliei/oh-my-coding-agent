@@ -2,8 +2,12 @@
 
 Type: grilling
 Status: open
-Blocked by: 02, 03, 04, 05, 06, 07, 08, 09, 10, 11
+Blocked by: 02, 03, 04, 05, 06, 07, 08, 09, 10, 11, 13
 
 ## Question
 
 What deterministic and human-owned evidence proves v0 Behavioral Parity at every selected public interface, validates packaging and a clean installation, distinguishes documented Python adaptations from defects, and authorizes a release?
+
+## Comments
+
+- 2026-08-20 — [Choose the Agent loop and Tool lifecycle](07-choose-agent-loop-and-tool-lifecycle.md) adds five authoritative ABD records and exact Run/Turn, event, state, Tool, cancellation, callback, error, and continuity traces. This gate must execute every specified verification row, including absence of leaked secrets/effects, AgentEnd/result identity, post-failure reuse, and non-idle behavior for unconfirmed work.

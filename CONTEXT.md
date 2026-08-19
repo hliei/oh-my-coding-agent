@@ -71,3 +71,19 @@ _Avoid_: Full JSON Schema support, validator-defined schema support
 **v0 Pattern Subset**:
 The linear-time ECMAScript/RE2-intersection regular-expression dialect accepted by the `pattern` keyword inside the v0 Tool Schema Subset.
 _Avoid_: Python `re`, full JavaScript RegExp
+
+**Run**:
+One admitted Agent-loop invocation, beginning with `agent_start` and ending in either its unique ordinary `agent_end` or a settled lifecycle-carrier failure; its result domain contains only Messages newly produced by that invocation.
+_Avoid_: Session, Turn, Provider request
+
+**Turn**:
+One Assistant response together with the complete Tool batch and source-ordered Tool Results caused by that response; a Run contains one or more Turns.
+_Avoid_: Run, prompt, individual Tool Call
+
+**Tool Outcome**:
+A valid `AgentToolResult` normally returned by a Tool, including an expected negative domain result; Runtime classifies it with `isError=False`.
+_Avoid_: Tool Failure, successful user result
+
+**Tool Failure**:
+A Runtime-rejected, raised, invalid, or cancelled Tool attempt represented by a synthesized Tool Result with `isError=True`.
+_Avoid_: Negative Tool Outcome, Model failure, lifecycle failure

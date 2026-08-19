@@ -30,10 +30,10 @@ Define the v0 user journey, public interfaces, Python semantic adaptations, mode
 - [Choose the async, stream, and cancellation contract](issues/04-choose-async-stream-cancellation-contract.md) — Use lazy owner-managed asyncio operations with single-consumer managed streams, explicit cancellation and settlement barriers, ordered callback failure handling, deterministic Tool scheduling, and fail-closed Product Session cleanup.
 - [Choose the values, schemas, and errors contract](issues/05-choose-values-schemas-errors-contract.md) — Use immutable constructor-validated values, a strict JSON and Tool-schema domain, closed event protocols, type-preserving canonical serialization, and typed failure carriers.
 - [Choose the model, provider, and authentication surface](issues/06-choose-model-provider-auth-surface.md) — Ship one static non-thinking DeepSeek V4 Flash Adapter with environment-only authentication, strict request/Usage validation, zero retries, and deterministic plus live release evidence.
+- [Choose the Agent loop and Tool lifecycle](issues/07-choose-agent-loop-and-tool-lifecycle.md) — Use one closed Run/Turn state machine with immutable Context/results, deterministic Agent events and Tool outcomes, fail-closed ownership/correlation, explicit cancellation settlement, and five narrow ABDs.
 
 ## Not yet specified
 
-- Concrete Python libraries and provider SDKs; select them only after the required semantics and provider surface are known.
 - Whether any semantic decision needs a throwaway prototype rather than conversational resolution.
 
 ## Out of scope
