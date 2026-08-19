@@ -28,6 +28,7 @@ Define the v0 user journey, public interfaces, Python semantic adaptations, mode
 - [Choose the v0 Behavioral Parity policy](issues/02-choose-v0-parity-policy.md) — Require closed five-dimensional semantic parity, narrow Python adaptations, and a decision-ticket-owned Ledger seeded with five accepted records.
 - [Choose the public Python interface](issues/03-choose-public-python-interface.md) — Publish one atomic distribution with three closed import seams, explicit AI/Agent/Session interfaces, four low-level loops, and the sole `continue_` naming adaptation.
 - [Choose the async, stream, and cancellation contract](issues/04-choose-async-stream-cancellation-contract.md) — Use lazy owner-managed asyncio operations with single-consumer managed streams, explicit cancellation and settlement barriers, ordered callback failure handling, deterministic Tool scheduling, and fail-closed Product Session cleanup.
+- [Choose the values, schemas, and errors contract](issues/05-choose-values-schemas-errors-contract.md) — Use immutable constructor-validated values, a strict JSON and Tool-schema domain, closed event protocols, type-preserving canonical serialization, and typed failure carriers.
 
 ## Not yet specified
 

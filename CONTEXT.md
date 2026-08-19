@@ -55,3 +55,15 @@ _Avoid_: Distribution, independently installable package
 **Public Import Surface**:
 The closed allowlist of import roots, explicit child paths, and names that v0 promises to callers. Installed or technically importable implementation modules are not public unless listed, and one Public Import Package does not re-export another's names.
 _Avoid_: All importable modules, filesystem package contents
+
+**Public Value Record**:
+A passive, closed record value exposed through the Public Import Surface whose object identity and lifecycle are not semantic. In v0 its record shell is immutable and nominal; owned resources, factory-produced handles, exceptions, callable interfaces, and mutable Agent state are not Public Value Records.
+_Avoid_: Public object, arbitrary mapping, resource handle
+
+**v0 Tool Schema Subset**:
+The closed, Provider-portable subset of JSON Schema Draft 2020-12 accepted by v0 `Tool.parameters`. A valid Draft 2020-12 document outside this subset is not a valid v0 Tool schema.
+_Avoid_: Full JSON Schema support, validator-defined schema support
+
+**v0 Pattern Subset**:
+The linear-time ECMAScript/RE2-intersection regular-expression dialect accepted by the `pattern` keyword inside the v0 Tool Schema Subset.
+_Avoid_: Python `re`, full JavaScript RegExp
