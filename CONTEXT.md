@@ -56,6 +56,10 @@ _Avoid_: Distribution, independently installable package
 The closed allowlist of import roots, explicit child paths, and names that v0 promises to callers. Installed or technically importable implementation modules are not public unless listed, and one Public Import Package does not re-export another's names.
 _Avoid_: All importable modules, filesystem package contents
 
+**Real Provider Adapter**:
+The selected integration behind `oh_my_llm.Models` that reaches an external model service using actual credentials, in contrast to the deterministic local Faux Adapter. v0 selects exactly one; the factory-produced public `Provider` value is its handle, not an Adapter-authoring seam.
+_Avoid_: Provider handle, Faux Adapter, custom Provider extension
+
 **Public Value Record**:
 A passive, closed record value exposed through the Public Import Surface whose object identity and lifecycle are not semantic. In v0 its record shell is immutable and nominal; owned resources, factory-produced handles, exceptions, callable interfaces, and mutable Agent state are not Public Value Records.
 _Avoid_: Public object, arbitrary mapping, resource handle
