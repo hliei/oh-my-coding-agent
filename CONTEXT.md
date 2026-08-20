@@ -28,6 +28,14 @@ _Avoid_: Run, in-memory session, session tree
 The complete durable semantic state that authorizes recovery of a Product Session at a settled boundary; executable resources and authentication material are rebound rather than stored in it.
 _Avoid_: Session file, resource snapshot, serialized runtime
 
+**Project Resource Trust**:
+An explicit per-Product-Session-construction grant to discover and load executable or instructional resources owned by the normalized project. It grants no Tool or filesystem-operation authority and is never inherited from a Session Image.
+_Avoid_: Workspace permission, Tool authorization, remembered project trust
+
+**Python Extension**:
+A project-owned executable `.py` resource admitted under Project Resource Trust and bound to one Product Session instance.
+_Avoid_: Prompt Resource, Tool, Python package plugin
+
 **Prompt Resource**:
 A non-executable instructional resource consumed by a Product Session, either a Skill or a file Prompt Template.
 _Avoid_: Extension, Tool, arbitrary project file
