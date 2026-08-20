@@ -24,6 +24,10 @@ _Avoid_: Feature list, generic agent demo
 One durably identified, normalized-working-directory-bound linear conversation owned by an `AgentSession`, recoverable after a completed boundary.
 _Avoid_: Run, in-memory session, session tree
 
+**Workspace**:
+The logical working directory bound to a Product Session and used as the base for relative built-in Tool paths and the initial shell directory. It is project identity and working context, not a sandbox, containment boundary, or independent grant of authority.
+_Avoid_: Project Resource Trust, project root, filesystem sandbox
+
 **Session Image**:
 The complete durable semantic state that authorizes recovery of a Product Session at a settled boundary; executable resources and authentication material are rebound rather than stored in it.
 _Avoid_: Session file, resource snapshot, serialized runtime
