@@ -20,6 +20,18 @@ _Avoid_: Target Compatibility Surface, full parity
 The canonical end-to-end user outcome anchoring the v0 Release Surface: completing a bounded, verified code change in an existing local repository.
 _Avoid_: Feature list, generic agent demo
 
+**Product Session**:
+One durably identified, normalized-working-directory-bound linear conversation owned by an `AgentSession`, recoverable after a completed boundary.
+_Avoid_: Run, in-memory session, session tree
+
+**Session Image**:
+The complete durable semantic state that authorizes recovery of a Product Session at a settled boundary; executable resources and authentication material are rebound rather than stored in it.
+_Avoid_: Session file, resource snapshot, serialized runtime
+
+**Prompt Resource**:
+A non-executable instructional resource consumed by a Product Session, either a Skill or a file Prompt Template.
+_Avoid_: Extension, Tool, arbitrary project file
+
 **Behavioral Parity**:
 Closed semantic equivalence at a named public interface for the same canonical inputs. Each interface declares an observation envelope covering admission or rejection, causally ordered lifecycle observations, terminal classification and returned values, external effects, and post-terminal continuity where applicable. Observations outside that envelope carry no v0 parity promise. Within it, every difference is a parity gap unless an explicitly named Python adaptation or Accepted Behavioral Deviation permits it.
 _Avoid_: Line-by-line translation, structural similarity
