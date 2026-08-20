@@ -96,6 +96,10 @@ _Avoid_: Full JSON Schema support, validator-defined schema support
 The linear-time ECMAScript/RE2-intersection regular-expression dialect accepted by the `pattern` keyword inside the v0 Tool Schema Subset.
 _Avoid_: Python `re`, full JavaScript RegExp
 
+**Command Mode**:
+A user-visible interaction form of the `omh` command. It is distinct from a Run, which is one admitted Agent-loop invocation within a Product Session.
+_Avoid_: Run mode, Agent Run mode
+
 **Run**:
 One admitted Agent-loop invocation, beginning with `agent_start` and ending in either its unique ordinary `agent_end` or a settled lifecycle-carrier failure; its result domain contains only Messages newly produced by that invocation.
 _Avoid_: Session, Turn, Provider request

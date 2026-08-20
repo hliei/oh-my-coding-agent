@@ -34,10 +34,11 @@ Define the v0 user journey, public interfaces, Python semantic adaptations, mode
 - [Choose the AgentSession surface](issues/08-choose-agent-session-surface.md) — Use one exclusively owned durable linear Product Session with exact-id settled recovery, durable-before-visible Agent projection, fixed Prompt Resources/system prompt, and fail-closed persistence.
 - [Choose the Python Extension lifecycle](issues/09-choose-extension-lifecycle.md) — Use explicitly trusted deterministic project-only Python modules with fixed registration, snapshot contexts, fail-closed event barriers, and independent per-Session generations.
 - [Choose the coding Tools and Workspace contract](issues/10-choose-coding-tools-and-workspace-contract.md) — Use four fixed parallel built-ins over a logical non-sandbox Workspace, literal text/file semantics, same-file mutation serialization, managed shell execution, actionable outcomes, and fail-closed Extension collisions.
+- [Choose the v0 REPL and run modes](issues/11-choose-repl-and-run-modes.md) — Expose explicit interactive and one-shot text Command Modes with exact durable-session selection, safe append-only projection, deterministic controls, shutdown, status, and redacted diagnostics.
 
 ## Not yet specified
 
-- Whether any semantic decision needs a throwaway prototype rather than conversational resolution.
+- None.
 
 ## Out of scope
 
