@@ -68,9 +68,45 @@ _Avoid_: Accepted difference, out-of-scope capability
 The closed set of Python Adaptation and Accepted Behavioral Deviation records. Each record is written in full on the decision ticket that accepts it; a later specification only compiles those authoritative records. Surface Exclusions do not enter the ledger, and an unrecorded difference within an observation envelope is a Parity Gap.
 _Avoid_: Specification-owned exception list, test-name-only evidence
 
+**Conformance Obligation Matrix**:
+The closed, machine-checked index connecting every v0 parity, adaptation, journey, public-surface, and platform obligation to its local authority, canonical observation, comparator, evidence class, and executable cases. Exact parity and accepted differences require fixed Reference evidence; a purely local release policy instead records a closed `not_applicable` reason and never fabricates a comparison. A missing, mismatched, or orphaned obligation fails the release gate.
+_Avoid_: Test list, coverage report, implementation checklist
+
+**Reference Observation Corpus**:
+The committed, reproducible set of canonical inputs and normalized A/L/T/E/C observations captured from the fixed Reference Revision, with exact provenance and comparators. It is the deterministic parity oracle rather than a recording of current omh output; accepted deviations pair its observations with separately authoritative omh expectations.
+_Avoid_: Mutable golden files, snapshots of omh, moving-HEAD output
+
+**Reference Capture Row**:
+The single pinned Node/npm and operating-system environment that regenerates the Reference Observation Corpus from the fixed Reference Revision. It is evidence infrastructure only, not an omh Release Row, Runtime dependency, or product support claim.
+_Avoid_: Release Row, mutable developer checkout, moving toolchain
+
+**Candidate Build Row**:
+The single toolchain-manifest-pinned environment that reproducibly builds the universal Candidate Wheel twice from one clean release-candidate export. It produces an artifact for all Release Rows but creates no product support claim of its own.
+_Avoid_: Release Row, developer checkout build, per-platform wheel build
+
+**Deterministic Conformance Suite**:
+The offline, no-skip executable evidence that drives the installed candidate Distribution only through public seams while controlling nondeterminism through private internal seams. Platform obligations use real resources on each Release Row, and a watchdog may expose a hang only as failure.
+_Avoid_: Unit-test suite, source-tree smoke test, live-provider gate
+
 **omh Distribution**:
 The single installable and versioned Python distribution for v0. It installs the `omh` command and all three Public Import Packages as one atomic release unit.
 _Avoid_: Python package, separately versioned layer
+
+**Candidate Wheel**:
+The one reproducibly built universal wheel whose exact bytes and SHA-256 are installed and tested on every Release Row before becoming the sole v0 publication artifact. A locally built wheel, an sdist, or a rebuild with different bytes is not that candidate.
+_Avoid_: Build output, per-platform omh wheel, source checkout
+
+**Live Provider Gate**:
+The named-human-triggered and approved real-credential check that proves the Candidate Wheel still speaks the selected external Provider protocol. Its redacted evidence is bound to the exact candidate and is separate from deterministic conformance; Faux or an earlier candidate cannot satisfy it.
+_Avoid_: CI secret smoke test, deterministic Provider fixture, automatic release job
+
+**Release Evidence Bundle**:
+The immutable manifest and evidence set binding one release-candidate commit, Candidate Wheel, locked inputs, conformance authorities, all Release Row results, and the Live Provider Gate approval. Its successful human review permits one annotated tag to grant the Publish Right for exactly that wheel.
+_Avoid_: CI summary, mutable release checklist, rebuilt publication artifact
+
+**Release Row**:
+One selected operating-system release family, architecture, and CPython-minor combination on which the omh Distribution independently proves locked clean installation and every platform-relevant release obligation. Evidence records the actual OS point release/build; an available artifact or an unselected environment that happens to work creates no support promise.
+_Avoid_: Dependency wheel, broad platform family, inferred compatibility
 
 **Public Import Package**:
 One of `oh_my_llm`, `oh_my_core`, or `oh_my_coding_agent`: a separately importable and callable public namespace with its own public seam inside the omh Distribution. Co-installation neither permits cross-layer public imports nor collapses the three seams.

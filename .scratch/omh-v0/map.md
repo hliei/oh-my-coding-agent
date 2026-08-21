@@ -35,6 +35,7 @@ Define the v0 user journey, public interfaces, Python semantic adaptations, mode
 - [Choose the Python Extension lifecycle](issues/09-choose-extension-lifecycle.md) — Use explicitly trusted deterministic project-only Python modules with fixed registration, snapshot contexts, fail-closed event barriers, and independent per-Session generations.
 - [Choose the coding Tools and Workspace contract](issues/10-choose-coding-tools-and-workspace-contract.md) — Use four fixed parallel built-ins over a logical non-sandbox Workspace, literal text/file semantics, same-file mutation serialization, managed shell execution, actionable outcomes, and fail-closed Extension collisions.
 - [Choose the v0 REPL and run modes](issues/11-choose-repl-and-run-modes.md) — Expose explicit interactive and one-shot text Command Modes with exact durable-session selection, safe append-only projection, deterministic controls, shutdown, status, and redacted diagnostics.
+- [Define the v0 conformance and release gate](issues/12-define-v0-conformance-and-release-gate.md) — Require a closed authority matrix, reproducible fixed-Reference corpus and universal wheel, four installed-artifact rows, a human-owned live DeepSeek gate, and hash-bound human release authorization.
 - [Choose the v0 Python dependencies](issues/13-choose-v0-python-dependencies.md) — Use a locked CPython 3.12–3.13 Distribution with three narrowly owned Runtime dependencies, standard-library/local policy ownership, and release-gate-owned platform evidence.
 
 ## Not yet specified
