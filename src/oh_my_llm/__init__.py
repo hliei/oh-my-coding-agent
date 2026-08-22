@@ -8,6 +8,7 @@ from ._faux import (
     fauxToolCall,
 )
 from ._models import Model, Models, MutableModels, Provider, createModels
+from ._tool_validation import validateToolArguments, validateToolCall
 from ._values import (
     AssistantMessage,
     AssistantMessageDoneEvent,
@@ -25,6 +26,7 @@ from ._values import (
     Message,
     StopReason,
     TextContent,
+    Tool,
     ToolCall,
     ToolResultMessage,
     Usage,
@@ -57,6 +59,7 @@ __all__ = (
     "Provider",
     "StopReason",
     "TextContent",
+    "Tool",
     "ToolCall",
     "ToolResultMessage",
     "Usage",
@@ -67,4 +70,6 @@ __all__ = (
     "fauxProvider",
     "fauxText",
     "fauxToolCall",
+    "validateToolArguments",
+    "validateToolCall",
 )

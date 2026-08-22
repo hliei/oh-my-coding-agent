@@ -19,6 +19,8 @@ from oh_my_llm import (
     UserMessage,
 )
 
+from ._tools import AgentTool
+
 
 AgentMessage: TypeAlias = Message
 StreamFn: TypeAlias = Callable[
@@ -31,8 +33,28 @@ ToolExecutionMode: TypeAlias = Literal["sequential", "parallel"]
 @dataclass(eq=False, frozen=True, slots=True, kw_only=True)
 class AgentContext:
     messages: tuple[AgentMessage, ...]
-    systemPrompt: str | None
-    tools: tuple[object, ...] | None = None
+    systemPrompt: str
+    tools: tuple[AgentTool, ...] | None = None
+
+    def __post_init__(self) -> None:
+        if type(self.systemPrompt) is not str:
+            raise TypeError("AgentContext.systemPrompt: must be a string")
+        if type(self.messages) not in (list, tuple):
+            raise TypeError("AgentContext.messages: must be a list or tuple")
+        messages = tuple(self.messages)
+        if any(
+            not isinstance(message, (UserMessage, AssistantMessage, ToolResultMessage))
+            for message in messages
+        ):
+            raise TypeError("AgentContext.messages: must contain AgentMessage values")
+        object.__setattr__(self, "messages", messages)
+        if self.tools is not None:
+            if type(self.tools) not in (list, tuple):
+                raise TypeError("AgentContext.tools: must be a list or tuple")
+            tools = tuple(self.tools)
+            if any(type(tool) is not AgentTool for tool in tools):
+                raise TypeError("AgentContext.tools: must contain AgentTool values")
+            object.__setattr__(self, "tools", tools)
 
 
 @final

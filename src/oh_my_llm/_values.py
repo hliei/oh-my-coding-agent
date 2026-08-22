@@ -460,12 +460,39 @@ class ToolResultMessage(_PublicValueRecord):
 Message: TypeAlias = UserMessage | AssistantMessage | ToolResultMessage
 
 
+@dataclass(eq=False, frozen=True, slots=True, kw_only=True)
+class Tool(_PublicValueRecord):
+    name: str
+    description: str
+    parameters: Mapping[str, JSONValue]
+
+    def __init_subclass__(cls) -> None:
+        if cls.__module__ != "oh_my_core._tools" or cls.__name__ != "AgentTool":
+            raise TypeError("Tool is sealed except for AgentTool")
+
+    def __post_init__(self) -> None:
+        type_name = type(self).__name__
+        object.__setattr__(self, "name", _string(self.name, type_name, "name"))
+        object.__setattr__(
+            self,
+            "description",
+            _string(self.description, type_name, "description"),
+        )
+        parameters = _snapshot_json(self.parameters, type_name, "parameters")
+        if not isinstance(parameters, Mapping):
+            _fail_type(type_name, "parameters", "must be a mapping")
+        from ._tool_schema import admit_tool_schema
+
+        admit_tool_schema(parameters)
+        object.__setattr__(self, "parameters", parameters)
+
+
 @final
 @dataclass(eq=False, frozen=True, slots=True, kw_only=True)
 class Context(_PublicValueRecord):
     messages: tuple[Message, ...]
     systemPrompt: str | None = None
-    tools: tuple[object, ...] | None = None
+    tools: tuple[Tool, ...] | None = None
 
     def __post_init__(self) -> None:
         type_name = type(self).__name__
@@ -485,7 +512,16 @@ class Context(_PublicValueRecord):
             _optional_string(self.systemPrompt, type_name, "systemPrompt"),
         )
         if self.tools is not None:
-            object.__setattr__(self, "tools", _sequence(self.tools, (), type_name, "tools"))
+            if type(self.tools) not in (list, tuple):
+                _fail_type(type_name, "tools", "must be a list or tuple")
+            tools = tuple(self.tools)
+            if any(not isinstance(tool, Tool) for tool in tools):
+                _fail_type(type_name, "tools", "must contain Tool values")
+            object.__setattr__(
+                self,
+                "tools",
+                tools,
+            )
 
 
 def _event_index(value: object, type_name: str) -> int:

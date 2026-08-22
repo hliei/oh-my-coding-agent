@@ -109,6 +109,54 @@
       "evidenceClass": "exact-parity",
       "corpusCase": "reference.assistant-message-event-variants",
       "executableCases": ["ticket-02-values"]
+    },
+    {
+      "id": "omh-v0.tool-schema-validation",
+      "authority": ".scratch/omh-v0/issues/05-choose-values-schemas-errors-contract.md#PA:json-schema-mapping",
+      "publicInterface": "oh_my_llm.Tool, validateToolCall, and validateToolArguments",
+      "scenario": "admit every selected schema keyword and pattern form, convert every selected primitive and nested carrier, and reject the closed complement",
+      "observations": {"A": "closed Draft 2020-12 object-root subset", "L": "not_applicable", "T": "fresh mutable converted JSON object", "E": "no external effect", "C": "source values remain unchanged"},
+      "comparator": "compare schema admission, conversion, lookup classification, and validation over the shared Reference domain",
+      "normalization": "apply PA:json-schema-mapping and the selected ECMAScript/RE2 pattern intersection",
+      "evidenceClass": "PA:json-schema-mapping",
+      "corpusCase": "reference.tool-schema-validation",
+      "executableCases": ["ticket-03-tools", "ticket-03-installed"]
+    },
+    {
+      "id": "omh-v0.tool-callable-values",
+      "authority": ".scratch/omh-v0/issues/05-choose-values-schemas-errors-contract.md#agent-tool-and-result-values",
+      "publicInterface": "oh_my_llm.Tool and oh_my_core.AgentTool, AgentToolResult, AgentToolUpdateCallback",
+      "scenario": "construct and retain one model Tool, executable AgentTool, partial result, and final result",
+      "observations": {"A": "closed carriers admitted", "L": "not_applicable", "T": "Tool/result values and identity-bearing AgentTool", "E": "no construction effect", "C": "owned immutable snapshots"},
+      "comparator": "compare selected fields, callable identity, Text-only content, details, and absent error bit",
+      "normalization": "apply PA:frozen-public-value-records only to Tool and AgentToolResult; retain AgentTool identity",
+      "evidenceClass": "PA:frozen-public-value-records",
+      "corpusCase": "reference.tool-callable-values",
+      "executableCases": ["ticket-03-tools", "ticket-03-installed"]
+    },
+    {
+      "id": "omh-v0.strict-python-tool-callable",
+      "authority": ".scratch/omh-v0/issues/05-choose-values-schemas-errors-contract.md#PA:strict-python-tool-callable",
+      "publicInterface": "oh_my_core.AgentTool.execute",
+      "scenario": "invoke one compliant async Tool with id, fresh validated params, required signal, and synchronous update callback",
+      "observations": {"A": "four positional arguments", "L": "synchronous update then awaited final", "T": "AgentToolResult", "E": "callable invoked once", "C": "awaitable settles"},
+      "comparator": "compare the four logical Reference inputs and update/final observations for a compliant callable",
+      "normalization": "apply PA:strict-python-tool-callable to require all four positional Python arguments and an awaitable return",
+      "evidenceClass": "PA:strict-python-tool-callable",
+      "corpusCase": "reference.strict-python-tool-callable",
+      "executableCases": ["ticket-03-tools", "ticket-03-installed"]
+    },
+    {
+      "id": "omh-v0.redacted-tool-validation-errors",
+      "authority": ".scratch/omh-v0/issues/05-choose-values-schemas-errors-contract.md#ABD:redacted-deterministic-tool-validation-errors",
+      "publicInterface": "oh_my_llm.validateToolCall and validateToolArguments",
+      "scenario": "reject multiple secret-bearing independent schema failures with escaped pointers and reordered mappings",
+      "observations": {"A": "ValueError rejection", "L": "not_applicable", "T": "sorted aggregate pointer and keyword issues", "E": "zero Tool effects", "C": "stable redacted text"},
+      "comparator": "compare failure classification and no-effect boundary, then apply the accepted redacted deterministic diagnostic",
+      "normalization": "ABD:redacted-deterministic-tool-validation-errors",
+      "evidenceClass": "ABD:redacted-deterministic-tool-validation-errors",
+      "corpusCase": "reference.redacted-tool-validation-errors",
+      "executableCases": ["ticket-03-tools", "ticket-03-installed"]
     }
   ]
 }

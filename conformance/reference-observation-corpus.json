@@ -107,6 +107,52 @@
       "comparator": "event types, content indices, cumulative payload values, and terminal object identity",
       "normalization": "exclude thinking variants and compare immutable omh snapshots to Reference values before later mutation",
       "referenceCitations": ["packages/ai/src/types.ts#L367-L415", "packages/ai/src/providers/faux.ts#L300-L400"]
+    },
+    {
+      "id": "reference.tool-schema-validation",
+      "captureCaseId": "capture.tool-schema-validation",
+      "obligation": "omh-v0.tool-schema-validation",
+      "referenceRevision": "0e6909f050eeb15e8f6c05185511f3788357ddb3",
+      "canonicalInput": "construct one object Tool schema and validate a Tool Call requiring nested primitive conversion",
+      "observations": {"A": "closed_draft_2020_12_object_subset", "L": [], "T": {"converted": {"value": 2}, "mutable": true, "sourceUnchanged": true}, "E": [], "C": "fresh_working_tree"},
+      "comparator": "schema admission and converted semantic JSON tree before callable mutation",
+      "normalization": "PA:json-schema-mapping",
+      "referenceCitations": ["packages/ai/src/types.ts#L438-L450", "packages/ai/src/utils/validation.ts#L29-L310"]
+    },
+    {
+      "id": "reference.tool-callable-values",
+      "captureCaseId": "capture.tool-callable-values",
+      "obligation": "omh-v0.tool-callable-values",
+      "referenceRevision": "0e6909f050eeb15e8f6c05185511f3788357ddb3",
+      "canonicalInput": "construct one Tool, AgentTool, update result, and final result with Text content and JSON details",
+      "observations": {"A": "admitted", "L": [], "T": {"toolIsValue": true, "agentToolIdentity": true, "textOnlyResult": true, "resultHasIsError": false}, "E": [], "C": "owned_snapshots"},
+      "comparator": "selected public fields, callable identity, result content/details, and absent error member",
+      "normalization": "freeze passive Tool/result values while retaining executable AgentTool identity",
+      "referenceCitations": ["packages/ai/src/types.ts#L438-L450", "packages/agent/src/types.ts#L373-L430"]
+    },
+    {
+      "id": "reference.strict-python-tool-callable",
+      "captureCaseId": "capture.strict-python-tool-callable",
+      "obligation": "omh-v0.strict-python-tool-callable",
+      "referenceRevision": "0e6909f050eeb15e8f6c05185511f3788357ddb3",
+      "canonicalInput": "invoke one compliant Tool callable with all four logical inputs and submit one update",
+      "observations": {"A": "four logical inputs", "L": ["update", "return"], "T": {"params": {"count": 2}, "signalRequired": false, "updateCallbackSynchronous": true, "resultHasIsError": false}, "E": "callable_invoked_once", "C": "promise_settled"},
+      "omhExpectation": {"A": "four_positional_arguments", "L": ["update", "return"], "T": {"params": {"count": 2}, "signalRequired": true, "updateCallbackSynchronous": true, "resultHasIsError": false}, "E": "callable_invoked_once", "C": "awaitable_settled"},
+      "comparator": "four logical inputs, source-ordered update/final values, and ordinary settlement",
+      "normalization": "PA:strict-python-tool-callable",
+      "referenceCitations": ["packages/agent/src/types.ts#L373-L387", "packages/agent/src/agent-loop.ts#L602-L708"]
+    },
+    {
+      "id": "reference.redacted-tool-validation-errors",
+      "captureCaseId": "capture.redacted-tool-validation-errors",
+      "obligation": "omh-v0.redacted-tool-validation-errors",
+      "referenceRevision": "0e6909f050eeb15e8f6c05185511f3788357ddb3",
+      "canonicalInput": "fail multiple Tool argument constraints containing secret-bearing values and schema text",
+      "observations": {"A": "rejected", "L": [], "T": {"class": "Error", "aggregate": true, "rfc6901": false, "argumentValuesExposed": true, "schemaExposed": false}, "E": "no_tool_effect", "C": "validator_order_diagnostic"},
+      "omhExpectation": {"A": "rejected", "L": [], "T": {"class": "ValueError", "aggregate": true, "rfc6901": true, "argumentValuesExposed": false, "schemaExposed": false}, "E": "no_tool_effect", "C": "stable_sorted_diagnostic"},
+      "comparator": "rejection class and no-effect boundary plus accepted omh diagnostic expectation",
+      "normalization": "ABD:redacted-deterministic-tool-validation-errors",
+      "referenceCitations": ["packages/ai/src/utils/validation.ts#L232-L310"]
     }
   ]
 }

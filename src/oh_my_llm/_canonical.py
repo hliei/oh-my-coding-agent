@@ -14,6 +14,7 @@ from ._values import (
     JSONValue,
     Message,
     TextContent,
+    Tool,
     ToolCall,
     ToolResultMessage,
     Usage,
@@ -401,6 +402,16 @@ def _construct(expected: object, value: object) -> Any:
                 else {}
             ),
         )
+    if expected is Tool:
+        raw = _fields(
+            value,
+            required={"name", "description", "parameters"},
+        )
+        return Tool(
+            name=raw["name"],
+            description=raw["description"],
+            parameters=raw["parameters"],
+        )
     if expected is UsageCost:
         raw = _fields(
             value,
@@ -470,7 +481,11 @@ def _construct(expected: object, value: object) -> Any:
             required={"messages"},
             optional={"systemPrompt", "tools"},
         )
-        kwargs = {name: raw[name] for name in ("systemPrompt", "tools") if name in raw}
+        kwargs = {name: raw[name] for name in ("systemPrompt",) if name in raw}
+        if "tools" in raw:
+            kwargs["tools"] = tuple(
+                _construct(Tool, item) for item in _array(raw["tools"])
+            )
         return Context(
             messages=tuple(_message(item) for item in _array(raw["messages"])),
             **kwargs,

@@ -84,6 +84,25 @@ def test_installed_wheel_completes_no_tool_faux_run(installed_python: Path) -> N
     assert actual == expected
 
 
+def test_installed_wheel_completes_tool_schema_and_callable_values(
+    installed_python: Path,
+) -> None:
+    scenario = Path(__file__).with_name("ticket_03_scenario.py")
+    completed = _run(
+        os.fspath(installed_python),
+        "-I",
+        os.fspath(scenario),
+        cwd=installed_python.parent,
+    )
+    actual = json.loads(completed.stdout)
+    corpus = json.loads((ROOT / "conformance/reference-observation-corpus.json").read_text())
+    all_expected = {
+        case["id"]: case.get("omhExpectation", case["observations"])
+        for case in corpus["cases"]
+    }
+    assert actual == {case_id: all_expected[case_id] for case_id in actual}
+
+
 def test_first_conformance_authorities_are_closed_and_linked() -> None:
     matrix = json.loads((ROOT / "conformance/obligation-matrix.json").read_text())
     corpus = json.loads((ROOT / "conformance/reference-observation-corpus.json").read_text())

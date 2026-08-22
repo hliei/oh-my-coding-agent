@@ -106,7 +106,7 @@ async def _reject_missing_dependencies_without_effects() -> None:
     model = faux.getModel()
     assert model is not None
     prompt = UserMessage(content="hello", timestamp=2)
-    context = AgentContext(systemPrompt=None, messages=())
+    context = AgentContext(systemPrompt="", messages=())
     events: list[AgentEvent] = []
 
     async def emit(event: AgentEvent) -> None:
