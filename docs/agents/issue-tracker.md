@@ -9,6 +9,7 @@ Wayfinder decision issues, specs, and implementation tickets for this repo live 
 - The spec is `.scratch/<feature-slug>/spec.md`
 - Implementation tickets are one file per tracer-bullet slice at `.scratch/<feature-slug>/tickets/<NN>-<slug>.md`, numbered from `01` — never a single combined tickets file
 - Status is recorded as a `Status:` line near the top of each decision issue or implementation ticket (see `triage-labels.md` for implementation-ticket role strings)
+- An implementation ticket uses a triage role while open and moves to terminal status `resolved` only after every acceptance criterion is implemented and verified; `resolved` is not a triage role
 - Comments and conversation history append to the bottom of the file under a `## Comments` heading
 
 ## When a skill says "publish to the issue tracker"

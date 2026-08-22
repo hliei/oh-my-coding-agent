@@ -1,0 +1,54 @@
+{
+  "schemaVersion": 1,
+  "obligations": [
+    {
+      "id": "omh-v0.public-import-roots",
+      "authority": ".scratch/omh-v0/issues/02-choose-v0-parity-policy.md#PA:omh-python-import-roots",
+      "publicInterface": "installed omh Distribution",
+      "scenario": "import the three mapped public roots from an installed wheel",
+      "observations": {"A": "three imports admitted", "L": "not_applicable", "T": "three distinct modules", "E": "not_applicable", "C": "not_applicable"},
+      "comparator": "explicit three-root identity mapping; do not compare root strings",
+      "normalization": "map only the three Reference roots to the three independently named omh roots",
+      "evidenceClass": "PA:omh-python-import-roots",
+      "corpusCase": "reference.public-import-roots",
+      "executableCases": ["ticket-01-installed"]
+    },
+    {
+      "id": "omh-v0.no-tool-run-trace",
+      "authority": ".scratch/omh-v0/issues/07-choose-agent-loop-and-tool-lifecycle.md#closed-agent-events-and-state-reduction",
+      "publicInterface": "oh_my_core.runAgentLoop",
+      "scenario": "one User prompt and one Faux text Assistant response with no Tool Calls",
+      "observations": {"A": "valid prompt admitted", "L": "ordered Agent/Turn/Message trace", "T": "ordinary AgentEnd", "E": "one Faux Provider call", "C": "not_applicable"},
+      "comparator": "event types and payload values after async-carrier and immutable-value normalization",
+      "normalization": "ignore timestamps, token estimates, raw text chunk sizes, and async carrier mechanics",
+      "evidenceClass": "exact-parity",
+      "corpusCase": "reference.no-tool-run-trace",
+      "executableCases": ["ticket-01-installed"]
+    },
+    {
+      "id": "omh-v0.run-result-identity",
+      "authority": ".scratch/omh-v0/issues/05-choose-values-schemas-errors-contract.md#PA:frozen-public-value-records",
+      "publicInterface": "oh_my_core.runAgentLoop",
+      "scenario": "retain Context, awaited result, and terminal AgentEnd payload",
+      "observations": {"A": "valid prompt admitted", "L": "terminal event carries Run suffix", "T": "AgentEnd and return share one value", "E": "input Context unchanged", "C": "not_applicable"},
+      "comparator": "Reference array identity maps to one immutable Python tuple identity",
+      "normalization": "map only the Reference result-array carrier to the owned Python tuple carrier",
+      "evidenceClass": "PA:frozen-public-value-records",
+      "corpusCase": "reference.run-result-identity",
+      "executableCases": ["ticket-01-installed"]
+    },
+    {
+      "id": "omh-v0.excluded-public-aliases",
+      "authority": ".scratch/omh-v0/issues/03-choose-public-python-interface.md#distribution-and-import-seams",
+      "publicInterface": "installed omh Distribution",
+      "scenario": "probe excluded Reference identity, compat, node, RPC, and cross-layer aliases",
+      "observations": {"A": "excluded imports rejected", "L": "not_applicable", "T": "no leaked public alias", "E": "not_applicable", "C": "not_applicable"},
+      "comparator": "assert the separately authoritative omh product-scope expectation",
+      "normalization": "none; Surface Exclusions are not parity-normalized into omh",
+      "evidenceClass": "local-release",
+      "referenceApplicability": {"status": "not_applicable", "reason": "product-scope"},
+      "corpusCase": "reference.excluded-public-aliases",
+      "executableCases": ["ticket-01-installed"]
+    }
+  ]
+}

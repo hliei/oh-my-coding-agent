@@ -1,0 +1,53 @@
+{
+  "schemaVersion": 1,
+  "referenceRevision": "0e6909f050eeb15e8f6c05185511f3788357ddb3",
+  "cases": [
+    {
+      "id": "reference.public-import-roots",
+      "captureCaseId": "capture.public-import-roots",
+      "obligation": "omh-v0.public-import-roots",
+      "referenceRevision": "0e6909f050eeb15e8f6c05185511f3788357ddb3",
+      "canonicalInput": "load the AI, Agent Core, and Coding Agent package roots",
+      "observations": {"A": "admitted", "L": [], "T": {"roots": ["@earendil-works/pi-ai", "@earendil-works/pi-agent-core", "@earendil-works/pi-coding-agent"], "distinct": true}, "E": [], "C": "not_applicable"},
+      "omhExpectation": {"A": "admitted", "L": [], "T": {"roots": ["oh_my_llm", "oh_my_core", "oh_my_coding_agent"], "distinct": true, "referenceIdentityLeak": false}, "E": [], "C": "not_applicable"},
+      "comparator": "explicit three-root identity mapping",
+      "normalization": "map only the three Reference identities to oh_my_llm, oh_my_core, and oh_my_coding_agent",
+      "referenceCitations": ["packages/ai/package.json#L2-L20", "packages/agent/package.json#L2-L17", "packages/coding-agent/package.json#L2-L21"]
+    },
+    {
+      "id": "reference.no-tool-run-trace",
+      "captureCaseId": "capture.no-tool-run-trace",
+      "obligation": "omh-v0.no-tool-run-trace",
+      "referenceRevision": "0e6909f050eeb15e8f6c05185511f3788357ddb3",
+      "canonicalInput": "one User prompt followed by one Faux text Assistant response with stopReason stop",
+      "observations": {"A": "admitted", "L": ["agent_start", "turn_start", "message_start:user", "message_end:user", "message_start:assistant", "message_update:text_start", "message_update:text_delta", "message_update:text_end", "message_end:assistant", "turn_end", "agent_end"], "T": {"classification": "ordinary", "roles": ["user", "assistant"]}, "E": {"providerCalls": 1}, "C": "not_applicable"},
+      "comparator": "ordered event type and payload equality plus one Provider effect",
+      "normalization": "ignore timestamps, token estimates, raw chunk sizes, and async carrier mechanics",
+      "referenceCitations": ["packages/agent/src/agent-loop.ts#L89-L110", "packages/agent/src/agent-loop.ts#L178-L208", "packages/agent/src/agent-loop.ts#L294-L348", "packages/ai/src/providers/faux.ts#L300-L372"]
+    },
+    {
+      "id": "reference.run-result-identity",
+      "captureCaseId": "capture.run-result-identity",
+      "obligation": "omh-v0.run-result-identity",
+      "referenceRevision": "0e6909f050eeb15e8f6c05185511f3788357ddb3",
+      "canonicalInput": "retain the new-message result and the AgentEnd messages payload for one no-Tool Run",
+      "observations": {"A": "admitted", "L": {"agentEndMessagesIsResult": true}, "T": {"carrier": "array", "roles": ["user", "assistant"]}, "E": {"contextMessagesIdentityPreserved": true, "contextValueUnchanged": true}, "C": "not_applicable"},
+      "omhExpectation": {"A": "admitted", "L": {"agentEndMessagesIsResult": true}, "T": {"carrier": "tuple", "roles": ["user", "assistant"]}, "E": {"contextMessagesIdentityPreserved": true, "contextValueUnchanged": true}, "C": "not_applicable"},
+      "comparator": "object identity for AgentEnd/result and value identity for retained input",
+      "normalization": "map the mutable Reference array carrier to one immutable Python tuple without changing identity sharing",
+      "referenceCitations": ["packages/agent/src/agent-loop.ts#L89-L110", "packages/agent/src/agent-loop.ts#L251-L255"]
+    },
+    {
+      "id": "reference.excluded-public-aliases",
+      "captureCaseId": "capture.excluded-public-aliases",
+      "obligation": "omh-v0.excluded-public-aliases",
+      "referenceRevision": "0e6909f050eeb15e8f6c05185511f3788357ddb3",
+      "canonicalInput": "probe paths excluded from the independently named omh product surface",
+      "observations": {"reference": "not_applicable", "reason": "product-scope"},
+      "omhExpectation": {"A": "rejected", "L": [], "T": {"absent": ["createFauxCore", "fauxThinking", "registerProvider", "registerFauxProvider", "stream", "complete", "run_agent_loop", "EventStream", "AbortSignal", "pi_ai", "pi_agent_core", "pi_coding_agent", "oh_my_llm.compat", "oh_my_llm.node", "oh_my_core.compat", "oh_my_core.rpc_entry", "oh_my_coding_agent.rpc_entry"]}, "E": [], "C": "not_applicable"},
+      "comparator": "assert the local product-scope expectation without a Reference parity comparison",
+      "normalization": "none; Surface Exclusions are not normalized into omh",
+      "referenceCitations": ["packages/ai/package.json#L2-L20", "packages/agent/package.json#L2-L17", "packages/coding-agent/package.json#L2-L21"]
+    }
+  ]
+}

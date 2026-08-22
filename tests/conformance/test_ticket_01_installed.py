@@ -1,0 +1,125 @@
+from __future__ import annotations
+
+import json
+import os
+from pathlib import Path
+import shutil
+import subprocess
+import sys
+
+import pytest
+
+
+ROOT = Path(__file__).parents[2]
+REFERENCE_REVISION = "0e6909f050eeb15e8f6c05185511f3788357ddb3"
+
+
+def _run(*command: str, cwd: Path = ROOT) -> subprocess.CompletedProcess[str]:
+    return subprocess.run(
+        command,
+        cwd=cwd,
+        check=True,
+        text=True,
+        stdout=subprocess.PIPE,
+        stderr=subprocess.PIPE,
+    )
+
+
+@pytest.fixture(scope="session")
+def installed_python(tmp_path_factory: pytest.TempPathFactory) -> Path:
+    isolated = tmp_path_factory.mktemp("installed-omh")
+    clean_checkout = isolated / "checkout"
+    distribution = isolated / "dist"
+    environment = isolated / "venv"
+
+    tracked = _run("git", "ls-files", "-z").stdout.split("\0")
+    for relative in filter(None, tracked):
+        source = ROOT / relative
+        target = clean_checkout / relative
+        target.parent.mkdir(parents=True, exist_ok=True)
+        shutil.copy2(source, target)
+
+    _run("uv", "lock", "--check", cwd=clean_checkout)
+    _run(
+        "uv",
+        "build",
+        "--wheel",
+        "--out-dir",
+        os.fspath(distribution),
+        cwd=clean_checkout,
+    )
+    wheel = next(distribution.glob("omh-*.whl"))
+    assert wheel.name.endswith("-py3-none-any.whl")
+    _run("uv", "venv", "--python", sys.executable, os.fspath(environment))
+    python = environment / "bin" / "python"
+    _run(
+        "uv",
+        "pip",
+        "install",
+        "--python",
+        os.fspath(python),
+        os.fspath(wheel),
+        cwd=isolated,
+    )
+    return python
+
+
+def test_installed_wheel_completes_no_tool_faux_run(installed_python: Path) -> None:
+    scenario = Path(__file__).with_name("ticket_01_scenario.py")
+    completed = _run(
+        os.fspath(installed_python),
+        "-I",
+        os.fspath(scenario),
+        cwd=installed_python.parent,
+    )
+    actual = json.loads(completed.stdout)
+    corpus = json.loads((ROOT / "conformance/reference-observation-corpus.json").read_text())
+    expected = {
+        case["id"]: case.get("omhExpectation", case["observations"])
+        for case in corpus["cases"]
+    }
+    assert actual == expected
+
+
+def test_first_conformance_authorities_are_closed_and_linked() -> None:
+    matrix = json.loads((ROOT / "conformance/obligation-matrix.json").read_text())
+    corpus = json.loads((ROOT / "conformance/reference-observation-corpus.json").read_text())
+
+    obligations = matrix["obligations"]
+    cases = corpus["cases"]
+    obligation_ids = [row["id"] for row in obligations]
+    case_ids = [case["id"] for case in cases]
+
+    assert matrix["schemaVersion"] == 1
+    assert corpus["schemaVersion"] == 1
+    assert corpus["referenceRevision"] == REFERENCE_REVISION
+    assert len(obligation_ids) == len(set(obligation_ids))
+    assert len(case_ids) == len(set(case_ids))
+    assert {row["corpusCase"] for row in obligations} == set(case_ids)
+    assert {case["obligation"] for case in cases} == set(obligation_ids)
+
+    required = {
+        "omh-v0.public-import-roots",
+        "omh-v0.no-tool-run-trace",
+        "omh-v0.run-result-identity",
+        "omh-v0.excluded-public-aliases",
+    }
+    assert set(obligation_ids) == required
+    assert all(row["executableCases"] == ["ticket-01-installed"] for row in obligations)
+    assert all(row["normalization"] for row in obligations)
+    assert all(
+        row["evidenceClass"] in {"exact-parity", "local-release"}
+        or row["evidenceClass"].startswith(("PA:", "ABD:"))
+        for row in obligations
+    )
+    local_release = next(
+        row for row in obligations if row["evidenceClass"] == "local-release"
+    )
+    assert local_release["referenceApplicability"] == {
+        "status": "not_applicable",
+        "reason": "product-scope",
+    }
+    assert all(case["comparator"] and case["normalization"] for case in cases)
+    assert all(case["captureCaseId"] for case in cases)
+    assert all(case["referenceRevision"] == REFERENCE_REVISION for case in cases)
+    assert all(case["referenceCitations"] for case in cases)

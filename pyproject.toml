@@ -1,0 +1,35 @@
+[project]
+name = "omh"
+version = "0.1.0"
+description = "A small Python coding-agent product"
+requires-python = ">=3.12,<3.14"
+dependencies = [
+  "httpx==0.28.1",
+  "google-re2==1.1.20251105",
+  "PyYAML==6.0.3",
+]
+
+[build-system]
+requires = ["hatchling==1.32.0"]
+build-backend = "hatchling.build"
+
+[dependency-groups]
+dev = [
+  "mypy==1.19.1",
+  "pytest==9.0.2",
+]
+
+[tool.hatch.build.targets.wheel]
+packages = [
+  "src/oh_my_llm",
+  "src/oh_my_core",
+  "src/oh_my_coding_agent",
+]
+
+[tool.pytest.ini_options]
+testpaths = ["tests"]
+
+[tool.mypy]
+python_version = "3.12"
+strict = true
+files = ["src", "tests"]

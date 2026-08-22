@@ -4,13 +4,19 @@
 
 **Blocked by:** None — can start immediately.
 
-**Status:** ready-for-agent
+**Status:** resolved
 
-- [ ] A universal wheel can be built from a clean checkout with the accepted CPython range and exact direct dependency declarations, then installed outside the checkout in a fresh environment.
-- [ ] The installed artifact exposes `oh_my_llm`, `oh_my_core`, and `oh_my_coding_agent` as distinct import roots without cross-layer re-exports or a Reference product identity leak.
-- [ ] A caller can create an explicit Models collection, register the zero-option Faux Provider, resolve its deterministic text Model, and supply a scripted no-Tool Assistant response without network access.
-- [ ] `runAgentLoop` admits a valid new prompt, emits the selected Agent/Turn/Message lifecycle in causal order, and returns only the Messages produced by that Run.
-- [ ] `AgentEnd.messages` and the awaited operation result are the identical immutable tuple, and the caller-supplied Context remains unchanged.
-- [ ] Rejected missing Model or stream dependencies produce no Run, event, state mutation, Provider call, or other external effect.
-- [ ] The first Conformance Obligation Matrix rows and fixed-Reference corpus cases cover installed imports, the no-Tool Run trace, result identity, and absence of excluded aliases.
-- [ ] Focused tests run against the installed wheel through public seams and the repository's locked checks pass.
+- [x] A universal wheel can be built from a clean checkout with the accepted CPython range and exact direct dependency declarations, then installed outside the checkout in a fresh environment.
+- [x] The installed artifact exposes `oh_my_llm`, `oh_my_core`, and `oh_my_coding_agent` as distinct import roots without cross-layer re-exports or a Reference product identity leak.
+- [x] A caller can create an explicit Models collection, register the zero-option Faux Provider, resolve its deterministic text Model, and supply a scripted no-Tool Assistant response without network access.
+- [x] `runAgentLoop` admits a valid new prompt, emits the selected Agent/Turn/Message lifecycle in causal order, and returns only the Messages produced by that Run.
+- [x] `AgentEnd.messages` and the awaited operation result are the identical immutable tuple, and the caller-supplied Context remains unchanged.
+- [x] Rejected missing Model or stream dependencies produce no Run, event, state mutation, Provider call, or other external effect.
+- [x] The first Conformance Obligation Matrix rows and fixed-Reference corpus cases cover installed imports, the no-Tool Run trace, result identity, and absence of excluded aliases.
+- [x] Focused tests run against the installed wheel through public seams and the repository's locked checks pass.
+
+## Comments
+
+- TDD: the installed-wheel test first failed because the three import packages were absent, then went green through the smallest no-Tool Faux Run slice.
+- Verification: `uv run --locked pytest -q` reports 2 passed; strict mypy, compileall, lock drift, and diff checks pass. The test builds `omh-0.1.0-py3-none-any.whl`, installs it with declared dependencies into a fresh environment outside the checkout, and runs only through public imports.
+- Scope: EventStream ownership, complete Message values/canonical bytes, Tools, stateful Agent, Product Session, DeepSeek, and both Command Modes remain with their downstream tickets.
