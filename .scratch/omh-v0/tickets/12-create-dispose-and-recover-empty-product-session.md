@@ -1,18 +1,18 @@
-# 12 — Create, dispose, and recover an empty Product Session
+# 12 — Create and dispose an empty SessionManager-backed Product Session
 
-**What to build:** Publish the first durable `AgentSession` without running a prompt. A caller lazily constructs one fully owned Product Session at a normalized logical Workspace, receives a canonical UUIDv7, observes the fixed Model and empty durable history, disposes it, and recovers the same settled Session by exact id with current authentication rebound.
+**What to build:** Publish the first `AgentSession` without running a prompt around the accepted caller-visible `SessionManager`. A caller may supply a persistent or in-memory manager, observes that identical manager plus its empty tree and fixed Model, and disposes live resources without forcing a JSONL flush or adding persistence ownership.
 
 **Blocked by:** 07 — Make Agent stateful and reusable; 09 — Stream DeepSeek text through deterministic transport.
 
 **Status:** ready-for-agent
 
-- [ ] `createAgentSession()` accepts only the selected frozen options carrier, starts validation/effects on first await, and returns the selected result wrapper with one final factory-produced Session.
-- [ ] Omitted/relative cwd captures one process base and performs only lexical absolute normalization; invalid or nonexistent directories reject before identity, auth, store, lease, or resource effects.
-- [ ] New construction creates one non-reused canonical lowercase UUIDv7; an explicit id is valid only for recovery and never creates a replacement.
-- [ ] The initial Session Image contains only id, logical cwd, fixed Provider/Model identity, contract version, empty history, and settled authority; it excludes credentials and executable/live resources.
-- [ ] Construction obtains one crash-released exclusive live-owner lease before reading/committing Image state and holds it through idle until successful disposal.
-- [ ] Pre-publication validation, authentication, initialization, cancellation, or commit failure exposes no Session and leaves no usable partial new identity.
-- [ ] Successful disposal settles owned resources, retains the settled Image, releases the lease, and leaves stable final read observations.
-- [ ] Exact-id recovery validates the complete Image and matching cwd, rechecks current authentication, rebinds current Model/resources, and publishes an idle Session with value-equal empty history.
-- [ ] Absent, cross-cwd, invalid, corrupt, incompatible, incomplete, or already-owned identities fail under the selected redacted classification without replacement or repair.
-- [ ] Installed public-seam tests use real temporary SQLite and OS leases and record construction/recovery obligations in the Matrix.
+- [ ] The installed public surface exposes the accepted `SessionManager`, version-3 Session carriers, factories, and exact camelCase member allowlists without a storage Adapter, read-only manager wrapper, free parser/migration helpers, or snake_case aliases.
+- [ ] `createAgentSession()` accepts the selected frozen options carrier, starts validation/effects on first await, and returns one final factory-produced Session; `sessionManager` omission uses `SessionManager.create(cwd)` and a supplied manager is exposed unchanged by object identity.
+- [ ] The accepted cwd/path precedence and lexical rules distinguish operational `AgentSession` cwd from manager header cwd; default and explicit Session directories and candidate `.jsonl` paths follow ticket 08 exactly without an existence or same-cwd consistency gate.
+- [ ] `NewSessionOptions.id` is admitted for `create`, `inMemory`, `forkFrom`, and `newSession`; an omitted id generates UUIDv7 while an explicit admitted id is preserved exactly and need not be a UUID.
+- [ ] A new persistent manager owns an in-memory version-3 header, empty entry/index/tree state, candidate path, and `flushed=False`; it creates the required Session directory but no Session file or discovery result before the first Assistant Message.
+- [ ] `SessionManager.inMemory()` exposes the same empty header/tree/leaf and identity semantics with no Session directory/file I/O, no discovery row, and `isPersisted() == False`.
+- [ ] Pre-publication validation, authentication, Extension/resource initialization, failure, or cancellation publishes no `AgentSession` and completely settles only the live resources acquired by construction; it promises no Session-file rollback.
+- [ ] `AgentSession` projects the identical manager's id/file/name and empty active-path messages; no private settled-state envelope, continuing file lock, or owner-busy admission exists.
+- [ ] Successful disposal settles live work/resources and retains the manager's accepted persistent or in-memory state unchanged; it neither flushes an empty Session nor releases a Session-file lease.
+- [ ] Installed public-seam tests use real temporary directories plus in-memory managers and record the empty/unflushed, supplied-manager identity, caller-id, and no-lease obligations in the Matrix.

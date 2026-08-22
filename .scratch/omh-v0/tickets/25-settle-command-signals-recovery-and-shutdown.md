@@ -1,6 +1,6 @@
 # 25 — Settle Command signals, recovery, and shutdown
 
-**What to build:** Complete launcher control and failure ownership for both Command Modes. Ctrl-C, EOF, SIGINT, SIGHUP, SIGTERM, exact-id recovery, startup/renderer/stdout failure, lifecycle diagnostics, and cleanup all join the Product Session's existing abort/disposal barriers with conventional statuses and no timing window, force path, implicit retry, or secret-bearing output.
+**What to build:** Complete launcher control, Session selection/recovery, and failure ownership for both Command Modes. Ctrl-C, EOF, SIGINT, SIGHUP, SIGTERM, path/id/recent/open-or-create/ephemeral selection, startup/renderer/stdout failure, lifecycle diagnostics, and cleanup all join the Product Session's existing abort/disposal barriers with conventional statuses and no timing window, force path, implicit retry, or secret-bearing output.
 
 **Blocked by:** 24 — Complete the interactive REPL journey.
 
@@ -10,9 +10,9 @@
 - [ ] Repeated Ctrl-C during settlement joins the same attempt; idle Ctrl-C clears/redraws only; empty-line EOF closes admission and begins orderly disposal.
 - [ ] One-shot SIGINT and both modes' SIGHUP/SIGTERM fix the selected conventional status, close admission, and join one abort/disposal path without a force timeout.
 - [ ] Later terminating signals only join shutdown; SIGKILL/host termination remain outside the contract and no signal creates a second cancellation policy.
-- [ ] Exact `--session-id` recovery requires a canonical settled same-cwd Image, emits `recovered`, reobtains trust/auth/resources, and never selects recent/open-or-create/ephemeral behavior.
-- [ ] Every published Session is held in one launcher lifetime and receives exactly one automatic disposal call; successful cleanup retains the Image and releases ownership without unsolicited hints.
+- [ ] `--session PATH_OR_ID`, `--continue`/`-c`, `--session-id ID`, and `--no-session` implement their accepted precedence, lookup/create, id grammar, and conflict behavior; existing selection emits `recovered`, fresh persistent/in-memory selection emits `new`, and every construction reobtains trust/auth/resources.
+- [ ] Every published `AgentSession` is held in one launcher lifetime and receives exactly one automatic disposal call; successful cleanup leaves its manager's JSONL or in-memory state unchanged without a lease release, forced flush, or unsolicited recovery hint.
 - [ ] Usage, public Value rejection, lifecycle failure, Model error, cancellation, I/O failure, internal failure, and subordinate cleanup use only the closed safe diagnostic templates and precedence.
 - [ ] Diagnostics expose no traceback, exception repr/class, causes, errno, prompt, credential, environment value, Provider text, or secret; stderr failure does not recurse or fall back to stdout.
-- [ ] Real PTY/process/signal installed-command tests cover active/idle controls, repeated signals, shutdown races, exact recovery, cleanup failure, statuses, and durable continuity.
+- [ ] Real PTY/process/signal installed-command tests cover active/idle controls, repeated signals, shutdown races, every selector including incomplete-Run JSONL recovery and ephemeral mode, cleanup failure, statuses, and accepted continuity.
 - [ ] Matrix/corpus coverage closes every Command Mode ABD and platform-specific terminal/signal obligation.

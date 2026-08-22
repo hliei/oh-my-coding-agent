@@ -1,18 +1,18 @@
-# 14 — Fail closed on Session ownership and persistence faults
+# 14 — Preserve SessionManager persistence and recovery failure semantics
 
-**What to build:** Complete Product Session failure ownership around the durable boundary. Concurrent ownership, recovery reads, initial/admission writes, later Message barriers, settled-marker writes, rollback, and cleanup each stop at their defined cutoff, preserve only confirmed history, and never guess that incomplete work is resumable or idle.
+**What to build:** Complete the ticket-08 local JSONL failure model without imposing atomic settled-state or continuing-lock guarantees. Lazy first flush, in-memory-first append, limited direct rewrites, best-effort line parsing, parsed-prefix recovery, and multiple manager snapshots each preserve their exact observable effects when file work succeeds or fails.
 
 **Blocked by:** 13 — Prompt one durable no-Tool Product Session.
 
 **Status:** ready-for-agent
 
-- [ ] A second process cannot acquire an active Session id; contention, lease-substrate failure, and release failure use the selected busy/cleanup carriers without takeover or timeout.
-- [ ] Recovery read failures differ from invalid/nonresumable Images, retain private causes, and never mutate the prior Image or create a replacement identity.
-- [ ] Initial Image publication is atomic: pre-commit failure leaves no Image, while post-commit pre-delivery cancellation removes or marks only the new identity incomplete.
-- [ ] An admitted-record write failure occurs before Run/state/event/effect and leaves the existing Session idle for caller retry.
-- [ ] A later persistence barrier failure requests cancellation, forbids later effects, gives all observers one retained failure, and exposes only confirmed durable Messages.
-- [ ] Persistence failure after admission permanently closes the Session to new prompts and permits disposal only to mark incomplete/abandoned state and release resources.
-- [ ] Settled-marker failure never publishes idle or permits recovery, and no rollback, repair, migration, replay, or automatic storage retry is attempted.
-- [ ] Cleanup attempts every independent owned action, preserves failure precedence/order, and retains ownership when unresolved work requires a later retry.
-- [ ] Deterministic fault injection is private; assertions use public Session errors/state and real store/lease effects through the installed artifact.
-- [ ] Matrix cases cover each failure phase, effect cutoff, retained durable prefix, later operation admission, and crash-recovery classification.
+- [ ] Failure while exclusively creating or writing the lazy first header-plus-entry prefix propagates the underlying file failure without fabricating a settled marker, incomplete/abandoned record, rollback guarantee, or automatic retry; observable target bytes match the actual failed operation.
+- [ ] After first flush, every append mutates `fileEntries`, indexes/labels, and the manager-local leaf before file append; append failure propagates raw and retains those in-memory mutations even when the new entry or its parent is absent on disk.
+- [ ] A live manager may continue from its divergent in-memory leaf after append failure; it is not permanently closed, reclassified as cleanup failure, or restricted to a confirmed-durable prefix, and later open sees only parseable persisted entries.
+- [ ] Whole-file rewrite occurs only for an existing empty explicit path, registered v1-to-v2/v2-to-v3 local migration, or selected-path materialization; it directly truncates/writes the target, may leave partial bytes, and never rewrites the source Session.
+- [ ] Physical-line parsing independently skips blank and malformed-JSON lines, continues to later values, accepts a complete final value without LF, and skips a crash-partial final line without rewriting the file.
+- [ ] A physically nonempty file whose first parsed value is not a header with a string id fails unchanged; later syntactically valid entries receive only the accepted operation-specific validation rather than a complete load-time schema gate.
+- [ ] Recovery rebuilds indexes, labels, the complete append-only tree, and leaf from parsed file order, including an incomplete Run suffix; it loses only unpersisted bytes and never replays interrupted Model/Tool work, repairs history, or restores busy/queue/retry state.
+- [ ] Multiple `SessionManager` instances and processes may open and append to one path without an exclusive lease or owner-busy rejection. Cases expose stale manager snapshots and parseable physical ordering while making no safe-multi-writer or deterministic cross-process-order promise.
+- [ ] `open`, `setSessionFile`, `continueRecent`, `list`, and `listAll` preserve their distinct accepted absent/empty/invalid/probe/top-level failure behavior without substituting a private storage error taxonomy.
+- [ ] Deterministic fault injection remains private; installed-artifact tests use real files and explicit concurrency barriers to cover every write/rewrite/read/parse cutoff, in-memory versus persisted divergence, later admission, and recovery observation in Matrix/corpus evidence.

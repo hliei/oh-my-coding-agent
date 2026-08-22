@@ -21,19 +21,23 @@ The canonical end-to-end user outcome anchoring the v0 Release Surface: completi
 _Avoid_: Feature list, generic agent demo
 
 **Product Session**:
-One durably identified, normalized-working-directory-bound linear conversation owned by an `AgentSession`, recoverable after a completed boundary.
-_Avoid_: Run, in-memory session, session tree
+One cwd-bound `AgentSession` conversation whose complete history is its caller-visible `SessionManager` tree and whose current Agent context follows the active path. Persistent recovery rebuilds the tree from the parseable local JSONL prefix rather than requiring a completed Run.
+_Avoid_: Run, settled-state snapshot, completed-boundary-only history
+
+**SessionManager**:
+The caller-visible persistence, tree, and recovery object composed with an `AgentSession`. Its persistent carrier is a local JSONL Session file whose path is part of the API; in-memory mode retains the same tree without a file.
+_Avoid_: Session Image, private storage Adapter
 
 **Workspace**:
 The logical working directory bound to a Product Session and used as the base for relative built-in Tool paths and the initial shell directory. It is project identity and working context, not a sandbox, containment boundary, or independent grant of authority.
 _Avoid_: Project Resource Trust, project root, filesystem sandbox
 
 **Session Image**:
-The complete durable semantic state that authorizes recovery of a Product Session at a settled boundary; executable resources and authentication material are rebound rather than stored in it.
-_Avoid_: Session file, resource snapshot, serialized runtime
+Retired term for the former settled-state recovery envelope; use SessionManager and Session file.
+_Avoid_: Current persistence or recovery authority
 
 **Project Resource Trust**:
-An explicit per-Product-Session-construction grant to discover and load executable or instructional resources owned by the normalized project. It grants no Tool or filesystem-operation authority and is never inherited from a Session Image.
+An explicit per-`AgentSession`-construction grant to discover and load executable or instructional resources owned by the normalized project. It grants no Tool or filesystem-operation authority and is never persisted in a Session file or inherited from `SessionManager` history or a prior Session.
 _Avoid_: Workspace permission, Tool authorization, remembered project trust
 
 **Python Extension**:

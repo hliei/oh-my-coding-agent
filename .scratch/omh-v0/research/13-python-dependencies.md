@@ -2,6 +2,8 @@
 
 Research for [Choose the v0 Python dependencies](../issues/13-choose-v0-python-dependencies.md). This note recommends implementation ingredients; it does not resolve the Wayfinder ticket.
 
+> **Superseded persistence advice (2026-08-22):** The ticket 13 Answer replaces the SQLite Session Image store and lifetime lease recommendations below. Current persistence authority is ticket 08's caller-visible `SessionManager`, local JSONL/in-memory carriers, and absence of a continuing exclusive lease; the dependency pins and other research remain historical input.
+
 ## Recommendation
 
 Use CPython `>=3.12,<3.14`, one locked distribution, and exactly three direct runtime dependencies:

@@ -49,6 +49,8 @@ The Ledger is closed. Every PA or ABD is a complete record with seven required f
 
 The accepting decision ticket owns and contains the complete record. `/to-spec` only compiles those authoritative records. A pure naming PA may record all five dimensions as `none`. Surface Exclusions do not enter the Ledger. An unrecorded difference inside an envelope is a Parity Gap.
 
+A later accepted decision may withdraw a Ledger record. Withdrawal removes the record from the active closed Ledger immediately: it authorizes no normalization or conformance expectation, its stable key becomes a non-reusable historical tombstone, and its former complete record remains only as decision history. If the replacement still differs from the Reference Revision, it requires a new stable key and complete record; if the replacement restores Reference behaviour, no inverse PA or ABD is created.
+
 All Reference evidence below is pinned to `0e6909f050eeb15e8f6c05185511f3788357ddb3`.
 
 ### Initial Parity Ledger
@@ -98,8 +100,31 @@ All Reference evidence below is pinned to `0e6909f050eeb15e8f6c05185511f3788357d
 5. **Verification**: deterministic rows for no check, failed check, and a successful applicable check after the final mutation. The seed uses an explicitly named `CHECK`; repository-convention resolution receives its own owning-interface row.
 6. **Authority**: [Choose the v0 product journey](01-choose-v0-product-journey.md), with its classification and evidence recorded here.
 
+### Session persistence and recovery Ledger revision
+
+Effective 2026-08-22, the re-accepted [Choose the AgentSession surface](08-choose-agent-session-surface.md) Answer supersedes every earlier Session persistence or recovery Ledger record that conflicts with its Reference-style public `SessionManager`, local append-only JSONL tree, best-effort parsed-prefix recovery, caller-chosen identity, and no-lease contract.
+
+The revision adds one active Session persistence ABD:
+
+- `ABD:omh-user-session-root` remains the complete record owned by [Choose the AgentSession surface](08-choose-agent-session-surface.md). It authorizes only the user-level `~/.pi/agent/sessions` to `~/.omh/agent/sessions` product-identity mapping. Explicit `sessionDir` and `SessionManager.open(path)` receive no normalization from it.
+
+The following keys are withdrawn tombstones and are not members of the active Parity Ledger:
+
+- `ABD:durable-session-commit-order` — withdrawn because omh now follows Reference lazy first flush, in-memory-first append, and the absence of a durable settled marker or durable-before-visible boundary.
+- `ABD:atomic-session-image-publication` — withdrawn because v0 has no Session Image, atomic Session publication, settled-only recovery, rollback marker, or complete-Run recovery gate.
+- `ABD:fail-closed-session-persistence` — withdrawn because an append failure propagates without rolling back the already-mutated manager state, closing the Session, or restricting continuity to a confirmed-durable prefix.
+- `ABD:strict-session-cwd-admission` — withdrawn because v0 now follows the accepted Reference path carrier, expansion, lexical resolution, `cwd` precedence, and absence of an existence or manager/operational-`cwd` consistency gate.
+- `ABD:exclusive-product-session-ownership` — withdrawn because opening or recovering a Session acquires no continuing exclusive lease or owner-busy admission; per-`AgentSession` single-active-Run ownership remains separate.
+- `ABD:exact-id-cli-recovery` — withdrawn because recovery-only canonical-UUID selection conflicts with the accepted Session identity and selection authority. Reference-style existing-id selection and absent-id creation require no inverse ABD. Its owning command-mode ticket is not otherwise reopened or amended here.
+
+This audit leaves `ABD:atomic-session-construction` and `ABD:managed-session-disposal` active for their non-persistence live-resource publication and disposal differences. It also leaves `ABD:reject-missing-model-at-session-creation`, `ABD:fixed-session-system-prompt`, `ABD:fixed-session-prompt-resources`, and `ABD:strict-prompt-resource-invocation` active and unchanged. No non-Session PA or ABD is reopened by this revision.
+
 ### Reserved downstream adaptation ownership
 
 This ticket reserves `PA:python-illegal-identifier` but creates no Ledger record for it. [Choose the public Python interface](03-choose-public-python-interface.md) owns the key and may instantiate it only if v0 selects a Reference public identifier that Python syntax cannot express. The known candidate is public `Agent.continue()` at `packages/agent/src/agent.ts#L347-L375`; if selected, that ticket must lock the exact one-to-one Python spelling, such as `continue_`, and provide all seven Ledger fields. The reserved key may not be reused as a general naming license.
 
 The Reference Extension `default factory` is a JavaScript module default-export contract, not an illegal identifier. [Choose the Python Extension lifecycle](09-choose-extension-lifecycle.md) owns the Python module entrypoint decision and must create a separately named PA if its selected mapping differs inside an envelope. It may not reuse `PA:python-illegal-identifier`.
+
+## Comments
+
+- 2026-08-22 — Reopened resolution accepted the Session persistence and recovery Ledger revision above. It adds the withdrawal rule, deactivates the six conflicting Session keys as non-reusable tombstones, recognizes `ABD:omh-user-session-root` as the sole new persistence ABD, preserves the explicitly named non-conflicting Session-adjacent records, and leaves every non-Session record and owning ticket unchanged.
