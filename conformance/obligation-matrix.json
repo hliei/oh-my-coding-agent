@@ -49,6 +49,66 @@
       "referenceApplicability": {"status": "not_applicable", "reason": "product-scope"},
       "corpusCase": "reference.excluded-public-aliases",
       "executableCases": ["ticket-01-installed"]
+    },
+    {
+      "id": "omh-v0.message-public-value-records",
+      "authority": ".scratch/omh-v0/issues/05-choose-values-schemas-errors-contract.md#PA:frozen-public-value-records",
+      "publicInterface": "oh_my_llm message and content values",
+      "scenario": "construct, compare, hash, retain, and attempt to mutate every completed Message Public Value Record",
+      "observations": {"A": "valid nominal records admitted and invalid carriers rejected", "L": "not_applicable", "T": "closed immutable values", "E": "no retained mutable aliases", "C": "retained values remain stable"},
+      "comparator": "normalize Reference structural objects and arrays to nominal Python records, tuples, and read-only mappings",
+      "normalization": "apply only PA:frozen-public-value-records; preserve content, tags, field names, order, and carrier distinctions",
+      "evidenceClass": "PA:frozen-public-value-records",
+      "corpusCase": "reference.message-public-value-records",
+      "executableCases": ["ticket-02-values"]
+    },
+    {
+      "id": "omh-v0.json-value-domain",
+      "authority": ".scratch/omh-v0/issues/05-choose-values-schemas-errors-contract.md#PA:frozen-public-value-records",
+      "publicInterface": "oh_my_llm.JSONValue fields",
+      "scenario": "snapshot accepted JSON boundaries and reject cycles, unsafe carriers, invalid Unicode, and unsafe numbers",
+      "observations": {"A": "closed JSON carrier domain", "L": "not_applicable", "T": "owned immutable JSON", "E": "no caller alias", "C": "deep values round trip"},
+      "comparator": "compare the shared JSON domain after Python immutable-carrier normalization",
+      "normalization": "safe integers and finite binary64 values map to the corresponding JavaScript number domain while Python carrier identity remains explicit",
+      "evidenceClass": "PA:frozen-public-value-records",
+      "corpusCase": "reference.json-value-domain",
+      "executableCases": ["ticket-02-values"]
+    },
+    {
+      "id": "omh-v0.optional-message-fields",
+      "authority": ".scratch/omh-v0/issues/05-choose-values-schemas-errors-contract.md#PA:none-for-absent-optional-field",
+      "publicInterface": "oh_my_llm Message and Context optional fields",
+      "scenario": "construct omitted, explicit None, present empty, and required semantic-null fields and round trip them",
+      "observations": {"A": "all canonical absence and null cases admitted", "L": "not_applicable", "T": "readable None and distinct semantic null", "E": "omitted members absent from bytes", "C": "distinctions survive round trip"},
+      "comparator": "map Reference absent optional members to Python None while keeping semantic JSON null and present empty values distinct",
+      "normalization": "apply only PA:none-for-absent-optional-field",
+      "evidenceClass": "PA:none-for-absent-optional-field",
+      "corpusCase": "reference.optional-message-fields",
+      "executableCases": ["ticket-02-values"]
+    },
+    {
+      "id": "omh-v0.canonical-message-bytes",
+      "authority": ".scratch/omh-v0/issues/05-choose-values-schemas-errors-contract.md#PA:type-preserving-canonical-json",
+      "publicInterface": "private canonical codec over oh_my_llm public values",
+      "scenario": "encode and decode golden Message values with reordered keys, Unicode, numeric carriers, signed zero, and noncanonical inputs",
+      "observations": {"A": "only canonical bytes admitted", "L": "not_applicable", "T": "type-preserving unique bytes", "E": "no public codec API", "C": "re-encoding is byte-identical"},
+      "comparator": "compare semantic Reference JSON after carrier normalization; canonical byte equality is an omh persistence property",
+      "normalization": "apply PA:type-preserving-canonical-json for int versus float, signed zero, key order, and optional omission",
+      "evidenceClass": "PA:type-preserving-canonical-json",
+      "corpusCase": "reference.canonical-message-bytes",
+      "executableCases": ["ticket-02-values"]
+    },
+    {
+      "id": "omh-v0.assistant-message-event-variants",
+      "authority": ".scratch/omh-v0/issues/05-choose-values-schemas-errors-contract.md#assistant-message-event-protocol",
+      "publicInterface": "oh_my_llm.AssistantMessageEvent",
+      "scenario": "observe every selected event variant in one cumulative text and Tool Call lifecycle plus a pre-start error",
+      "observations": {"A": "nine closed variants admitted", "L": "one start-to-done indexed content trace plus one sole pre-start error trace", "T": "terminal payload identity", "E": "not_applicable", "C": "no event after terminal"},
+      "comparator": "compare selected event kinds, cumulative payload values, indices, and terminal identity after immutable-carrier normalization",
+      "normalization": "exclude thinking events and normalize Reference mutable snapshots to independent immutable values",
+      "evidenceClass": "exact-parity",
+      "corpusCase": "reference.assistant-message-event-variants",
+      "executableCases": ["ticket-02-values"]
     }
   ]
 }

@@ -3,21 +3,28 @@ from __future__ import annotations
 from collections.abc import AsyncIterator, Awaitable, Callable, Iterable
 from dataclasses import replace
 import inspect
-from typing import TypeAlias, final
+from typing import Literal, TypeAlias, cast, final
 
 from ._models import Model, Provider, _create_model, _create_provider
 from ._values import (
     AssistantMessage,
     AssistantMessageDoneEvent,
+    AssistantMessageErrorEvent,
     AssistantMessageEvent,
     AssistantMessageStartEvent,
     AssistantMessageTextDeltaEvent,
     AssistantMessageTextEndEvent,
     AssistantMessageTextStartEvent,
+    AssistantMessageToolCallEndEvent,
+    AssistantMessageToolCallStartEvent,
     Context,
+    JSONValue,
     StopReason,
     TextContent,
+    ToolCall,
     Usage,
+    UsageCost,
+    _AssistantMessageEventValidator,
 )
 
 
@@ -97,33 +104,71 @@ class FauxProviderHandle:
         if not isinstance(response, AssistantMessage):
             raise TypeError("Faux response must be an AssistantMessage")
 
-        partial = replace(
+        response = replace(
             response,
-            content=(),
             api=model.api,
             provider=model.provider,
             model=model.id,
         )
-        yield AssistantMessageStartEvent(partial=partial)
+        partial = replace(response, content=())
+        validator = _AssistantMessageEventValidator()
+        start = AssistantMessageStartEvent(partial=partial)
+        validator.accept(start)
+        yield start
         for index, block in enumerate(response.content):
-            text_partial = replace(
-                partial,
-                content=(*partial.content, TextContent(text="")),
+            if isinstance(block, TextContent):
+                text_partial = replace(
+                    partial,
+                    content=(*partial.content, TextContent(text="")),
+                )
+                event: AssistantMessageEvent = AssistantMessageTextStartEvent(
+                    contentIndex=index, partial=text_partial
+                )
+                validator.accept(event)
+                yield event
+                text_partial = replace(partial, content=(*partial.content, block))
+                event = AssistantMessageTextDeltaEvent(
+                    contentIndex=index,
+                    delta=block.text,
+                    partial=text_partial,
+                )
+                validator.accept(event)
+                yield event
+                event = AssistantMessageTextEndEvent(
+                    contentIndex=index,
+                    content=block.text,
+                    partial=text_partial,
+                )
+                validator.accept(event)
+                yield event
+                partial = text_partial
+            else:
+                tool_partial = replace(partial, content=(*partial.content, block))
+                event = AssistantMessageToolCallStartEvent(
+                    contentIndex=index, partial=tool_partial
+                )
+                validator.accept(event)
+                yield event
+                event = AssistantMessageToolCallEndEvent(
+                    contentIndex=index,
+                    toolCall=block,
+                    partial=tool_partial,
+                )
+                validator.accept(event)
+                yield event
+                partial = tool_partial
+        if response.stopReason in ("stop", "length", "toolUse"):
+            terminal: AssistantMessageEvent = AssistantMessageDoneEvent(
+                reason=cast(Literal["stop", "length", "toolUse"], response.stopReason),
+                message=response,
             )
-            yield AssistantMessageTextStartEvent(contentIndex=index, partial=text_partial)
-            text_partial = replace(partial, content=(*partial.content, block))
-            yield AssistantMessageTextDeltaEvent(
-                contentIndex=index,
-                delta=block.text,
-                partial=text_partial,
+        else:
+            terminal = AssistantMessageErrorEvent(
+                reason=cast(Literal["error", "aborted"], response.stopReason),
+                error=response,
             )
-            yield AssistantMessageTextEndEvent(
-                contentIndex=index,
-                content=block.text,
-                partial=text_partial,
-            )
-            partial = text_partial
-        yield AssistantMessageDoneEvent(reason=response.stopReason, message=response)
+        validator.accept(terminal)
+        yield terminal
 
 
 def fauxProvider() -> FauxProviderHandle:
@@ -134,16 +179,31 @@ def fauxText(text: str) -> TextContent:
     return TextContent(text=text)
 
 
+def fauxToolCall(
+    *,
+    id: str,
+    name: str,
+    arguments: dict[str, JSONValue],
+    thoughtSignature: str | None = None,
+) -> ToolCall:
+    return ToolCall(
+        id=id,
+        name=name,
+        arguments=arguments,
+        thoughtSignature=thoughtSignature,
+    )
+
+
 def fauxAssistantMessage(
-    content: str | TextContent | Iterable[TextContent],
+    content: str | TextContent | ToolCall | Iterable[TextContent | ToolCall],
     *,
     stopReason: StopReason = "stop",
     errorMessage: str | None = None,
 ) -> AssistantMessage:
-    blocks: tuple[TextContent, ...]
+    blocks: tuple[TextContent | ToolCall, ...]
     if isinstance(content, str):
         blocks = (fauxText(content),)
-    elif isinstance(content, TextContent):
+    elif isinstance(content, (TextContent, ToolCall)):
         blocks = (content,)
     else:
         blocks = tuple(content)
@@ -152,7 +212,20 @@ def fauxAssistantMessage(
         api="faux",
         provider="faux",
         model="faux-1",
-        usage=Usage(),
+        usage=Usage(
+            input=0,
+            output=0,
+            cacheRead=0,
+            cacheWrite=0,
+            totalTokens=0,
+            cost=UsageCost(
+                input=0.0,
+                output=0.0,
+                cacheRead=0.0,
+                cacheWrite=0.0,
+                total=0.0,
+            ),
+        ),
         stopReason=stopReason,
         timestamp=0,
         errorMessage=errorMessage,

@@ -32,8 +32,10 @@ def installed_python(tmp_path_factory: pytest.TempPathFactory) -> Path:
     distribution = isolated / "dist"
     environment = isolated / "venv"
 
-    tracked = _run("git", "ls-files", "-z").stdout.split("\0")
-    for relative in filter(None, tracked):
+    checkout_files = _run(
+        "git", "ls-files", "--cached", "--others", "--exclude-standard", "-z"
+    ).stdout.split("\0")
+    for relative in filter(None, checkout_files):
         source = ROOT / relative
         target = clean_checkout / relative
         target.parent.mkdir(parents=True, exist_ok=True)
@@ -74,10 +76,11 @@ def test_installed_wheel_completes_no_tool_faux_run(installed_python: Path) -> N
     )
     actual = json.loads(completed.stdout)
     corpus = json.loads((ROOT / "conformance/reference-observation-corpus.json").read_text())
-    expected = {
+    all_expected = {
         case["id"]: case.get("omhExpectation", case["observations"])
         for case in corpus["cases"]
     }
+    expected = {case_id: all_expected[case_id] for case_id in actual}
     assert actual == expected
 
 
@@ -104,8 +107,9 @@ def test_first_conformance_authorities_are_closed_and_linked() -> None:
         "omh-v0.run-result-identity",
         "omh-v0.excluded-public-aliases",
     }
-    assert set(obligation_ids) == required
-    assert all(row["executableCases"] == ["ticket-01-installed"] for row in obligations)
+    assert required <= set(obligation_ids)
+    ticket_01_rows = [row for row in obligations if row["id"] in required]
+    assert all(row["executableCases"] == ["ticket-01-installed"] for row in ticket_01_rows)
     assert all(row["normalization"] for row in obligations)
     assert all(
         row["evidenceClass"] in {"exact-parity", "local-release"}

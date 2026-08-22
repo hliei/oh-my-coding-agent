@@ -9,11 +9,13 @@ from typing import ClassVar, Literal, TypeAlias, final
 from oh_my_llm import (
     AssistantMessage,
     AssistantMessageDoneEvent,
+    AssistantMessageErrorEvent,
     AssistantMessageEvent,
     AssistantMessageStartEvent,
     Context,
     Message,
     Model,
+    ToolResultMessage,
     UserMessage,
 )
 
@@ -153,7 +155,10 @@ async def runAgentLoop(
         raise TypeError("emit must be callable")
     if not callable(streamFn):
         raise TypeError("streamFn must be callable")
-    if not all(isinstance(message, (UserMessage, AssistantMessage)) for message in prompt_messages):
+    if not all(
+        isinstance(message, (UserMessage, AssistantMessage, ToolResultMessage))
+        for message in prompt_messages
+    ):
         raise TypeError("prompts must contain AgentMessage values")
     if not isinstance(prompt_messages[-1], UserMessage):
         raise ValueError("the effective prompt tail must be a UserMessage")
@@ -176,6 +181,8 @@ async def runAgentLoop(
             await _emit(emit, MessageStart(message=event.partial))
         elif isinstance(event, AssistantMessageDoneEvent):
             response = event.message
+        elif isinstance(event, AssistantMessageErrorEvent):
+            response = event.error
         else:
             await _emit(
                 emit,

@@ -48,6 +48,65 @@
       "comparator": "assert the local product-scope expectation without a Reference parity comparison",
       "normalization": "none; Surface Exclusions are not normalized into omh",
       "referenceCitations": ["packages/ai/package.json#L2-L20", "packages/agent/package.json#L2-L17", "packages/coding-agent/package.json#L2-L21"]
+    },
+    {
+      "id": "reference.message-public-value-records",
+      "captureCaseId": "capture.message-public-value-records",
+      "obligation": "omh-v0.message-public-value-records",
+      "referenceRevision": "0e6909f050eeb15e8f6c05185511f3788357ddb3",
+      "canonicalInput": "construct the selected text, Tool Call, Message, Usage, and Context values and retain their nested containers",
+      "observations": {"A": "admitted", "L": [], "T": {"records": ["TextContent", "ToolCall", "UserMessage", "AssistantMessage", "ToolResultMessage", "Usage", "UsageCost", "Context"], "contentKinds": ["text", "toolCall"], "messageRoles": ["user", "assistant", "toolResult"], "stopReasons": ["stop", "length", "toolUse", "error", "aborted"], "immutable": false, "hashable": false}, "E": {"nestedAliasesRetained": true}, "C": "post-construction mutation observable"},
+      "omhExpectation": {"A": "admitted", "L": [], "T": {"records": ["TextContent", "ToolCall", "UserMessage", "AssistantMessage", "ToolResultMessage", "Usage", "UsageCost", "Context"], "contentKinds": ["text", "toolCall"], "messageRoles": ["user", "assistant", "toolResult"], "stopReasons": ["stop", "length", "toolUse", "error", "aborted"], "immutable": true, "hashable": true}, "E": {"nestedAliasesRetained": false}, "C": "values_remain_stable"},
+      "comparator": "normalize Reference structural values and arrays to nominal Python records and immutable containers before mutation",
+      "normalization": "PA:frozen-public-value-records",
+      "referenceCitations": ["packages/ai/src/types.ts#L323-L415", "packages/agent/src/types.ts#L314-L430", "packages/ai/src/utils/validation.ts#L243-L310"]
+    },
+    {
+      "id": "reference.json-value-domain",
+      "captureCaseId": "capture.json-value-domain",
+      "obligation": "omh-v0.json-value-domain",
+      "referenceRevision": "0e6909f050eeb15e8f6c05185511f3788357ddb3",
+      "canonicalInput": "admit the shared finite acyclic JSON domain and reject values with no stable Reference JSON comparator",
+      "observations": {"A": {"accepted": ["null", "bool", "unicode-string", "safe-int", "finite-float", "array", "string-object"], "rejected": ["cycle", "non-string-key", "nonfinite-float"]}, "L": [], "T": "mutable-json", "E": [], "C": "finite-tree"},
+      "omhExpectation": {"A": {"accepted": ["null", "bool", "unicode-string", "safe-int", "finite-float", "tuple", "string-mapping"], "rejected": ["cycle", "non-string-key", "unsafe-int", "nonfinite-float", "surrogate", "arbitrary-object"]}, "L": [], "T": "immutable-owned-json", "E": [], "C": "deep-iterative-round-trip"},
+      "comparator": "compare the shared semantic JSON tree before Reference-side mutation",
+      "normalization": "map Reference arrays and objects to tuple and read-only Mapping and retain Python numeric carrier distinctions",
+      "referenceCitations": ["packages/ai/src/types.ts#L333-L365", "packages/ai/src/utils/validation.ts#L243-L310"]
+    },
+    {
+      "id": "reference.optional-message-fields",
+      "captureCaseId": "capture.optional-message-fields",
+      "obligation": "omh-v0.optional-message-fields",
+      "referenceRevision": "0e6909f050eeb15e8f6c05185511f3788357ddb3",
+      "canonicalInput": "observe omitted optional fields, present empty values, and explicit JSON null details",
+      "observations": {"A": "admitted", "L": [], "T": {"missingAttributesReadAs": "undefined", "requiredDetailsNull": true, "emptyValuesPreserved": true}, "E": {"missingContextBytes": "{\"messages\":[]}", "presentEmptyContextBytes": "insertion-ordered Reference JSON"}, "C": "semantic distinctions preserved"},
+      "omhExpectation": {"A": "admitted", "L": [], "T": {"missingAttributesReadAs": "None", "requiredDetailsNull": true, "emptyValuesPreserved": true}, "E": {"missingContextBytes": "{\"messages\":[]}", "presentEmptyContextBytes": "{\"messages\":[],\"systemPrompt\":\"\",\"tools\":[]}"}, "C": "round_trip_distinctions_preserved"},
+      "comparator": "map Reference absent or undefined optional members to Python None and compare semantic null separately",
+      "normalization": "PA:none-for-absent-optional-field",
+      "referenceCitations": ["packages/ai/src/types.ts#L323-L415"]
+    },
+    {
+      "id": "reference.canonical-message-bytes",
+      "captureCaseId": "capture.canonical-message-bytes",
+      "obligation": "omh-v0.canonical-message-bytes",
+      "referenceRevision": "0e6909f050eeb15e8f6c05185511f3788357ddb3",
+      "canonicalInput": "encode equivalent Message JSON with Unicode, reordered keys, integral floats, and signed zero",
+      "observations": {"A": "ordinary-json", "L": [], "T": {"numericCarriers": ["number"], "unicode": "JSON.stringify", "mappingOrder": "insertion"}, "E": {"codecPublic": false, "reencodeByteIdentical": false}, "C": "permissive-parse-and-stringify"},
+      "omhExpectation": {"A": "canonical-only", "L": [], "T": {"numericCarriers": ["int", "float", "positive-zero", "negative-zero"], "unicode": "unescaped-scalars", "mappingOrder": "unicode-code-point"}, "E": {"codecPublic": false, "reencodeByteIdentical": true}, "C": "noncanonical-and-invalid-input-rejected"},
+      "comparator": "compare parsed semantic values after numeric-carrier normalization; assert omh byte uniqueness separately",
+      "normalization": "PA:type-preserving-canonical-json",
+      "referenceCitations": ["packages/ai/src/types.ts#L323-L415", "packages/ai/src/providers/faux.ts#L315-L400", "packages/ai/src/utils/json-parse.ts#L85-L124"]
+    },
+    {
+      "id": "reference.assistant-message-event-variants",
+      "captureCaseId": "capture.assistant-message-event-variants",
+      "obligation": "omh-v0.assistant-message-event-variants",
+      "referenceRevision": "0e6909f050eeb15e8f6c05185511f3788357ddb3",
+      "canonicalInput": "stream selected text and Tool Call content through start, indexed deltas and ends, then settle done or error",
+      "observations": {"A": "admitted", "L": {"doneTrace": ["start", "text_start", "text_delta", "text_end", "toolcall_start", "toolcall_delta", "toolcall_end", "done"], "preStartErrorTrace": ["error"]}, "T": {"uniqueTerminal": true, "terminalPayloadIdentity": true}, "E": [], "C": "no-event-after-terminal"},
+      "comparator": "event types, content indices, cumulative payload values, and terminal object identity",
+      "normalization": "exclude thinking variants and compare immutable omh snapshots to Reference values before later mutation",
+      "referenceCitations": ["packages/ai/src/types.ts#L367-L415", "packages/ai/src/providers/faux.ts#L300-L400"]
     }
   ]
 }
