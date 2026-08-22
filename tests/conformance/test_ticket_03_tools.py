@@ -54,6 +54,7 @@ def test_tool_is_an_immutable_owned_public_value() -> None:
     (
         {},
         {"type": "string"},
+        {"type": ("object",)},
         {"type": "object", "$schema": "http://json-schema.org/draft-07/schema#"},
         {"type": "object", "unknown": True},
         {"type": "object", "$ref": "#"},
@@ -97,7 +98,16 @@ def test_pattern_subset_admits_portable_linear_time_syntax(pattern: str) -> None
 
 
 def test_pattern_control_tokens_are_only_special_outside_escapes_and_classes() -> None:
-    for pattern in (r"\(\?i", r"[(?i]", r"\$", r"[.]"):
+    for pattern in (
+        r"\(\?i",
+        r"[(?i]",
+        r"\$",
+        r"[.]",
+        r"\u0061",
+        r"\x61",
+        r"\0",
+        r"[\b]",
+    ):
         Tool(
             name="literal",
             description="literal",
@@ -119,6 +129,13 @@ def test_pattern_control_tokens_are_only_special_outside_escapes_and_classes() -
         r"\p{L}",
         r"(?>a)",
         r"a++",
+        r"\A",
+        r"\z",
+        r"\C",
+        r"\Qquoted\E",
+        r"\a",
+        r"[]]",
+        r"[^]]",
         r"[",
     ),
 )
@@ -273,6 +290,7 @@ def test_boolean_numeric_and_mathematical_equality_rules_remain_distinct() -> No
         ("string", 2, "2", str),
         ("string", 2.5, "2.5", str),
         ("string", 1e-6, "0.000001", str),
+        ("string", -6.7835896186113706e-06, "-0.0000067835896186113706", str),
         ("string", -0.0, "0", str),
         ("null", "", None, type(None)),
         ("null", 0, None, type(None)),
@@ -416,6 +434,20 @@ def test_patterns_use_ascii_shorthand_ecmascript_dot_anchor_and_search() -> None
         (r"^b", "before", "a\nb"),
         (r"b$", "ab\n", "ab\nx"),
         (r"needle", "hay needle stack", "haystack"),
+        (r"^..$", "😀", "x"),
+        (r"^😀$", "😀", "x"),
+        (r"^\uD83D\uDE00$", "😀", "x"),
+        (r"^\u0061$", "a", "b"),
+        (r"^\x61$", "a", "b"),
+        (r"^\0$", "\0", "0"),
+        (r"^[\b]$", "\b", "b"),
+        (r"^\s$", "\v", "a"),
+        (r"^\S$", "a", "\v"),
+        (r"^[\s]$", "\v", "a"),
+        (r"^[\S]$", "a", "\v"),
+        (r"^[^\S]$", "\v", "a"),
+        (r"^[\]]$", "]", "["),
+        (r"^[^\]]$", "[", "]"),
     ):
         tool = pattern_tool(pattern)
         validateToolArguments(
@@ -426,6 +458,12 @@ def test_patterns_use_ascii_shorthand_ecmascript_dot_anchor_and_search() -> None
                 tool,
                 ToolCall(id="bad", name="pattern", arguments={"value": rejected}),
             )
+
+    with pytest.raises(ValueError, match=r"\[pattern\]"):
+        validateToolArguments(
+            pattern_tool(r"^.$"),
+            ToolCall(id="astral", name="pattern", arguments={"value": "😀"}),
+        )
 
 
 def test_validation_failure_is_deterministic_aggregate_and_fully_redacted() -> None:
@@ -648,6 +686,12 @@ def test_agent_tool_carries_strict_four_argument_async_protocol() -> None:
     assert result.terminate is True
     assert not hasattr(result, "isError")
     assert AgentContext(systemPrompt="", messages=(), tools=[tool]).tools == (tool,)  # type: ignore[arg-type]
+    model_context = Context(messages=(), tools=(tool,))
+    assert model_context.tools is not None
+    assert type(model_context.tools[0]) is Tool
+    assert model_context.tools[0].name == tool.name
+    assert model_context == model_context
+    hash(model_context)
 
 
 def test_agent_tool_result_is_text_only_owned_and_has_identity_free_value_semantics() -> None:
@@ -671,6 +715,39 @@ def test_agent_tool_result_is_text_only_owned_and_has_identity_free_value_semant
         AgentToolResult(content=cast(Any, [object()]), details=None)
     with pytest.raises(TypeError, match=r"^AgentToolResult\.terminate:"):
         AgentToolResult(content=(), details=None, terminate=1)  # type: ignore[arg-type]
+
+
+def test_agent_tool_constructor_does_not_introspect_or_adapt_execute_signatures() -> None:
+    def fewer(tool_call_id: str) -> object:
+        return tool_call_id
+
+    def more(
+        tool_call_id: str,
+        params: dict[str, object],
+        signal: object,
+        on_update: object,
+        extra: object,
+    ) -> object:
+        return tool_call_id, params, signal, on_update, extra
+
+    def keyword_only(
+        *,
+        tool_call_id: str,
+        params: dict[str, object],
+        signal: object,
+        on_update: object,
+    ) -> object:
+        return tool_call_id, params, signal, on_update
+
+    for execute in (fewer, more, keyword_only):
+        tool = AgentTool(
+            name="carrier",
+            label="Carrier",
+            description="carrier",
+            parameters={"type": "object"},
+            execute=execute,  # type: ignore[arg-type]
+        )
+        assert cast(Any, tool.execute) is execute
 
 
 def test_ticket_03_conformance_authorities_are_linked_to_public_observations() -> None:

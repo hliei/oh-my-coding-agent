@@ -517,10 +517,20 @@ class Context(_PublicValueRecord):
             tools = tuple(self.tools)
             if any(not isinstance(tool, Tool) for tool in tools):
                 _fail_type(type_name, "tools", "must contain Tool values")
+            model_tools = tuple(
+                tool
+                if type(tool) is Tool
+                else Tool(
+                    name=tool.name,
+                    description=tool.description,
+                    parameters=tool.parameters,
+                )
+                for tool in tools
+            )
             object.__setattr__(
                 self,
                 "tools",
-                tools,
+                model_tools,
             )
 
 

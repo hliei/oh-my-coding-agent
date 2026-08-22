@@ -19,4 +19,5 @@
 ## Comments
 
 - TDD: public construction first failed on the missing Tool root, validation next failed on the missing public functions, and Core callable/result cases then failed on their missing roots before each minimal implementation.
-- Verification: the installed-wheel Tool scenario, 1200-level object validation, 1100-level `anyOf`, all selected schema keywords/conversions, deterministic redaction, strict mypy, compileall, lock, JSON, and diff checks pass; the full suite reports 108 passed.
+- Verification: the installed-wheel Tool scenario, 1200-level object validation, 1100-level `anyOf`, all selected schema keywords/conversions, deterministic redaction, strict mypy, compileall, lock, JSON, and diff checks pass; the full suite reports 123 passed.
+- Scope boundary: this slice verifies the callable carrier, exact compliant four-argument trace, and absence of constructor signature adaptation. Ticket 05 explicitly owns invocation-time rejection and Tool Failure projection for fewer/more/keyword-only signatures, non-awaitable returns, raised execution, and invalid updates/finals.

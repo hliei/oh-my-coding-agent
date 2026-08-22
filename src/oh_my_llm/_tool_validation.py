@@ -5,9 +5,9 @@ from dataclasses import dataclass
 import json
 import math
 import re
-from typing import Any, cast
+from typing import Any, Literal, TypeAlias, cast
 
-from ._tool_schema import pattern_matches
+from ._tool_schema import _json_equal, pattern_matches
 from ._values import Tool, ToolCall
 
 
@@ -163,13 +163,15 @@ def _javascript_string(value: object) -> str | None:
             mantissa, exponent = token.split("e", 1)
             exponent_value = int(exponent)
             if -6 <= exponent_value < 21:
+                sign = "-" if mantissa.startswith("-") else ""
+                mantissa = mantissa.removeprefix("-")
                 digits = mantissa.replace(".", "")
                 position = 1 + exponent_value
                 if position <= 0:
-                    return f"0.{('0' * -position)}{digits}"
+                    return f"{sign}0.{('0' * -position)}{digits}"
                 if position >= len(digits):
-                    return f"{digits}{'0' * (position - len(digits))}"
-                return f"{digits[:position]}.{digits[position:]}"
+                    return f"{sign}{digits}{'0' * (position - len(digits))}"
+                return f"{sign}{digits[:position]}.{digits[position:]}"
             token = f"{mantissa.removesuffix('.0')}e{exponent_value:+d}"
         elif token.endswith(".0"):
             token = token[:-2]
@@ -231,39 +233,6 @@ def _convert_primitive(value: object, schema_type: str) -> object:
     return value
 
 
-def _json_equal(left: object, right: object) -> bool:
-    pending = [(left, right)]
-    while pending:
-        left, right = pending.pop()
-        if type(left) is bool or type(right) is bool:
-            if type(left) is not type(right) or left != right:
-                return False
-        elif type(left) in (int, float) and type(right) in (int, float):
-            if left != right:
-                return False
-        elif left is None or right is None or type(left) is str:
-            if type(left) is not type(right) or left != right:
-                return False
-        elif type(left) is list and type(right) in (list, tuple):
-            right_sequence = cast(list[object] | tuple[object, ...], right)
-            if len(left) != len(right_sequence):
-                return False
-            pending.extend(zip(left, right_sequence, strict=True))
-        elif type(left) is tuple and type(right) in (list, tuple):
-            left_sequence = cast(tuple[object, ...], left)
-            right_sequence = cast(list[object] | tuple[object, ...], right)
-            if len(left_sequence) != len(right_sequence):
-                return False
-            pending.extend(zip(left_sequence, right_sequence, strict=True))
-        elif isinstance(left, Mapping) and isinstance(right, Mapping):
-            if set(left) != set(right):
-                return False
-            pending.extend((left[name], right[name]) for name in left)
-        else:
-            return False
-    return True
-
-
 def _bound_valid(keyword: str, value: int | float, bound: object) -> bool:
     assert type(bound) in (int, float)
     numeric_bound = cast(int | float, bound)
@@ -300,8 +269,11 @@ class _ChildEvaluation:
     result: _Evaluation
 
 
+_EvaluationOperation: TypeAlias = Literal[
+    "start", "try_any", "after_any", "direct", "after_child", "finish"
+]
 _EvaluationTask = tuple[
-    str,
+    _EvaluationOperation,
     _EvaluationFrame,
     _Evaluation | _ChildEvaluation | None,
 ]
@@ -475,9 +447,11 @@ def _evaluate(schema: Mapping[str, object], value: object) -> _Evaluation:
             assert payload.result.issues is not None
             _write(payload.parent, payload.key, payload.result.value)
             frame.issues.extend(payload.result.issues)
-        else:
+        elif operation == "finish":
             frame.result.value = frame.value
             frame.result.issues = frame.issues
+        else:
+            raise AssertionError("unreachable evaluation operation")
     return root_result
 
 
