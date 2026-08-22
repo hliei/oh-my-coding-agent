@@ -5,7 +5,7 @@ import asyncio
 import builtins
 from dataclasses import dataclass, field, replace
 import inspect
-from typing import ClassVar, Literal, TypeAlias, cast, final
+from typing import ClassVar, Literal, NoReturn, TypeAlias, cast, final
 
 from oh_my_llm import (
     AbortSignal,
@@ -24,7 +24,12 @@ from oh_my_llm import (
     UsageCost,
     UserMessage,
 )
-from oh_my_llm._streams import _AbortController, _create_event_stream
+from oh_my_llm._streams import (
+    _AbortController,
+    _abort_signal,
+    _bind_abort_signal,
+    _create_event_stream,
+)
 
 from ._tools import AgentTool
 
@@ -160,6 +165,19 @@ AgentEvent.MessageEnd = MessageEnd
 AgentEventSink: TypeAlias = Callable[[AgentEvent], None | Awaitable[None]]
 
 
+@final
+class _RunControl:
+    __slots__ = ("signal", "terminalCommitted")
+
+    def __init__(self, signal: AbortSignal) -> None:
+        self.signal = signal
+        self.terminalCommitted = False
+
+    def requestCancellation(self) -> None:
+        if not self.terminalCommitted:
+            _abort_signal(self.signal)
+
+
 async def _emit(sink: AgentEventSink, event: AgentEvent) -> None:
     try:
         settled = sink(event)
@@ -192,19 +210,28 @@ async def runAgentLoop(
     streamFn: StreamFn,
 ) -> tuple[AgentMessage, ...]:
     controller = _AbortController()
-    try:
-        return await _run_agent_loop(
+    control = _RunControl(controller.signal)
+    task = asyncio.create_task(
+        _run_agent_loop(
             _snapshot_prompts(prompts),
             context,
             config,
             emit,
             streamFn,
-            controller.signal,
+            control,
             continuation=False,
             cancellationResult=False,
         )
-    except (asyncio.CancelledError, LifecycleError):
-        controller.abort()
+    )
+    try:
+        return await asyncio.shield(task)
+    except asyncio.CancelledError as cancellation:
+        control.requestCancellation()
+        if not task.done():
+            task.cancel()
+        await _settle_owned_task(task, cancellation)
+    except LifecycleError:
+        control.requestCancellation()
         raise
 
 
@@ -223,7 +250,7 @@ def agentLoop(
             config,
             emit,
             streamFn,
-            signal,
+            _RunControl(signal),
             continuation=False,
             cancellationResult=True,
         )
@@ -243,7 +270,7 @@ def agentLoopContinue(
             config,
             emit,
             streamFn,
-            signal,
+            _RunControl(signal),
             continuation=True,
             cancellationResult=True,
         )
@@ -257,20 +284,48 @@ async def runAgentLoopContinue(
     streamFn: StreamFn,
 ) -> tuple[AgentMessage, ...]:
     controller = _AbortController()
-    try:
-        return await _run_agent_loop(
+    control = _RunControl(controller.signal)
+    task = asyncio.create_task(
+        _run_agent_loop(
             (),
             context,
             config,
             emit,
             streamFn,
-            controller.signal,
+            control,
             continuation=True,
             cancellationResult=False,
         )
-    except (asyncio.CancelledError, LifecycleError):
-        controller.abort()
+    )
+    try:
+        return await asyncio.shield(task)
+    except asyncio.CancelledError as cancellation:
+        control.requestCancellation()
+        if not task.done():
+            task.cancel()
+        await _settle_owned_task(task, cancellation)
+    except LifecycleError:
+        control.requestCancellation()
         raise
+
+
+async def _settle_owned_task(
+    task: asyncio.Task[tuple[AgentMessage, ...]],
+    cancellation: asyncio.CancelledError,
+) -> NoReturn:
+    while not task.done():
+        try:
+            await asyncio.shield(task)
+        except asyncio.CancelledError:
+            continue
+    try:
+        task.result()
+    except LifecycleError as cleanup_failure:
+        if cleanup_failure.code == "cleanup":
+            cancellation.__cause__ = cleanup_failure
+    except asyncio.CancelledError:
+        pass
+    raise cancellation
 
 
 async def _run_agent_loop(
@@ -279,7 +334,7 @@ async def _run_agent_loop(
     config: AgentLoopConfig,
     emit: AgentEventSink,
     streamFn: StreamFn,
-    signal: AbortSignal,
+    control: _RunControl,
     *,
     continuation: bool,
     cancellationResult: bool,
@@ -293,7 +348,7 @@ async def _run_agent_loop(
         config,
         emit,
         streamFn,
-        signal,
+        control,
         cancellationResult=cancellationResult,
     )
 
@@ -338,7 +393,7 @@ async def _run_agent_loop_body(
     config: AgentLoopConfig,
     emit: AgentEventSink,
     streamFn: StreamFn,
-    signal: AbortSignal,
+    control: _RunControl,
     *,
     cancellationResult: bool,
 ) -> tuple[AgentMessage, ...]:
@@ -354,12 +409,41 @@ async def _run_agent_loop_body(
         messages=(*context.messages, *prompt_messages),
         tools=context.tools,
     )
-    response_events = streamFn(config.model, working, None, signal)
+    signal = control.signal
+    with _bind_abort_signal(signal):
+        response_events = streamFn(config.model, working, None, signal)
+        response = await _consume_response_events(
+            response_events,
+            emit,
+            config.model,
+            control,
+            cancellationResult=cancellationResult,
+        )
+
+    result = (*prompt_messages, response)
+    await _emit(emit, MessageEnd(message=response))
+    await _emit(emit, TurnEnd(message=response, toolResults=()))
+    control.terminalCommitted = True
+    await _emit(emit, AgentEnd(messages=result))
+    return result
+
+
+async def _consume_response_events(
+    response_events: AsyncIterator[AssistantMessageEvent],
+    emit: AgentEventSink,
+    model: Model,
+    control: _RunControl,
+    *,
+    cancellationResult: bool,
+) -> AssistantMessage:
+    signal = control.signal
     response: AssistantMessage | None = None
     response_started = False
     latest: AssistantMessage | None = None
     try:
         async for event in response_events:
+            if signal.aborted:
+                raise asyncio.CancelledError
             if isinstance(event, AssistantMessageStartEvent):
                 response_started = True
                 latest = event.partial
@@ -375,6 +459,7 @@ async def _run_agent_loop_body(
                     MessageUpdate(message=event.partial, assistantMessageEvent=event),
                 )
     except LifecycleError as sink_error:
+        control.requestCancellation()
         try:
             await _close_async_iterator(response_events)
         except BaseException as cleanup_error:
@@ -399,7 +484,12 @@ async def _run_agent_loop_body(
             raise cancellation
         if not cancellationResult:
             raise
-        response = _aborted_assistant(config.model, latest)
+        response = _terminal_assistant(
+            model,
+            latest,
+            reason="aborted",
+            error_message="Operation aborted",
+        )
         if not response_started:
             await _emit(emit, MessageStart(message=response))
     except Exception as stream_error:
@@ -416,17 +506,25 @@ async def _run_agent_loop_body(
             owner_cancellation.__cause__ = cleanup_failure
             raise owner_cancellation
         await _close_async_iterator(response_events)
-        response = _error_assistant(config.model, latest)
+        response = _terminal_assistant(
+            model,
+            latest,
+            reason="error",
+            error_message="Model stream failed",
+        )
         if not response_started:
             await _emit(emit, MessageStart(message=response))
 
     if response is None:
         raise RuntimeError("streamFn settled without an AssistantMessage")
-    await _emit(emit, MessageEnd(message=response))
-    result = (*prompt_messages, response)
-    await _emit(emit, TurnEnd(message=response, toolResults=()))
-    await _emit(emit, AgentEnd(messages=result))
-    return result
+    if signal.aborted:
+        return _terminal_assistant(
+            model,
+            latest,
+            reason="aborted",
+            error_message="Operation aborted",
+        )
+    return response
 
 
 async def _close_async_iterator(iterator: AsyncIterator[object]) -> None:
@@ -435,14 +533,18 @@ async def _close_async_iterator(iterator: AsyncIterator[object]) -> None:
         await asyncio.shield(close())
 
 
-def _aborted_assistant(
-    model: Model, partial: AssistantMessage | None
+def _terminal_assistant(
+    model: Model,
+    partial: AssistantMessage | None,
+    *,
+    reason: Literal["error", "aborted"],
+    error_message: str,
 ) -> AssistantMessage:
     if partial is not None:
         return replace(
             partial,
-            stopReason="aborted",
-            errorMessage="Operation aborted",
+            stopReason=reason,
+            errorMessage=error_message,
         )
     return AssistantMessage(
         content=(),
@@ -463,39 +565,7 @@ def _aborted_assistant(
                 total=0.0,
             ),
         ),
-        stopReason="aborted",
+        stopReason=reason,
         timestamp=0,
-        errorMessage="Operation aborted",
-    )
-
-
-def _error_assistant(model: Model, partial: AssistantMessage | None) -> AssistantMessage:
-    if partial is not None:
-        return replace(
-            partial,
-            stopReason="error",
-            errorMessage="Model stream failed",
-        )
-    return AssistantMessage(
-        content=(),
-        api=model.api,
-        provider=model.provider,
-        model=model.id,
-        usage=Usage(
-            input=0,
-            output=0,
-            cacheRead=0,
-            cacheWrite=0,
-            totalTokens=0,
-            cost=UsageCost(
-                input=0.0,
-                output=0.0,
-                cacheRead=0.0,
-                cacheWrite=0.0,
-                total=0.0,
-            ),
-        ),
-        stopReason="error",
-        timestamp=0,
-        errorMessage="Model stream failed",
+        errorMessage=error_message,
     )

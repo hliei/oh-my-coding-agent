@@ -3,6 +3,8 @@ from __future__ import annotations
 import asyncio
 from collections.abc import Iterator
 import inspect
+import json
+from pathlib import Path
 
 import pytest
 
@@ -10,6 +12,9 @@ import oh_my_core
 import oh_my_llm
 from oh_my_core import AgentContext, AgentLoopConfig
 from oh_my_llm import UserMessage, createModels, fauxAssistantMessage, fauxProvider
+
+
+ROOT = Path(__file__).parents[2]
 
 
 def test_abort_signal_is_factory_produced_read_only_and_waiter_local() -> None:
@@ -647,3 +652,139 @@ def test_stream_factories_validate_static_dependencies_without_iterating_inputs(
             AgentLoopConfig(model=model),
             None,  # type: ignore[arg-type]
         )
+
+
+def test_stream_that_swallows_cancellation_cannot_start_a_later_model_effect() -> None:
+    faux = fauxProvider()
+    model = faux.getModel()
+    assert model is not None
+    faux.setResponses((fauxAssistantMessage("must not run"),))
+    models = createModels()
+    models.setProvider(faux.provider)
+
+    async def observe() -> None:
+        started = asyncio.Event()
+
+        async def swallowing_fn(model, context, options, signal):  # type: ignore[no-untyped-def]
+            del signal
+            started.set()
+            try:
+                await asyncio.Event().wait()
+            except asyncio.CancelledError:
+                async for event in models.streamSimple(model, context, options):
+                    yield event
+
+        stream = oh_my_core.agentLoop(
+            (UserMessage(content="go", timestamp=1),),
+            AgentContext(systemPrompt="", messages=()),
+            AgentLoopConfig(model=model),
+            swallowing_fn,
+        )
+        cancelled_waiter = asyncio.create_task(stream.result())
+        surviving_waiter = asyncio.create_task(stream.result())
+        await started.wait()
+        cancelled_waiter.cancel()
+        with pytest.raises(asyncio.CancelledError):
+            await cancelled_waiter
+        result = await surviving_waiter
+        assert faux.state.callCount == 0
+        assert isinstance(result[-1], oh_my_llm.AssistantMessage)
+        assert result[-1].stopReason == "aborted"
+
+    asyncio.run(observe())
+
+
+def test_awaited_loop_flips_signal_before_model_cleanup() -> None:
+    faux = fauxProvider()
+    model = faux.getModel()
+    assert model is not None
+
+    async def observe() -> None:
+        started = asyncio.Event()
+        cleanup_signal: list[bool] = []
+
+        async def blocked_fn(model, context, options, signal):  # type: ignore[no-untyped-def]
+            del model, context, options
+            started.set()
+            try:
+                await asyncio.Event().wait()
+            finally:
+                cleanup_signal.append(signal.aborted)
+            if False:
+                yield
+
+        operation = asyncio.create_task(
+            oh_my_core.runAgentLoop(
+                (UserMessage(content="go", timestamp=1),),
+                AgentContext(systemPrompt="", messages=()),
+                AgentLoopConfig(model=model),
+                lambda event: None,
+                blocked_fn,
+            )
+        )
+        await started.wait()
+        operation.cancel()
+        with pytest.raises(asyncio.CancelledError):
+            await operation
+        assert cleanup_signal == [True]
+
+    asyncio.run(observe())
+
+
+def test_terminal_sink_failure_does_not_abort_committed_normal_signal() -> None:
+    faux = fauxProvider()
+    model = faux.getModel()
+    assert model is not None
+    faux.setResponses((fauxAssistantMessage("done"),))
+    models = createModels()
+    models.setProvider(faux.provider)
+    captured: list[oh_my_llm.AbortSignal] = []
+
+    async def stream_fn(model, context, options, signal):  # type: ignore[no-untyped-def]
+        captured.append(signal)
+        async for event in models.streamSimple(model, context, options):
+            yield event
+
+    def terminal_failure(event: oh_my_core.AgentEvent) -> None:
+        if isinstance(event, oh_my_core.AgentEvent.AgentEnd):
+            raise RuntimeError("terminal sink")
+
+    async def observe() -> None:
+        with pytest.raises(oh_my_llm.LifecycleError) as failed:
+            await oh_my_core.runAgentLoop(
+                (UserMessage(content="go", timestamp=1),),
+                AgentContext(systemPrompt="", messages=()),
+                AgentLoopConfig(model=model),
+                terminal_failure,
+                stream_fn,
+            )
+        assert failed.value.code == "event_sink"
+        assert not captured[0].aborted
+
+    asyncio.run(observe())
+
+
+def test_ticket_04_conformance_authorities_are_linked_to_public_observations() -> None:
+    matrix = json.loads((ROOT / "conformance/obligation-matrix.json").read_text())
+    corpus = json.loads(
+        (ROOT / "conformance/reference-observation-corpus.json").read_text()
+    )
+    required = {
+        "omh-v0.low-level-loop-carriers": "reference.low-level-loop-carriers",
+        "omh-v0.immutable-loop-context": "reference.immutable-loop-context",
+        "omh-v0.managed-event-stream": "reference.managed-event-stream",
+        "omh-v0.readonly-abort-signal": "reference.readonly-abort-signal",
+        "omh-v0.awaited-event-sink": "reference.awaited-event-sink",
+        "omh-v0.managed-run-cancellation": "reference.managed-run-cancellation",
+        "omh-v0.closed-lifecycle-error-carrier": (
+            "reference.closed-lifecycle-error-carrier"
+        ),
+    }
+    rows = {row["id"]: row for row in matrix["obligations"]}
+    cases = {case["id"]: case for case in corpus["cases"]}
+    assert required.keys() <= rows.keys()
+    assert set(required.values()) <= cases.keys()
+    for obligation, corpus_case in required.items():
+        assert rows[obligation]["corpusCase"] == corpus_case
+        assert "ticket-04-streams" in rows[obligation]["executableCases"]
+        assert cases[corpus_case]["obligation"] == obligation

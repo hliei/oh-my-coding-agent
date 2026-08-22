@@ -132,10 +132,14 @@ async def _observe() -> dict[str, object]:
                 ],
             },
             "E": {"modelCalls": faux.state.callCount},
-            "C": {
-                "lazyBeforeActivation": lazy_before_activation,
-                "contextUnchanged": context.messages is messages_before,
-            },
+            "C": {"lazyBeforeActivation": lazy_before_activation},
+        },
+        "reference.immutable-loop-context": {
+            "A": "admitted",
+            "L": [],
+            "T": {"continuationRoles": [message.role for message in continuation_result]},
+            "E": {"callerContextMutated": context.messages is not messages_before},
+            "C": "input_identity_and_value_unchanged",
         },
         "reference.managed-event-stream": {
             "A": {"firstConsumer": "admitted", "secondConsumer": second_consumer_code},

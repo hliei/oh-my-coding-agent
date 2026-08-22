@@ -163,11 +163,23 @@
       "authority": ".scratch/omh-v0/issues/04-choose-async-stream-cancellation-contract.md#PA:python-async-resource-carriers",
       "publicInterface": "oh_my_core.agentLoop, agentLoopContinue, runAgentLoop, and runAgentLoopContinue",
       "scenario": "construct all four low-level entries, observe pre-activation state, and complete prompt and continuation Runs",
-      "observations": {"A": "four explicit Model and StreamFn entries", "L": "prompt and continuation terminal traces", "T": "immutable Run suffix", "E": "one Model effect per activation", "C": "caller Context unchanged"},
+      "observations": {"A": "four explicit Model and StreamFn entries", "L": "prompt and continuation terminal traces", "T": "Run suffix", "E": "one Model effect per activation", "C": "lazy activation"},
       "comparator": "compare prompt and continuation traces after normalizing eager Reference calls to first Python awaited use",
-      "normalization": "PA:python-async-resource-carriers plus immutable tuple carrier normalization",
+      "normalization": "PA:python-async-resource-carriers",
       "evidenceClass": "PA:python-async-resource-carriers",
       "corpusCase": "reference.low-level-loop-carriers",
+      "executableCases": ["ticket-04-streams", "ticket-04-installed"]
+    },
+    {
+      "id": "omh-v0.immutable-loop-context",
+      "authority": ".scratch/omh-v0/issues/07-choose-agent-loop-and-tool-lifecycle.md#ABD:immutable-loop-context",
+      "publicInterface": "oh_my_core.agentLoopContinue and runAgentLoopContinue",
+      "scenario": "retain one caller Context across continuation settlement and compare its Message tuple with the returned Run suffix",
+      "observations": {"A": "continuation admitted", "L": "ordinary terminal trace", "T": "new Messages only", "E": "zero caller Context mutations", "C": "input identity and value unchanged"},
+      "comparator": "compare returned Messages directly and apply the accepted private working-history difference to the retained input Context",
+      "normalization": "ABD:immutable-loop-context",
+      "evidenceClass": "ABD:immutable-loop-context",
+      "corpusCase": "reference.immutable-loop-context",
       "executableCases": ["ticket-04-streams", "ticket-04-installed"]
     },
     {
@@ -205,6 +217,18 @@
       "evidenceClass": "ABD:managed-lifecycle-callbacks",
       "corpusCase": "reference.awaited-event-sink",
       "executableCases": ["ticket-04-streams", "ticket-04-installed"]
+    },
+    {
+      "id": "omh-v0.managed-run-cancellation",
+      "authority": ".scratch/omh-v0/issues/04-choose-async-stream-cancellation-contract.md#ABD:managed-run-cancellation",
+      "publicInterface": "oh_my_core.agentLoop, agentLoopContinue, runAgentLoop, and runAgentLoopContinue",
+      "scenario": "cancel active EventStream and awaited Runs across Model cleanup and terminal dispatch boundaries",
+      "observations": {"A": "one owner-managed cancellation request", "L": "aborted terminal only after cleanup", "T": "committed terminal classification is irreversible", "E": "no new effect after cutoff", "C": "owned work settles before cancellation returns"},
+      "comparator": "compare clean cancellation classification after applying omh's hard effect cutoff, complete settlement, and terminal-commit boundary",
+      "normalization": "ABD:managed-run-cancellation",
+      "evidenceClass": "ABD:managed-run-cancellation",
+      "corpusCase": "reference.managed-run-cancellation",
+      "executableCases": ["ticket-04-streams"]
     },
     {
       "id": "omh-v0.closed-lifecycle-error-carrier",

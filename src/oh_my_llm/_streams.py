@@ -2,9 +2,11 @@ from __future__ import annotations
 
 import asyncio
 from collections import deque
-from collections.abc import AsyncIterator, Awaitable, Callable
+from collections.abc import AsyncIterator, Awaitable, Callable, Iterator
+from contextlib import contextmanager
+from contextvars import ContextVar
 from types import TracebackType
-from typing import Any, Generic, TypeVar, final
+from typing import Any, Generic, NoReturn, TypeVar, final
 
 from ._errors import LifecycleError
 
@@ -12,6 +14,9 @@ from ._errors import LifecycleError
 EventT = TypeVar("EventT")
 ResultT = TypeVar("ResultT")
 _END = object()
+_ACTIVE_ABORT_SIGNAL: ContextVar[AbortSignal | None] = ContextVar(
+    "omh_active_abort_signal", default=None
+)
 
 
 @final
@@ -42,9 +47,26 @@ class _AbortController:
         self.signal = signal
 
     def abort(self) -> None:
-        if not self.signal._aborted:
-            self.signal._aborted = True
-            self.signal._event.set()
+        _abort_signal(self.signal)
+
+
+def _abort_signal(signal: AbortSignal) -> None:
+    if not signal._aborted:
+        signal._aborted = True
+        signal._event.set()
+
+
+@contextmanager
+def _bind_abort_signal(signal: AbortSignal) -> Iterator[None]:
+    token = _ACTIVE_ABORT_SIGNAL.set(signal)
+    try:
+        yield
+    finally:
+        _ACTIVE_ABORT_SIGNAL.reset(token)
+
+
+def _active_abort_signal() -> AbortSignal | None:
+    return _ACTIVE_ABORT_SIGNAL.get()
 
 
 _EventSink = Callable[[EventT], Awaitable[None]]
@@ -133,12 +155,7 @@ class EventStream(Generic[EventT, ResultT], AsyncIterator[EventT]):
         except asyncio.CancelledError as cancellation:
             self._discardEvents = True
             self._queue.clear()
-            try:
-                await self._cancel_and_settle()
-                self._raise_cleanup_failure()
-            except LifecycleError as cleanup_failure:
-                cancellation.__cause__ = cleanup_failure
-            raise cancellation
+            await self._settle_cancelled_observer(cancellation)
         item = self._queue.popleft()
         if not self._queue:
             self._available.clear()
@@ -166,12 +183,17 @@ class EventStream(Generic[EventT, ResultT], AsyncIterator[EventT]):
         except asyncio.CancelledError as cancellation:
             if self._result.done():
                 return self._result.result()
-            try:
-                await self._cancel_and_settle()
-                self._raise_cleanup_failure()
-            except LifecycleError as cleanup_failure:
-                cancellation.__cause__ = cleanup_failure
-            raise cancellation
+            await self._settle_cancelled_observer(cancellation)
+
+    async def _settle_cancelled_observer(
+        self, cancellation: asyncio.CancelledError
+    ) -> NoReturn:
+        try:
+            await self._cancel_and_settle()
+            self._raise_cleanup_failure()
+        except LifecycleError as cleanup_failure:
+            cancellation.__cause__ = cleanup_failure
+        raise cancellation
 
     async def _cancel_and_settle(self) -> None:
         self._controller.abort()

@@ -160,11 +160,23 @@
       "obligation": "omh-v0.low-level-loop-carriers",
       "referenceRevision": "0e6909f050eeb15e8f6c05185511f3788357ddb3",
       "canonicalInput": "complete equivalent no-Tool prompt and continuation Runs through stream and awaited-sink carriers",
-      "observations": {"A": "four_public_entries", "L": {"promptTerminal": "agent_end", "continuationTerminal": "agent_end"}, "T": {"streamPromptRoles": ["user", "assistant"], "streamContinuationRoles": ["assistant"], "sinkPromptRoles": ["user", "assistant"], "sinkContinuationRoles": ["assistant"]}, "E": {"modelCalls": 4}, "C": {"lazyBeforeActivation": false, "contextUnchanged": false}},
-      "omhExpectation": {"A": "four_public_entries", "L": {"promptTerminal": "agent_end", "continuationTerminal": "agent_end"}, "T": {"streamPromptRoles": ["user", "assistant"], "streamContinuationRoles": ["assistant"], "sinkPromptRoles": ["user", "assistant"], "sinkContinuationRoles": ["assistant"]}, "E": {"modelCalls": 4}, "C": {"lazyBeforeActivation": true, "contextUnchanged": true}},
-      "comparator": "prompt and continuation event grammar, result suffix roles, effect count, and caller Context after carrier normalization",
-      "normalization": "map eager Reference start to first Python awaited use and apply ABD:immutable-loop-context",
+      "observations": {"A": "four_public_entries", "L": {"promptTerminal": "agent_end", "continuationTerminal": "agent_end"}, "T": {"streamPromptRoles": ["user", "assistant"], "streamContinuationRoles": ["assistant"], "sinkPromptRoles": ["user", "assistant"], "sinkContinuationRoles": ["assistant"]}, "E": {"modelCalls": 4}, "C": {"lazyBeforeActivation": false}},
+      "omhExpectation": {"A": "four_public_entries", "L": {"promptTerminal": "agent_end", "continuationTerminal": "agent_end"}, "T": {"streamPromptRoles": ["user", "assistant"], "streamContinuationRoles": ["assistant"], "sinkPromptRoles": ["user", "assistant"], "sinkContinuationRoles": ["assistant"]}, "E": {"modelCalls": 4}, "C": {"lazyBeforeActivation": true}},
+      "comparator": "prompt and continuation event grammar, result suffix roles, effect count, and activation point after carrier normalization",
+      "normalization": "PA:python-async-resource-carriers",
       "referenceCitations": ["packages/agent/src/agent-loop.ts#L31-L143", "packages/agent/src/agent-loop.ts#L145-L220"]
+    },
+    {
+      "id": "reference.immutable-loop-context",
+      "captureCaseId": "capture.immutable-loop-context",
+      "obligation": "omh-v0.immutable-loop-context",
+      "referenceRevision": "0e6909f050eeb15e8f6c05185511f3788357ddb3",
+      "canonicalInput": "retain the supplied Context and its Message collection across one continuation Run",
+      "observations": {"A": "admitted", "L": [], "T": {"continuationRoles": ["assistant"]}, "E": {"callerContextMutated": true}, "C": "shared_message_array_enlarged"},
+      "omhExpectation": {"A": "admitted", "L": [], "T": {"continuationRoles": ["assistant"]}, "E": {"callerContextMutated": false}, "C": "input_identity_and_value_unchanged"},
+      "comparator": "returned continuation Messages compare directly; retained caller Context deliberately differs",
+      "normalization": "ABD:immutable-loop-context",
+      "referenceCitations": ["packages/agent/src/agent-loop.ts#L135-L141", "packages/agent/src/agent-loop.ts#L181-L220", "packages/agent/src/agent-loop.ts#L316-L373"]
     },
     {
       "id": "reference.managed-event-stream",
@@ -201,6 +213,18 @@
       "comparator": "barrier ordering and effect cutoff compare directly; typed failure and owned cleanup use the accepted callback deviation",
       "normalization": "ABD:managed-lifecycle-callbacks",
       "referenceCitations": ["packages/agent/src/agent-loop.ts#L64-L117", "packages/agent/src/agent-loop.ts#L145-L220"]
+    },
+    {
+      "id": "reference.managed-run-cancellation",
+      "captureCaseId": "capture.managed-run-cancellation",
+      "obligation": "omh-v0.managed-run-cancellation",
+      "referenceRevision": "0e6909f050eeb15e8f6c05185511f3788357ddb3",
+      "canonicalInput": "cancel active Runs during Model cleanup and terminal listener dispatch while retaining signal and effect observations",
+      "observations": {"A": "controller_abort", "L": "signal_based_failure_classification", "T": "terminal_listener_can_observe_active_controller", "E": "prepared_effects_can_start_after_late_abort", "C": "run_cleared_after_terminal_emit"},
+      "omhExpectation": {"A": "owner_managed_request", "L": "aborted_only_after_clean_settlement", "T": "terminal_classification_irreversible_before_terminal_sink", "E": "no_new_effect_after_cutoff", "C": "owned_work_settled_before_return_or_reraise"},
+      "comparator": "clean abort classification after applying omh's hard effect cutoff, settlement barrier, and terminal-commit boundary",
+      "normalization": "ABD:managed-run-cancellation",
+      "referenceCitations": ["packages/agent/src/agent.ts#L304-L320", "packages/agent/src/agent.ts#L469-L518", "packages/agent/src/agent-loop.ts#L491-L544", "packages/agent/src/agent-loop.ts#L668-L708"]
     },
     {
       "id": "reference.closed-lifecycle-error-carrier",

@@ -1,9 +1,11 @@
 from __future__ import annotations
 
+import asyncio
 from collections.abc import AsyncIterator, Callable
 from typing import final
 
 from ._values import AssistantMessageEvent, Context
+from ._streams import _active_abort_signal
 
 
 StreamSimpleFn = Callable[["Model", Context], AsyncIterator[AssistantMessageEvent]]
@@ -111,7 +113,17 @@ class Models:
         provider = self._providers.get(model.provider)
         if provider is None or all(candidate is not model for candidate in provider._models):
             raise LookupError(f"Unknown model: {model.provider}/{model.id}")
-        return provider._streamSimple(model, context)
+
+        async def owned_stream() -> AsyncIterator[AssistantMessageEvent]:
+            signal = _active_abort_signal()
+            if signal is not None and signal.aborted:
+                raise asyncio.CancelledError
+            async for event in provider._streamSimple(model, context):
+                if signal is not None and signal.aborted:
+                    raise asyncio.CancelledError
+                yield event
+
+        return owned_stream()
 
 
 @final
