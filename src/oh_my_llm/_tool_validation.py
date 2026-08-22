@@ -4,6 +4,7 @@ from collections.abc import Mapping, Sequence
 from dataclasses import dataclass
 import json
 import math
+import re
 from typing import Any, cast
 
 from ._tool_schema import pattern_matches
@@ -11,6 +12,19 @@ from ._values import Tool, ToolCall
 
 
 _SAFE_INTEGER = 2**53 - 1
+_ECMASCRIPT_WHITESPACE = (
+    "\u0009\u000b\u000c\u0020\u00a0\u1680\u2000\u2001\u2002\u2003\u2004"
+    "\u2005\u2006\u2007\u2008\u2009\u200a\u202f\u205f\u3000\ufeff"
+    "\u000a\u000d\u2028\u2029"
+)
+_DECIMAL_NUMBER = re.compile(
+    r"^[+-]?(?:(?:[0-9]+\.[0-9]*|\.[0-9]+|[0-9]+)(?:[eE][+-]?[0-9]+)?)$"
+)
+_RADIX_NUMBERS = (
+    (re.compile(r"^0[xX][0-9a-fA-F]+$"), 16),
+    (re.compile(r"^0[bB][01]+$"), 2),
+    (re.compile(r"^0[oO][0-7]+$"), 8),
+)
 _KEYWORD_ORDER = {
     keyword: index
     for index, keyword in enumerate(
@@ -144,14 +158,40 @@ def _javascript_string(value: object) -> str | None:
     if type(value) is float:
         if value == 0.0:
             return "0"
-        if value.is_integer() and abs(value) < 1e21:
-            return str(int(value))
         token = repr(value).lower()
         if "e" in token:
             mantissa, exponent = token.split("e", 1)
-            token = f"{mantissa}e{int(exponent):+d}"
+            exponent_value = int(exponent)
+            if -6 <= exponent_value < 21:
+                digits = mantissa.replace(".", "")
+                position = 1 + exponent_value
+                if position <= 0:
+                    return f"0.{('0' * -position)}{digits}"
+                if position >= len(digits):
+                    return f"{digits}{'0' * (position - len(digits))}"
+                return f"{digits[:position]}.{digits[position:]}"
+            token = f"{mantissa.removesuffix('.0')}e{exponent_value:+d}"
+        elif token.endswith(".0"):
+            token = token[:-2]
         return token
     return None
+
+
+def _parse_javascript_number(value: str) -> float | None:
+    token = value.strip(_ECMASCRIPT_WHITESPACE)
+    if not token:
+        return None
+    for pattern, base in _RADIX_NUMBERS:
+        if pattern.fullmatch(token):
+            try:
+                number = float(int(token[2:], base))
+            except OverflowError:
+                return None
+            return number if math.isfinite(number) else None
+    if _DECIMAL_NUMBER.fullmatch(token) is None:
+        return None
+    number = float(token)
+    return number if math.isfinite(number) else None
 
 
 def _convert_primitive(value: object, schema_type: str) -> object:
@@ -162,11 +202,8 @@ def _convert_primitive(value: object, schema_type: str) -> object:
             converted_bool = 1 if value else 0
             return converted_bool if schema_type == "integer" else float(converted_bool)
         if type(value) is str and value.strip():
-            try:
-                number = float(value.strip())
-            except ValueError:
-                return value
-            if not math.isfinite(number):
+            number = _parse_javascript_number(value)
+            if number is None:
                 return value
             if schema_type == "integer":
                 if number.is_integer() and abs(number) <= _SAFE_INTEGER:
