@@ -41,12 +41,17 @@ async def _complete_run() -> dict[str, object]:
     async def emit(event: AgentEvent) -> None:
         events.append(event)
 
+    async def stream_fn(model, working, options, signal):  # type: ignore[no-untyped-def]
+        del signal
+        async for event in models.streamSimple(model, working, options):
+            yield event
+
     result = await runAgentLoop(
         (prompt,),
         context,
         AgentLoopConfig(model=model),
         emit,
-        models.streamSimple,
+        stream_fn,
     )
 
     assert tuple(event.type for event in events) == (

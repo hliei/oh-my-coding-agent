@@ -153,6 +153,66 @@
       "comparator": "rejection class and no-effect boundary plus accepted omh diagnostic expectation",
       "normalization": "ABD:redacted-deterministic-tool-validation-errors",
       "referenceCitations": ["packages/ai/src/utils/validation.ts#L232-L310"]
+    },
+    {
+      "id": "reference.low-level-loop-carriers",
+      "captureCaseId": "capture.low-level-loop-carriers",
+      "obligation": "omh-v0.low-level-loop-carriers",
+      "referenceRevision": "0e6909f050eeb15e8f6c05185511f3788357ddb3",
+      "canonicalInput": "complete equivalent no-Tool prompt and continuation Runs through stream and awaited-sink carriers",
+      "observations": {"A": "four_public_entries", "L": {"promptTerminal": "agent_end", "continuationTerminal": "agent_end"}, "T": {"streamPromptRoles": ["user", "assistant"], "streamContinuationRoles": ["assistant"], "sinkPromptRoles": ["user", "assistant"], "sinkContinuationRoles": ["assistant"]}, "E": {"modelCalls": 4}, "C": {"lazyBeforeActivation": false, "contextUnchanged": false}},
+      "omhExpectation": {"A": "four_public_entries", "L": {"promptTerminal": "agent_end", "continuationTerminal": "agent_end"}, "T": {"streamPromptRoles": ["user", "assistant"], "streamContinuationRoles": ["assistant"], "sinkPromptRoles": ["user", "assistant"], "sinkContinuationRoles": ["assistant"]}, "E": {"modelCalls": 4}, "C": {"lazyBeforeActivation": true, "contextUnchanged": true}},
+      "comparator": "prompt and continuation event grammar, result suffix roles, effect count, and caller Context after carrier normalization",
+      "normalization": "map eager Reference start to first Python awaited use and apply ABD:immutable-loop-context",
+      "referenceCitations": ["packages/agent/src/agent-loop.ts#L31-L143", "packages/agent/src/agent-loop.ts#L145-L220"]
+    },
+    {
+      "id": "reference.managed-event-stream",
+      "captureCaseId": "capture.managed-event-stream",
+      "obligation": "omh-v0.managed-event-stream",
+      "referenceRevision": "0e6909f050eeb15e8f6c05185511f3788357ddb3",
+      "canonicalInput": "observe one settled no-Tool Run with two result observers, two consumer attempts, and late consumption",
+      "observations": {"A": {"firstConsumer": "admitted", "secondConsumer": "admitted"}, "L": ["agent_start", "turn_start", "message_start", "message_end", "message_start", "message_update", "message_update", "message_update", "message_end", "turn_end", "agent_end"], "T": {"agentEndSharesIdentity": true, "resultObserversShareIdentity": true}, "E": {"producerActivations": 1}, "C": "events_partition_between_consumers"},
+      "omhExpectation": {"A": {"firstConsumer": "admitted", "secondConsumer": "consumer"}, "L": ["agent_start", "turn_start", "message_start", "message_end", "message_start", "message_update", "message_update", "message_update", "message_end", "turn_end", "agent_end"], "T": {"agentEndSharesIdentity": true, "resultObserversShareIdentity": true}, "E": {"producerActivations": 1}, "C": "late_consumer_drained_terminal_fifo"},
+      "comparator": "sole-consumer FIFO and terminal identity compare directly; the second-consumer admission and cleanup carrier use the accepted deviation",
+      "normalization": "ABD:managed-event-stream",
+      "referenceCitations": ["packages/ai/src/utils/event-stream.ts#L4-L66", "packages/agent/src/agent-loop.ts#L31-L53"]
+    },
+    {
+      "id": "reference.readonly-abort-signal",
+      "captureCaseId": "capture.readonly-abort-signal",
+      "obligation": "omh-v0.readonly-abort-signal",
+      "referenceRevision": "0e6909f050eeb15e8f6c05185511f3788357ddb3",
+      "canonicalInput": "retain four normally settled per-Run signals and cancel one observation waiter",
+      "observations": {"A": "externally_constructible_observer", "L": [], "T": {"cancelledWaiterLocal": true, "normalSignalsAborted": [false, false, false, false], "publicMembers": ["aborted", "reason", "throwIfAborted", "addEventListener"], "sameRunIdentity": true}, "E": [], "C": "retained_normal_signal_false"},
+      "omhExpectation": {"A": "factory_produced_observer", "L": [], "T": {"cancelledWaiterLocal": true, "normalSignalsAborted": [false, false, false, false], "publicMembers": ["aborted", "wait"], "sameRunIdentity": true}, "E": [], "C": "retained_normal_signal_false"},
+      "comparator": "aborted state, waiter completion, and per-Run identity after mapping the Reference listener carrier to Python wait",
+      "normalization": "PA:readonly-abort-signal",
+      "referenceCitations": ["packages/agent/src/agent.ts#L304-L320", "packages/agent/src/agent.ts#L469-L490"]
+    },
+    {
+      "id": "reference.awaited-event-sink",
+      "captureCaseId": "capture.awaited-event-sink",
+      "obligation": "omh-v0.awaited-event-sink",
+      "referenceRevision": "0e6909f050eeb15e8f6c05185511f3788357ddb3",
+      "canonicalInput": "block an async low-level event sink before Model start and fail another sink at the same boundary",
+      "observations": {"A": "sync_or_promise", "L": "each_event_barrier", "T": {"failureCode": "generic_error", "noPartialResult": true}, "E": {"modelBlockedBehindSink": true, "failedSinkStartedModel": false}, "C": "rejection_without_managed_classification"},
+      "omhExpectation": {"A": "sync_or_awaitable", "L": "each_event_barrier", "T": {"failureCode": "event_sink", "noPartialResult": true}, "E": {"modelBlockedBehindSink": true, "failedSinkStartedModel": false}, "C": "owned_work_settled_before_raise"},
+      "comparator": "barrier ordering and effect cutoff compare directly; typed failure and owned cleanup use the accepted callback deviation",
+      "normalization": "ABD:managed-lifecycle-callbacks",
+      "referenceCitations": ["packages/agent/src/agent-loop.ts#L64-L117", "packages/agent/src/agent-loop.ts#L145-L220"]
+    },
+    {
+      "id": "reference.closed-lifecycle-error-carrier",
+      "captureCaseId": "capture.closed-lifecycle-error-carrier",
+      "obligation": "omh-v0.closed-lifecycle-error-carrier",
+      "referenceRevision": "0e6909f050eeb15e8f6c05185511f3788357ddb3",
+      "canonicalInput": "raise one canary exception from an awaited AgentEventSink",
+      "observations": {"A": "generic_error", "L": [], "T": {"class": "Error", "code": null, "orderedCauseCount": 0, "standardCause": false}, "E": [], "C": "message_or_identity_classification"},
+      "omhExpectation": {"A": "closed_code", "L": [], "T": {"class": "LifecycleError", "code": "event_sink", "orderedCauseCount": 1, "standardCause": true}, "E": [], "C": "classification_without_message_parsing"},
+      "comparator": "map the Reference generic rejection at the same lifecycle boundary to the selected Python code and cause chain",
+      "normalization": "PA:closed-lifecycle-error-carrier",
+      "referenceCitations": ["packages/agent/src/agent-loop.ts#L64-L117", "packages/agent/src/agent.ts#L520-L573"]
     }
   ]
 }

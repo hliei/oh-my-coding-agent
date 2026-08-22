@@ -7,7 +7,9 @@ from ._faux import (
     fauxText,
     fauxToolCall,
 )
+from ._errors import LifecycleError, LifecycleErrorCode
 from ._models import Model, Models, MutableModels, Provider, createModels
+from ._streams import AbortSignal, EventStream
 from ._tool_validation import validateToolArguments, validateToolCall
 from ._values import (
     AssistantMessage,
@@ -36,6 +38,7 @@ from ._values import (
 
 
 __all__ = (
+    "AbortSignal",
     "AssistantMessage",
     "AssistantMessageDoneEvent",
     "AssistantMessageErrorEvent",
@@ -48,10 +51,13 @@ __all__ = (
     "AssistantMessageToolCallEndEvent",
     "AssistantMessageToolCallStartEvent",
     "Context",
+    "EventStream",
     "FauxProviderHandle",
     "FauxResponseFactory",
     "FauxResponseStep",
     "JSONValue",
+    "LifecycleError",
+    "LifecycleErrorCode",
     "Message",
     "Model",
     "Models",

@@ -157,6 +157,66 @@
       "evidenceClass": "ABD:redacted-deterministic-tool-validation-errors",
       "corpusCase": "reference.redacted-tool-validation-errors",
       "executableCases": ["ticket-03-tools", "ticket-03-installed"]
+    },
+    {
+      "id": "omh-v0.low-level-loop-carriers",
+      "authority": ".scratch/omh-v0/issues/04-choose-async-stream-cancellation-contract.md#PA:python-async-resource-carriers",
+      "publicInterface": "oh_my_core.agentLoop, agentLoopContinue, runAgentLoop, and runAgentLoopContinue",
+      "scenario": "construct all four low-level entries, observe pre-activation state, and complete prompt and continuation Runs",
+      "observations": {"A": "four explicit Model and StreamFn entries", "L": "prompt and continuation terminal traces", "T": "immutable Run suffix", "E": "one Model effect per activation", "C": "caller Context unchanged"},
+      "comparator": "compare prompt and continuation traces after normalizing eager Reference calls to first Python awaited use",
+      "normalization": "PA:python-async-resource-carriers plus immutable tuple carrier normalization",
+      "evidenceClass": "PA:python-async-resource-carriers",
+      "corpusCase": "reference.low-level-loop-carriers",
+      "executableCases": ["ticket-04-streams", "ticket-04-installed"]
+    },
+    {
+      "id": "omh-v0.managed-event-stream",
+      "authority": ".scratch/omh-v0/issues/04-choose-async-stream-cancellation-contract.md#ABD:managed-event-stream",
+      "publicInterface": "oh_my_llm.EventStream",
+      "scenario": "activate once through independent result observers, reject a second consumer, and drain the retained terminal FIFO late",
+      "observations": {"A": "one consumer right", "L": "lossless FIFO through terminal", "T": "shared terminal identity", "E": "one producer activation", "C": "managed close and retained result"},
+      "comparator": "compare the sole-consumer trace directly and apply the accepted second-consumer and managed-cleanup difference",
+      "normalization": "ABD:managed-event-stream",
+      "evidenceClass": "ABD:managed-event-stream",
+      "corpusCase": "reference.managed-event-stream",
+      "executableCases": ["ticket-04-streams", "ticket-04-installed"]
+    },
+    {
+      "id": "omh-v0.readonly-abort-signal",
+      "authority": ".scratch/omh-v0/issues/04-choose-async-stream-cancellation-contract.md#PA:readonly-abort-signal",
+      "publicInterface": "oh_my_llm.AbortSignal",
+      "scenario": "observe one owner-produced signal per Run, cancel one waiter, and retain signals after normal settlement",
+      "observations": {"A": "factory-produced observer", "L": "waiter-local cancellation", "T": "read-only monotonic signal", "E": "no observer effect", "C": "normal retained signal remains false"},
+      "comparator": "map Reference aborted observation and one-shot listener completion to Python property access and wait",
+      "normalization": "PA:readonly-abort-signal",
+      "evidenceClass": "PA:readonly-abort-signal",
+      "corpusCase": "reference.readonly-abort-signal",
+      "executableCases": ["ticket-04-streams", "ticket-04-installed"]
+    },
+    {
+      "id": "omh-v0.awaited-event-sink",
+      "authority": ".scratch/omh-v0/issues/04-choose-async-stream-cancellation-contract.md#ABD:managed-lifecycle-callbacks",
+      "publicInterface": "oh_my_core.AgentEventSink through runAgentLoop and runAgentLoopContinue",
+      "scenario": "block one sink barrier before Model effect and fail another sink before any later event or effect",
+      "observations": {"A": "sync or awaitable callback", "L": "one awaited barrier per event", "T": "typed failure with no partial result", "E": "no effect past a blocked or failed sink", "C": "owned work settles before raise"},
+      "comparator": "compare awaited event order and apply the managed callback failure and cleanup ownership difference",
+      "normalization": "ABD:managed-lifecycle-callbacks",
+      "evidenceClass": "ABD:managed-lifecycle-callbacks",
+      "corpusCase": "reference.awaited-event-sink",
+      "executableCases": ["ticket-04-streams", "ticket-04-installed"]
+    },
+    {
+      "id": "omh-v0.closed-lifecycle-error-carrier",
+      "authority": ".scratch/omh-v0/issues/05-choose-values-schemas-errors-contract.md#PA:closed-lifecycle-error-carrier",
+      "publicInterface": "oh_my_llm.LifecycleError and LifecycleErrorCode",
+      "scenario": "classify one failed event sink with an ordered retained cause without parsing message text",
+      "observations": {"A": "closed code", "L": "not_applicable", "T": "final typed error and ordered causes", "E": "not_applicable", "C": "standard first-cause chaining"},
+      "comparator": "map the Reference generic callback Error to the selected closed Python lifecycle classification",
+      "normalization": "PA:closed-lifecycle-error-carrier",
+      "evidenceClass": "PA:closed-lifecycle-error-carrier",
+      "corpusCase": "reference.closed-lifecycle-error-carrier",
+      "executableCases": ["ticket-04-streams", "ticket-04-installed"]
     }
   ]
 }

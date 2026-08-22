@@ -6,7 +6,10 @@ from ._loop import (
     AgentMessage,
     StreamFn,
     ToolExecutionMode,
+    agentLoop,
+    agentLoopContinue,
     runAgentLoop,
+    runAgentLoopContinue,
 )
 from ._tools import AgentTool, AgentToolResult, AgentToolUpdateCallback
 
@@ -19,7 +22,10 @@ __all__ = (
     "AgentMessage",
     "StreamFn",
     "ToolExecutionMode",
+    "agentLoop",
+    "agentLoopContinue",
     "runAgentLoop",
+    "runAgentLoopContinue",
     "AgentTool",
     "AgentToolResult",
     "AgentToolUpdateCallback",

@@ -93,6 +93,12 @@ def test_installed_wheel_completes_tool_schema_and_callable_values(
     _assert_installed_scenario(installed_python, "ticket_03_scenario.py")
 
 
+def test_installed_wheel_owns_streams_and_four_low_level_loops(
+    installed_python: Path,
+) -> None:
+    _assert_installed_scenario(installed_python, "ticket_04_scenario.py")
+
+
 def test_first_conformance_authorities_are_closed_and_linked() -> None:
     matrix = json.loads((ROOT / "conformance/obligation-matrix.json").read_text())
     corpus = json.loads((ROOT / "conformance/reference-observation-corpus.json").read_text())
