@@ -283,6 +283,29 @@
       "comparator": "object identity for AgentEnd/result per carrier and value identity for retained input Context",
       "normalization": "ABD:immutable-loop-context",
       "referenceCitations": ["packages/agent/src/agent-loop.ts#L89-L110", "packages/agent/src/agent-loop.ts#L135-L141", "packages/agent/src/agent-loop.ts#L251-L255"]
+    },
+    {
+      "id": "reference.strict-tool-call-correlation",
+      "captureCaseId": "capture.strict-tool-call-correlation",
+      "obligation": "omh-v0.strict-tool-call-correlation",
+      "referenceRevision": "0e6909f050eeb15e8f6c05185511f3788357ddb3",
+      "canonicalInput": "run Tool Call ids duplicate, unique, duplicate, and empty with one matching Tool in parallel and sequential modes",
+      "observations": {"parallel": {"preparedValues": [1, 2, 3, 4], "executedIds": ["duplicate", "unique", "duplicate", ""], "resultIds": ["duplicate", "unique", "duplicate", ""], "resultErrors": [false, false, false, false], "resultTexts": ["ok:duplicate", "ok:unique", "ok:duplicate", "ok:"], "providerCalls": 2}, "sequential": {"preparedValues": [1, 2, 3, 4], "executedIds": ["duplicate", "unique", "duplicate", ""], "resultIds": ["duplicate", "unique", "duplicate", ""], "resultErrors": [false, false, false, false], "resultTexts": ["ok:duplicate", "ok:unique", "ok:duplicate", "ok:"], "providerCalls": 2}},
+      "omhExpectation": {"parallel": {"preparedValues": [2], "executedIds": ["unique"], "resultIds": ["duplicate", "unique", "duplicate", ""], "resultErrors": [true, false, true, true], "resultTexts": ["Tool call id \"duplicate\" is duplicated in one assistant message", "ok:unique", "Tool call id \"duplicate\" is duplicated in one assistant message", "Tool call id must not be empty"], "providerCalls": 2}, "sequential": {"preparedValues": [2], "executedIds": ["unique"], "resultIds": ["duplicate", "unique", "duplicate", ""], "resultErrors": [true, false, true, true], "resultTexts": ["Tool call id \"duplicate\" is duplicated in one assistant message", "ok:unique", "Tool call id \"duplicate\" is duplicated in one assistant message", "Tool call id must not be empty"], "providerCalls": 2}},
+      "comparator": "compare the unrelated unique outcome and ordered correlation, then contrast Reference execution of invalid ids with omh rejection",
+      "normalization": "ABD:strict-tool-call-correlation",
+      "referenceCitations": ["packages/agent/src/agent-loop.ts#L413-L550", "packages/agent/src/agent-loop.ts#L602-L665", "packages/agent/src/agent.ts#L542-L553"]
+    },
+    {
+      "id": "reference.deterministic-tool-batch-control",
+      "captureCaseId": "capture.deterministic-tool-batch-control",
+      "obligation": "omh-v0.deterministic-tool-batch-control",
+      "referenceRevision": "0e6909f050eeb15e8f6c05185511f3788357ddb3",
+      "canonicalInput": "run one two-Call length-truncated batch followed by recovery and one two-Call batch whose successful final outcomes both terminate",
+      "observations": {"truncated": {"toolEffects": 0, "resultIds": ["first", "second"], "allErrors": true, "providerCalls": 2}, "unanimousTermination": {"providerCalls": 1, "resultIds": ["first", "second"], "roles": ["user", "assistant", "toolResult", "toolResult"], "turnEndedBeforeAgent": true}},
+      "comparator": "Tool effect count, source-ordered result ids, Provider call count, Run roles, and terminal event order",
+      "normalization": "ignore timestamps and async carrier mechanics",
+      "referenceCitations": ["packages/agent/src/agent-loop.ts#L376-L407", "packages/agent/src/agent-loop.ts#L491-L555", "packages/agent/src/agent-loop.ts#L789-L792"]
     }
   ]
 }

@@ -531,8 +531,13 @@ async def _run_agent_loop_body(
             await _emit(emit, TurnEnd(message=response, toolResults=()))
             break
 
-        tool_results = await _process_tool_calls(
-            tool_calls, context.tools, emit, signal
+        tool_results, terminate = await _process_tool_calls(
+            tool_calls,
+            context.tools,
+            config.toolExecution,
+            emit,
+            signal,
+            truncated=response.stopReason == "length",
         )
         for tool_result in tool_results:
             await _emit(emit, MessageStart(message=tool_result))
@@ -540,6 +545,8 @@ async def _run_agent_loop_body(
             produced.append(tool_result)
         working_messages = (*working_messages, *tool_results)
         await _emit(emit, TurnEnd(message=response, toolResults=tool_results))
+        if terminate:
+            break
 
     result = tuple(produced)
     control.terminalCommitted = True
@@ -566,11 +573,15 @@ def _tool_failure_result(text: str) -> AgentToolResult:
 async def _process_tool_calls(
     calls: list[ToolCall],
     tools: tuple[AgentTool, ...] | None,
+    execution_mode: ToolExecutionMode,
     emit: AgentEventSink,
     signal: AbortSignal,
-) -> tuple[ToolResultMessage, ...]:
+    *,
+    truncated: bool,
+) -> tuple[tuple[ToolResultMessage, ...], bool]:
+    correlation_failures = _scan_tool_call_ids(calls)
     attempts: list[_ToolAttempt] = []
-    for call in calls:
+    for call, correlation_failure in zip(calls, correlation_failures, strict=True):
         await _emit(
             emit,
             ToolExecutionStart(
@@ -579,24 +590,42 @@ async def _process_tool_calls(
                 args=call.arguments,
             ),
         )
-        attempts.append(_preflight_tool_call(call, tools))
+        if correlation_failure is None:
+            attempts.append(
+                _truncated_tool_attempt(call)
+                if truncated
+                else _preflight_tool_call(call, tools)
+            )
+        else:
+            attempts.append(
+                _ToolAttempt(
+                    call=call,
+                    tool=None,
+                    params=None,
+                    failure=correlation_failure,
+                )
+            )
+
+    sequential = execution_mode == "sequential" or any(
+        attempt.tool is not None and attempt.tool.executionMode == "sequential"
+        for attempt in attempts
+    )
+    if sequential:
+        settlements = tuple(
+            [await _settle_tool_attempt(attempt, signal, emit) for attempt in attempts]
+        )
+    else:
+        settlements = tuple(
+            await asyncio.gather(
+                *(
+                    _settle_tool_attempt(attempt, signal, emit)
+                    for attempt in attempts
+                )
+            )
+        )
 
     results: list[ToolResultMessage] = []
-    for attempt in attempts:
-        if attempt.failure is not None:
-            result = attempt.failure
-            is_error = True
-        else:
-            result, is_error = await _execute_tool_attempt(attempt, signal, emit)
-        await _emit(
-            emit,
-            ToolExecutionEnd(
-                toolCallId=attempt.call.id,
-                toolName=attempt.call.name,
-                result=result,
-                isError=is_error,
-            ),
-        )
+    for attempt, (result, is_error) in zip(attempts, settlements, strict=True):
         results.append(
             ToolResultMessage(
                 toolCallId=attempt.call.id,
@@ -607,7 +636,62 @@ async def _process_tool_calls(
                 timestamp=0,
             )
         )
-    return tuple(results)
+    terminate = all(
+        not is_error and result.terminate is True
+        for result, is_error in settlements
+    )
+    return tuple(results), terminate
+
+
+def _truncated_tool_attempt(call: ToolCall) -> _ToolAttempt:
+    return _ToolAttempt(
+        call=call,
+        tool=None,
+        params=None,
+        failure=_tool_failure_result(
+            f"Tool call {_quote(call.name)} was not executed: the response hit the "
+            "output token limit, so its arguments may be truncated. Re-issue the tool "
+            "call with complete arguments."
+        ),
+    )
+
+
+async def _settle_tool_attempt(
+    attempt: _ToolAttempt,
+    signal: AbortSignal,
+    emit: AgentEventSink,
+) -> tuple[AgentToolResult, bool]:
+    if attempt.failure is not None:
+        result = attempt.failure
+        is_error = True
+    else:
+        result, is_error = await _execute_tool_attempt(attempt, signal, emit)
+    await _emit(
+        emit,
+        ToolExecutionEnd(
+            toolCallId=attempt.call.id,
+            toolName=attempt.call.name,
+            result=result,
+            isError=is_error,
+        ),
+    )
+    return result, is_error
+
+
+def _scan_tool_call_ids(calls: list[ToolCall]) -> tuple[AgentToolResult | None, ...]:
+    counts: dict[str, int] = {}
+    for call in calls:
+        counts[call.id] = counts.get(call.id, 0) + 1
+    return tuple(
+        _tool_failure_result("Tool call id must not be empty")
+        if not call.id
+        else _tool_failure_result(
+            f"Tool call id {_quote(call.id)} is duplicated in one assistant message"
+        )
+        if counts[call.id] > 1
+        else None
+        for call in calls
+    )
 
 
 def _preflight_tool_call(

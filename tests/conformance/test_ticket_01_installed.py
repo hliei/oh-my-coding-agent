@@ -105,6 +105,12 @@ def test_installed_wheel_executes_one_validated_tool_turn(
     _assert_installed_scenario(installed_python, "ticket_05_scenario.py")
 
 
+def test_installed_wheel_settles_deterministic_tool_batches(
+    installed_python: Path,
+) -> None:
+    _assert_installed_scenario(installed_python, "ticket_06_scenario.py")
+
+
 def test_first_conformance_authorities_are_closed_and_linked() -> None:
     matrix = json.loads((ROOT / "conformance/obligation-matrix.json").read_text())
     corpus = json.loads((ROOT / "conformance/reference-observation-corpus.json").read_text())

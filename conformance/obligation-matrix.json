@@ -289,6 +289,30 @@
       "evidenceClass": "ABD:immutable-loop-context",
       "corpusCase": "reference.tool-turn-projection-identity",
       "executableCases": ["ticket-05-tool-turn", "ticket-05-installed"]
+    },
+    {
+      "id": "omh-v0.strict-tool-call-correlation",
+      "authority": ".scratch/omh-v0/issues/07-choose-agent-loop-and-tool-lifecycle.md#ABD:strict-tool-call-correlation",
+      "publicInterface": "oh_my_core.runAgentLoop Tool batch correlation",
+      "scenario": "run duplicate, unique, duplicate, and empty Tool Call ids in both parallel and sequential modes",
+      "observations": {"A": "empty and every duplicate occurrence rejected independently", "L": "source-ordered start/end and Result association", "T": "stable correlation Tool Failures", "E": "only the unrelated unique callable executes", "C": "complete Results feed a later Model Turn and ids are reusable after settlement"},
+      "comparator": "compare unique calls directly and apply the accepted empty/duplicate rejection, effect-set, and recovery difference",
+      "normalization": "ABD:strict-tool-call-correlation in each execution mode",
+      "evidenceClass": "ABD:strict-tool-call-correlation",
+      "corpusCase": "reference.strict-tool-call-correlation",
+      "executableCases": ["ticket-06-tool-batches", "ticket-06-installed"]
+    },
+    {
+      "id": "omh-v0.deterministic-tool-batch-control",
+      "authority": ".scratch/omh-v0/issues/07-choose-agent-loop-and-tool-lifecycle.md#tool-admission-execution-and-projection",
+      "publicInterface": "oh_my_core.runAgentLoop Tool batch settlement",
+      "scenario": "recover a two-Call length-truncated batch and terminate a two-Call unanimously terminating batch",
+      "observations": {"A": "two nonempty Tool batches admitted", "L": "all Results project in Assistant source order before Turn and Agent settlement", "T": "truncation continues and unanimous true outcomes terminate", "E": "zero truncated Tool effects and no post-termination Model effect", "C": "recoverable truncation reaches a later Model Turn"},
+      "comparator": "ordered Tool Result ids, effect counts, Provider calls, and terminal Run roles",
+      "normalization": "ignore timestamps and async carrier mechanics; preserve source order and termination intent",
+      "evidenceClass": "exact-parity",
+      "corpusCase": "reference.deterministic-tool-batch-control",
+      "executableCases": ["ticket-06-tool-batches", "ticket-06-installed"]
     }
   ]
 }
