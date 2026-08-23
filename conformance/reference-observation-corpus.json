@@ -306,6 +306,76 @@
       "comparator": "Tool effect count, source-ordered result ids, Provider call count, Run roles, and terminal event order",
       "normalization": "ignore timestamps and async carrier mechanics",
       "referenceCitations": ["packages/agent/src/agent-loop.ts#L376-L407", "packages/agent/src/agent-loop.ts#L491-L555", "packages/agent/src/agent-loop.ts#L789-L792"]
+    },
+    {
+      "id": "reference.agent-public-surface",
+      "captureCaseId": "capture.agent-public-surface",
+      "obligation": "omh-v0.agent-public-surface",
+      "referenceRevision": "0e6909f050eeb15e8f6c05185511f3788357ddb3",
+      "canonicalInput": "construct Agent from owned seed state and inspect published members",
+      "observations": {"A": "admitted", "C": "not_applicable", "E": [], "L": [], "T": {"continueIsCallable": true, "exported": ["Agent", "AgentOptions", "AgentState"], "hasContinueAlias": true, "members": ["abort", "continue", "prompt", "reset", "signal", "state", "subscribe", "waitForIdle"]}},
+      "omhExpectation": {"A": "admitted", "C": "not_applicable", "E": [], "L": [], "T": {"continueIsCallable": true, "exported": ["Agent", "AgentOptions", "AgentState"], "hasContinueAlias": false, "members": ["abort", "continue_", "prompt", "reset", "signal", "state", "subscribe", "waitForIdle"]}},
+      "comparator": "normalize only omh continue_ to Reference continue when comparing the public member name",
+      "normalization": "PA:python-illegal-identifier",
+      "referenceCitations": ["packages/agent/src/index.ts#L1-L4", "packages/agent/src/agent.ts#L347-L375"]
+    },
+    {
+      "id": "reference.strict-agent-run-admission",
+      "captureCaseId": "capture.strict-agent-run-admission",
+      "obligation": "omh-v0.strict-agent-run-admission",
+      "referenceRevision": "0e6909f050eeb15e8f6c05185511f3788357ddb3",
+      "canonicalInput": "empty sequence, assistant-tail prompt, non-message carrier, and overlapping busy prompt",
+      "observations": {"A": {"assistantTail": "admitted", "busy": "busy", "carrier": "type_error", "emptySequence": "admitted"}, "C": "later_busy_run_settled", "E": {"idleProviderCalls": 1}, "L": [], "T": {"busyStreamCalls": 1, "unchangedIdleHistory": false}},
+      "omhExpectation": {"A": {"assistantTail": "value_error", "busy": "busy", "carrier": "type_error", "emptySequence": "value_error"}, "C": "later_busy_run_settled", "E": {"idleProviderCalls": 0}, "L": [], "T": {"busyStreamCalls": 1, "unchangedIdleHistory": true}},
+      "comparator": "valid and busy inputs compare directly; empty-sequence and assistant-tail fixtures contrast Reference admission with omh rejection before effect",
+      "normalization": "ABD:strict-agent-run-admission",
+      "referenceCitations": ["packages/agent/src/agent-loop.ts#L31-L118", "packages/agent/src/agent.ts#L334-L345"]
+    },
+    {
+      "id": "reference.owned-agent-state-mutation",
+      "captureCaseId": "capture.owned-agent-state-mutation",
+      "obligation": "omh-v0.owned-agent-state-mutation",
+      "referenceRevision": "0e6909f050eeb15e8f6c05185511f3788357ddb3",
+      "canonicalInput": "copy one seed into Agent state, complete a prompt, idle-reset, and assign systemPrompt while a second Agent is busy",
+      "observations": {"A": "idle_reset_admitted", "C": "reuse_ready", "E": {"providerCalls": 1}, "L": [], "T": {"busyAssign": "mutated", "busyUnchanged": false, "errorCleared": true, "hadHistory": true, "messagesAfterReset": 0, "promptPreserved": "kept", "sameStateIdentity": true, "seedIsolated": true}},
+      "omhExpectation": {"A": "idle_reset_admitted", "C": "reuse_ready", "E": {"providerCalls": 1}, "L": [], "T": {"busyAssign": "busy", "busyUnchanged": true, "errorCleared": true, "hadHistory": true, "messagesAfterReset": 0, "promptPreserved": "kept", "sameStateIdentity": true, "seedIsolated": true}},
+      "comparator": "idle replacement and reset after normalizing Reference arrays to omh tuples",
+      "normalization": "ABD:owned-agent-state-mutation",
+      "referenceCitations": ["packages/agent/src/agent.ts#L60-L93", "packages/agent/src/agent.ts#L246-L253", "packages/agent/src/agent.ts#L323-L332"]
+    },
+    {
+      "id": "reference.agent-low-level-semantic-identity",
+      "captureCaseId": "capture.agent-low-level-semantic-identity",
+      "obligation": "omh-v0.agent-low-level-semantic-identity",
+      "referenceRevision": "0e6909f050eeb15e8f6c05185511f3788357ddb3",
+      "canonicalInput": "one User prompt and one Faux text Assistant through runAgentLoop and Agent",
+      "observations": {"A": "admitted", "C": "agent_history_is_reduction_suffix", "E": {"providerCalls": 2}, "L": {"idleAfterPrompt": true, "streamingDuringAgentEnd": true}, "T": {"eventTypesEqual": true, "roles": ["user", "assistant"], "suffixEqualsLowLevel": true}},
+      "comparator": "event types and Run-suffix values after async-carrier normalization",
+      "normalization": "ignore timestamps, token estimates, and async carrier mechanics",
+      "referenceCitations": ["packages/agent/src/agent-loop.ts#L89-L110", "packages/agent/src/agent.ts#L481-L490", "packages/agent/src/agent.ts#L527-L565"]
+    },
+    {
+      "id": "reference.distinct-listener-registrations",
+      "captureCaseId": "capture.distinct-listener-registrations",
+      "obligation": "omh-v0.distinct-listener-registrations",
+      "referenceRevision": "0e6909f050eeb15e8f6c05185511f3788357ddb3",
+      "canonicalInput": "subscribe one callable twice, unsubscribe the second record during agent_start, and subscribe a late listener",
+      "observations": {"A": "duplicate_callable_registered_twice", "C": "unsubscribe_removed_only_own_record", "E": {"providerCalls": 2}, "L": {"order": ["shared", "mutator", "mutator", "late"]}, "T": []},
+      "omhExpectation": {"A": "duplicate_callable_registered_twice", "C": "unsubscribe_removed_only_own_record", "E": {"providerCalls": 2}, "L": {"order": ["shared", "shared", "mutator", "mutator", "late"]}, "T": []},
+      "comparator": "ordinary unique-callable subscriptions compare directly; the duplicate fixture contrasts Reference Set coalescing with omh independent records",
+      "normalization": "ABD:distinct-listener-registrations",
+      "referenceCitations": ["packages/agent/src/agent.ts#L241-L243"]
+    },
+    {
+      "id": "reference.agent-ordinary-model-error",
+      "captureCaseId": "capture.agent-ordinary-model-error",
+      "obligation": "omh-v0.agent-ordinary-model-error",
+      "referenceRevision": "0e6909f050eeb15e8f6c05185511f3788357ddb3",
+      "canonicalInput": "custom streamFn raises on the first prompt then succeeds on a caller-started second prompt",
+      "observations": {"A": "ordinary_model_error_admitted", "C": "fresh_run_after_error", "E": {"streamCalls": 2}, "L": [], "T": {"errorMessage": "Model stream failed", "recovered": true, "secretLeaked": false, "stateErrorAfterFailure": "Model stream failed", "stateErrorAfterReuse": null, "stopReason": "error"}},
+      "comparator": "stop reason, redacted public error text, secret absence, state error field, and reuse",
+      "normalization": "ignore timestamps; compare the selected redacted public Model-stream message rather than raw exception text",
+      "referenceCitations": ["packages/agent/src/agent-loop.ts#L178-L208", "packages/agent/src/agent.ts#L481-L490"]
     }
   ]
 }

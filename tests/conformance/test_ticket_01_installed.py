@@ -111,6 +111,12 @@ def test_installed_wheel_settles_deterministic_tool_batches(
     _assert_installed_scenario(installed_python, "ticket_06_scenario.py")
 
 
+def test_installed_wheel_makes_agent_stateful_and_reusable(
+    installed_python: Path,
+) -> None:
+    _assert_installed_scenario(installed_python, "ticket_07_scenario.py")
+
+
 def test_first_conformance_authorities_are_closed_and_linked() -> None:
     matrix = json.loads((ROOT / "conformance/obligation-matrix.json").read_text())
     corpus = json.loads((ROOT / "conformance/reference-observation-corpus.json").read_text())

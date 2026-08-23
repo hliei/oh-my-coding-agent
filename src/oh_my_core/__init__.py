@@ -1,3 +1,4 @@
+from ._agent import Agent, AgentOptions, AgentState
 from ._loop import (
     AgentContext,
     AgentEvent,
@@ -15,11 +16,14 @@ from ._tools import AgentTool, AgentToolResult, AgentToolUpdateCallback
 
 
 __all__ = (
+    "Agent",
     "AgentContext",
     "AgentEvent",
     "AgentEventSink",
     "AgentLoopConfig",
     "AgentMessage",
+    "AgentOptions",
+    "AgentState",
     "StreamFn",
     "ToolExecutionMode",
     "agentLoop",

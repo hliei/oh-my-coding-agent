@@ -313,6 +313,78 @@
       "evidenceClass": "exact-parity",
       "corpusCase": "reference.deterministic-tool-batch-control",
       "executableCases": ["ticket-06-tool-batches", "ticket-06-installed"]
+    },
+    {
+      "id": "omh-v0.agent-public-surface",
+      "authority": ".scratch/omh-v0/issues/03-choose-public-python-interface.md#PA:python-illegal-identifier",
+      "publicInterface": "oh_my_core.Agent, AgentOptions, and AgentState",
+      "scenario": "construct Agent from owned seed state and inspect the published members",
+      "observations": {"A": "admitted", "L": "not_applicable", "T": "selected members including continue_", "E": "not_applicable", "C": "not_applicable"},
+      "comparator": "normalize only omh continue_ to Reference continue when comparing the public member name",
+      "normalization": "PA:python-illegal-identifier",
+      "evidenceClass": "PA:python-illegal-identifier",
+      "corpusCase": "reference.agent-public-surface",
+      "executableCases": ["ticket-07-agent", "ticket-07-installed"]
+    },
+    {
+      "id": "omh-v0.strict-agent-run-admission",
+      "authority": ".scratch/omh-v0/issues/07-choose-agent-loop-and-tool-lifecycle.md#ABD:strict-agent-run-admission",
+      "publicInterface": "oh_my_core.Agent.prompt and Agent.continue_",
+      "scenario": "reject empty sequences, assistant tails, carrier misuse, and busy prompt before Run identity or effect",
+      "observations": {"A": "empty sequence and assistant tail rejected; busy is LifecycleError busy", "L": "empty", "T": "unchanged idle history", "E": "zero idle Provider calls", "C": "later busy Run settles"},
+      "comparator": "valid inputs compare directly; invalid fixtures compare Reference admission or later Provider path with omh ValueError/TypeError, empty effect trace, and unchanged state",
+      "normalization": "ABD:strict-agent-run-admission; existing busy and continuation rejection remain direct parity",
+      "evidenceClass": "ABD:strict-agent-run-admission",
+      "corpusCase": "reference.strict-agent-run-admission",
+      "executableCases": ["ticket-07-agent", "ticket-07-installed"]
+    },
+    {
+      "id": "omh-v0.owned-agent-state-mutation",
+      "authority": ".scratch/omh-v0/issues/07-choose-agent-loop-and-tool-lifecycle.md#ABD:owned-agent-state-mutation",
+      "publicInterface": "oh_my_core.Agent.state and Agent.reset",
+      "scenario": "copy seed into one live state identity, replace idle configuration, and reset history",
+      "observations": {"A": "idle reset admitted", "L": "not_applicable", "T": "isolated seed, preserved prompt, cleared messages and error; busy assignment rejected", "E": "one Provider call before reset", "C": "reuse ready"},
+      "comparator": "idle replacement and reset compare after normalizing Reference arrays to omh tuples; busy fixtures compare Reference live mutation with omh empty mutation plus typed busy rejection",
+      "normalization": "ABD:owned-agent-state-mutation",
+      "evidenceClass": "ABD:owned-agent-state-mutation",
+      "corpusCase": "reference.owned-agent-state-mutation",
+      "executableCases": ["ticket-07-agent", "ticket-07-installed"]
+    },
+    {
+      "id": "omh-v0.agent-low-level-semantic-identity",
+      "authority": ".scratch/omh-v0/issues/07-choose-agent-loop-and-tool-lifecycle.md#context-ownership-and-results",
+      "publicInterface": "oh_my_core.Agent and runAgentLoop",
+      "scenario": "run the same User prompt through runAgentLoop and Agent and compare events, suffix, and streaming-through-end",
+      "observations": {"A": "admitted", "L": "streaming remains true during agent_end then idle", "T": "value-equal Run suffix and event types", "E": "two Provider calls", "C": "Agent history is the reduction suffix"},
+      "comparator": "event types and Run-suffix values after async-carrier normalization",
+      "normalization": "ignore timestamps, token estimates, and async carrier mechanics",
+      "evidenceClass": "exact-parity",
+      "corpusCase": "reference.agent-low-level-semantic-identity",
+      "executableCases": ["ticket-07-agent", "ticket-07-installed"]
+    },
+    {
+      "id": "omh-v0.distinct-listener-registrations",
+      "authority": ".scratch/omh-v0/issues/04-choose-async-stream-cancellation-contract.md#ABD:distinct-listener-registrations",
+      "publicInterface": "oh_my_core.Agent.subscribe",
+      "scenario": "register one callable twice, unsubscribe one record during dispatch, and subscribe a late listener",
+      "observations": {"A": "duplicate callable registered twice", "L": "two shared starts then mutator; second run mutator then late", "T": "not_applicable", "E": "two Provider calls", "C": "unsubscribe removed only its own record"},
+      "comparator": "ordinary unique-callable subscriptions compare directly; the duplicate fixture contrasts Reference Set coalescing with omh independent records",
+      "normalization": "ABD:distinct-listener-registrations",
+      "evidenceClass": "ABD:distinct-listener-registrations",
+      "corpusCase": "reference.distinct-listener-registrations",
+      "executableCases": ["ticket-07-agent", "ticket-07-installed"]
+    },
+    {
+      "id": "omh-v0.agent-ordinary-model-error",
+      "authority": ".scratch/omh-v0/issues/07-choose-agent-loop-and-tool-lifecycle.md#model-turn-and-ordinary-error",
+      "publicInterface": "oh_my_core.Agent.prompt",
+      "scenario": "throw from streamFn, observe one error Assistant, then start a fresh prompt",
+      "observations": {"A": "ordinary model error admitted", "L": "not_applicable", "T": "error Assistant with redacted text and later recovered message", "E": "two stream calls and no retry", "C": "fresh Run after error"},
+      "comparator": "stop reason, redacted public error text, secret absence, state error field, and reuse",
+      "normalization": "ignore timestamps; compare the selected redacted public Model-stream message rather than raw exception text",
+      "evidenceClass": "exact-parity",
+      "corpusCase": "reference.agent-ordinary-model-error",
+      "executableCases": ["ticket-07-agent", "ticket-07-installed"]
     }
   ]
 }
