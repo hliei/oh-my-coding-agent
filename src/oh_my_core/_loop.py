@@ -1,10 +1,11 @@
 from __future__ import annotations
 
-from collections.abc import AsyncIterator, Awaitable, Callable, Sequence
+from collections.abc import AsyncIterator, Awaitable, Callable, Mapping, Sequence
 import asyncio
 import builtins
 from dataclasses import dataclass, field, replace
 import inspect
+import json
 from typing import ClassVar, Literal, NoReturn, TypeAlias, cast, final
 
 from oh_my_llm import (
@@ -16,14 +17,20 @@ from oh_my_llm import (
     AssistantMessageStartEvent,
     Context,
     EventStream,
+    JSONValue,
     LifecycleError,
     Message,
     Model,
+    TextContent,
+    ToolCall,
     ToolResultMessage,
     Usage,
     UsageCost,
     UserMessage,
+    validateToolArguments,
 )
+from oh_my_llm._tool_validation import _mutable_copy
+from oh_my_llm._values import _bool, _snapshot_json, _string
 from oh_my_llm._streams import (
     _AbortController,
     _abort_signal,
@@ -31,7 +38,7 @@ from oh_my_llm._streams import (
     _create_event_stream,
 )
 
-from ._tools import AgentTool
+from ._tools import AgentTool, AgentToolResult
 
 
 AgentMessage: TypeAlias = Message
@@ -92,6 +99,9 @@ class AgentEvent:
     MessageStart: ClassVar[builtins.type[MessageStart]]
     MessageUpdate: ClassVar[builtins.type[MessageUpdate]]
     MessageEnd: ClassVar[builtins.type[MessageEnd]]
+    ToolExecutionStart: ClassVar[builtins.type[ToolExecutionStart]]
+    ToolExecutionUpdate: ClassVar[builtins.type[ToolExecutionUpdate]]
+    ToolExecutionEnd: ClassVar[builtins.type[ToolExecutionEnd]]
 
     def __new__(cls, *args: object, **kwargs: object) -> AgentEvent:
         del args, kwargs
@@ -154,6 +164,80 @@ class MessageEnd(AgentEvent):
     type: Literal["message_end"] = field(init=False, default="message_end")
 
 
+@final
+@dataclass(frozen=True, slots=True, kw_only=True)
+class ToolExecutionStart(AgentEvent):
+    toolCallId: str
+    toolName: str
+    args: Mapping[str, JSONValue]
+    type: Literal["tool_execution_start"] = field(
+        init=False, default="tool_execution_start"
+    )
+
+    def __post_init__(self) -> None:
+        _bind_tool_event_identity(self)
+        object.__setattr__(
+            self, "args", _snapshot_tool_args(self.args, type(self).__name__)
+        )
+
+
+@final
+@dataclass(frozen=True, slots=True, kw_only=True)
+class ToolExecutionUpdate(AgentEvent):
+    toolCallId: str
+    toolName: str
+    args: Mapping[str, JSONValue]
+    partialResult: AgentToolResult
+    type: Literal["tool_execution_update"] = field(
+        init=False, default="tool_execution_update"
+    )
+
+    def __post_init__(self) -> None:
+        type_name = type(self).__name__
+        _bind_tool_event_identity(self)
+        object.__setattr__(self, "args", _snapshot_tool_args(self.args, type_name))
+        if type(self.partialResult) is not AgentToolResult:
+            raise TypeError(f"{type_name}.partialResult: must be an AgentToolResult")
+
+
+@final
+@dataclass(frozen=True, slots=True, kw_only=True)
+class ToolExecutionEnd(AgentEvent):
+    toolCallId: str
+    toolName: str
+    result: AgentToolResult
+    isError: bool
+    type: Literal["tool_execution_end"] = field(
+        init=False, default="tool_execution_end"
+    )
+
+    def __post_init__(self) -> None:
+        type_name = type(self).__name__
+        _bind_tool_event_identity(self)
+        if type(self.result) is not AgentToolResult:
+            raise TypeError(f"{type_name}.result: must be an AgentToolResult")
+        object.__setattr__(self, "isError", _bool(self.isError, type_name, "isError"))
+
+
+def _bind_tool_event_identity(
+    event: ToolExecutionStart | ToolExecutionUpdate | ToolExecutionEnd,
+) -> None:
+    type_name = type(event).__name__
+    object.__setattr__(
+        event, "toolCallId", _string(event.toolCallId, type_name, "toolCallId")
+    )
+    object.__setattr__(
+        event, "toolName", _string(event.toolName, type_name, "toolName")
+    )
+
+
+def _snapshot_tool_args(args: object, type_name: str) -> Mapping[str, JSONValue]:
+    snapshotted = _snapshot_json(args, type_name, "args")
+    if not isinstance(snapshotted, Mapping):
+        raise TypeError(f"{type_name}.args: must be a mapping")
+    return snapshotted
+
+
 AgentEvent.AgentStart = AgentStart
 AgentEvent.AgentEnd = AgentEnd
 AgentEvent.TurnStart = TurnStart
@@ -161,6 +245,9 @@ AgentEvent.TurnEnd = TurnEnd
 AgentEvent.MessageStart = MessageStart
 AgentEvent.MessageUpdate = MessageUpdate
 AgentEvent.MessageEnd = MessageEnd
+AgentEvent.ToolExecutionStart = ToolExecutionStart
+AgentEvent.ToolExecutionUpdate = ToolExecutionUpdate
+AgentEvent.ToolExecutionEnd = ToolExecutionEnd
 
 AgentEventSink: TypeAlias = Callable[[AgentEvent], None | Awaitable[None]]
 
@@ -397,35 +484,266 @@ async def _run_agent_loop_body(
     *,
     cancellationResult: bool,
 ) -> tuple[AgentMessage, ...]:
-
     await _emit(emit, AgentStart())
-    await _emit(emit, TurnStart())
-    for prompt in prompt_messages:
-        await _emit(emit, MessageStart(message=prompt))
-        await _emit(emit, MessageEnd(message=prompt))
-
-    working = Context(
-        systemPrompt=context.systemPrompt,
-        messages=(*context.messages, *prompt_messages),
-        tools=context.tools,
+    produced: list[AgentMessage] = list(prompt_messages)
+    working_messages: tuple[AgentMessage, ...] = (
+        *context.messages,
+        *prompt_messages,
     )
+    seed_emitted = False
     signal = control.signal
-    with _bind_abort_signal(signal):
-        response_events = streamFn(config.model, working, None, signal)
-        response = await _consume_response_events(
-            response_events,
-            emit,
-            config.model,
-            control,
-            cancellationResult=cancellationResult,
-        )
 
-    result = (*prompt_messages, response)
-    await _emit(emit, MessageEnd(message=response))
-    await _emit(emit, TurnEnd(message=response, toolResults=()))
+    while True:
+        await _emit(emit, TurnStart())
+        if not seed_emitted:
+            for prompt in prompt_messages:
+                await _emit(emit, MessageStart(message=prompt))
+                await _emit(emit, MessageEnd(message=prompt))
+            seed_emitted = True
+
+        working = Context(
+            systemPrompt=context.systemPrompt,
+            messages=working_messages,
+            tools=context.tools,
+        )
+        with _bind_abort_signal(signal):
+            response_events = streamFn(config.model, working, None, signal)
+            response = await _consume_response_events(
+                response_events,
+                emit,
+                config.model,
+                control,
+                cancellationResult=cancellationResult,
+            )
+
+        produced.append(response)
+        working_messages = (*working_messages, response)
+        await _emit(emit, MessageEnd(message=response))
+
+        if response.stopReason in ("error", "aborted"):
+            await _emit(emit, TurnEnd(message=response, toolResults=()))
+            break
+
+        tool_calls = [
+            block for block in response.content if isinstance(block, ToolCall)
+        ]
+        if not tool_calls:
+            await _emit(emit, TurnEnd(message=response, toolResults=()))
+            break
+
+        tool_results = await _process_tool_calls(
+            tool_calls, context.tools, emit, signal
+        )
+        for tool_result in tool_results:
+            await _emit(emit, MessageStart(message=tool_result))
+            await _emit(emit, MessageEnd(message=tool_result))
+            produced.append(tool_result)
+        working_messages = (*working_messages, *tool_results)
+        await _emit(emit, TurnEnd(message=response, toolResults=tool_results))
+
+    result = tuple(produced)
     control.terminalCommitted = True
     await _emit(emit, AgentEnd(messages=result))
     return result
+
+
+@dataclass(frozen=True, slots=True, kw_only=True)
+class _ToolAttempt:
+    call: ToolCall
+    tool: AgentTool | None
+    params: dict[str, object] | None
+    failure: AgentToolResult | None
+
+
+def _quote(value: str) -> str:
+    return json.dumps(value, ensure_ascii=False)
+
+
+def _tool_failure_result(text: str) -> AgentToolResult:
+    return AgentToolResult(content=(TextContent(text=text),), details={})
+
+
+async def _process_tool_calls(
+    calls: list[ToolCall],
+    tools: tuple[AgentTool, ...] | None,
+    emit: AgentEventSink,
+    signal: AbortSignal,
+) -> tuple[ToolResultMessage, ...]:
+    attempts: list[_ToolAttempt] = []
+    for call in calls:
+        await _emit(
+            emit,
+            ToolExecutionStart(
+                toolCallId=call.id,
+                toolName=call.name,
+                args=call.arguments,
+            ),
+        )
+        attempts.append(_preflight_tool_call(call, tools))
+
+    results: list[ToolResultMessage] = []
+    for attempt in attempts:
+        if attempt.failure is not None:
+            result = attempt.failure
+            is_error = True
+        else:
+            result, is_error = await _execute_tool_attempt(attempt, signal, emit)
+        await _emit(
+            emit,
+            ToolExecutionEnd(
+                toolCallId=attempt.call.id,
+                toolName=attempt.call.name,
+                result=result,
+                isError=is_error,
+            ),
+        )
+        results.append(
+            ToolResultMessage(
+                toolCallId=attempt.call.id,
+                toolName=attempt.call.name,
+                content=result.content,
+                details=result.details,
+                isError=is_error,
+                timestamp=0,
+            )
+        )
+    return tuple(results)
+
+
+def _preflight_tool_call(
+    call: ToolCall,
+    tools: tuple[AgentTool, ...] | None,
+) -> _ToolAttempt:
+    matches = [tool for tool in tools or () if tool.name == call.name]
+    if not matches:
+        return _ToolAttempt(
+            call=call,
+            tool=None,
+            params=None,
+            failure=_tool_failure_result(f"Tool {_quote(call.name)} was not found"),
+        )
+    if len(matches) != 1:
+        return _ToolAttempt(
+            call=call,
+            tool=None,
+            params=None,
+            failure=_tool_failure_result(
+                f"Tool {_quote(call.name)} matched more than once"
+            ),
+        )
+    tool = matches[0]
+    prepared_call = call
+    if tool.prepareArguments is not None:
+        try:
+            prepared = tool.prepareArguments(
+                cast(dict[str, object], _mutable_copy(call.arguments))
+            )
+        except Exception:
+            return _rejected_preparation(call, tool)
+        try:
+            prepared_call = ToolCall(
+                id=call.id,
+                name=call.name,
+                arguments=cast(Mapping[str, JSONValue], prepared),
+            )
+        except (TypeError, ValueError):
+            return _rejected_preparation(call, tool)
+    try:
+        params = validateToolArguments(tool, prepared_call)
+    except ValueError as error:
+        return _ToolAttempt(
+            call=call,
+            tool=tool,
+            params=None,
+            failure=_tool_failure_result(str(error)),
+        )
+    return _ToolAttempt(call=call, tool=tool, params=params, failure=None)
+
+
+def _rejected_preparation(call: ToolCall, tool: AgentTool) -> _ToolAttempt:
+    return _ToolAttempt(
+        call=call,
+        tool=tool,
+        params=None,
+        failure=_tool_failure_result(
+            f"Tool {_quote(call.name)} argument preparation failed"
+        ),
+    )
+
+
+async def _execute_tool_attempt(
+    attempt: _ToolAttempt,
+    signal: AbortSignal,
+    emit: AgentEventSink,
+) -> tuple[AgentToolResult, bool]:
+    tool = attempt.tool
+    params = attempt.params
+    if tool is None or params is None:
+        raise RuntimeError("approved Tool attempt is missing its callable")
+    pending: asyncio.Queue[AgentToolResult | None] = asyncio.Queue()
+    invalid_update = False
+    settled = False
+    name = attempt.call.name
+
+    async def drain() -> None:
+        while True:
+            item = await pending.get()
+            if item is None:
+                return
+            await _emit(
+                emit,
+                ToolExecutionUpdate(
+                    toolCallId=attempt.call.id,
+                    toolName=attempt.call.name,
+                    args=attempt.call.arguments,
+                    partialResult=item,
+                ),
+            )
+
+    def on_update(partial: object) -> None:
+        nonlocal invalid_update
+        if settled or invalid_update:
+            return
+        if type(partial) is not AgentToolResult:
+            invalid_update = True
+            raise TypeError(f"Tool {_quote(name)} produced an invalid update")
+        pending.put_nowait(partial)
+
+    def fail(text: str) -> tuple[AgentToolResult, bool]:
+        return _tool_failure_result(text), True
+
+    drain_task = asyncio.create_task(drain())
+    try:
+        try:
+            returned = tool.execute(attempt.call.id, params, signal, on_update)
+        except Exception:
+            if invalid_update:
+                return fail(f"Tool {_quote(name)} produced an invalid update")
+            return fail(f"Tool {_quote(name)} execution failed")
+        if invalid_update:
+            if inspect.isawaitable(returned):
+                try:
+                    await returned
+                except Exception:
+                    pass
+            return fail(f"Tool {_quote(name)} produced an invalid update")
+        if not inspect.isawaitable(returned):
+            return fail(f"Tool {_quote(name)} execute must return an awaitable")
+        try:
+            final: object = await returned
+        except Exception:
+            if invalid_update:
+                return fail(f"Tool {_quote(name)} produced an invalid update")
+            return fail(f"Tool {_quote(name)} execution failed")
+        if invalid_update:
+            return fail(f"Tool {_quote(name)} produced an invalid update")
+        if type(final) is not AgentToolResult:
+            return fail(f"Tool {_quote(name)} produced an invalid result")
+        return final, False
+    finally:
+        settled = True
+        pending.put_nowait(None)
+        await drain_task
 
 
 async def _consume_response_events(

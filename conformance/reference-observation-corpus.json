@@ -237,6 +237,52 @@
       "comparator": "map the Reference generic rejection at the same lifecycle boundary to the selected Python code and cause chain",
       "normalization": "PA:closed-lifecycle-error-carrier",
       "referenceCitations": ["packages/agent/src/agent-loop.ts#L64-L117", "packages/agent/src/agent.ts#L520-L573"]
+    },
+    {
+      "id": "reference.one-validated-tool-turn",
+      "captureCaseId": "capture.one-validated-tool-turn",
+      "obligation": "omh-v0.one-validated-tool-turn",
+      "referenceRevision": "0e6909f050eeb15e8f6c05185511f3788357ddb3",
+      "canonicalInput": "one User prompt, one Faux toolUse Assistant with a single Tool Call, one prepared integer conversion, one update, and one follow-up text Assistant",
+      "observations": {"A": "admitted", "L": ["agent_start", "turn_start", "message_start", "message_end", "message_start", "message_update", "message_update", "message_end", "tool_execution_start", "tool_execution_update", "tool_execution_end", "message_start", "message_end", "turn_end", "turn_start", "message_start", "message_update", "message_update", "message_update", "message_end", "turn_end", "agent_end"], "T": {"convertedParams": {"count": 2}, "isError": false, "order": ["prepare", "execute"], "roles": ["user", "assistant", "toolResult", "assistant"], "startArgs": {"n": "2"}}, "E": {"providerCalls": 2}, "C": {"laterModelTurn": true, "signalUnaborted": true}},
+      "comparator": "ordered event types, original event arguments, converted execute params, and two Provider calls",
+      "normalization": "ignore timestamps, chunk sizes, and async carrier mechanics",
+      "referenceCitations": ["packages/agent/src/agent-loop.ts#L413-L550", "packages/agent/src/agent-loop.ts#L602-L705", "packages/agent/src/agent-loop.ts#L757-L792"]
+    },
+    {
+      "id": "reference.tool-outcome-versus-failure",
+      "captureCaseId": "capture.tool-outcome-versus-failure",
+      "obligation": "omh-v0.tool-outcome-versus-failure",
+      "referenceRevision": "0e6909f050eeb15e8f6c05185511f3788357ddb3",
+      "canonicalInput": "one Tool Call whose callable returns a valid AgentToolResult describing an expected negative domain outcome",
+      "observations": {"A": "admitted", "L": "start_then_end", "T": {"isError": false, "messageIsError": false, "negativeDomainText": "Read path \"missing.txt\" was not found"}, "E": "callable_returned", "C": {"roles": ["user", "assistant", "toolResult", "assistant"]}},
+      "comparator": "error-bit classification and retained negative domain text",
+      "normalization": "none; a valid returned result is a Tool Outcome in both runtimes",
+      "referenceCitations": ["packages/agent/src/agent-loop.ts#L668-L705", "packages/agent/src/agent-loop.ts#L757-L792"]
+    },
+    {
+      "id": "reference.redacted-tool-runtime-errors",
+      "captureCaseId": "capture.redacted-tool-runtime-errors",
+      "obligation": "omh-v0.redacted-tool-runtime-errors",
+      "referenceRevision": "0e6909f050eeb15e8f6c05185511f3788357ddb3",
+      "canonicalInput": "missing, duplicate-name, throwing prepareArguments, schema-invalid, raised execute, non-awaitable execute, invalid update, and invalid final Tool attempts carrying SECRET_CANARY",
+      "observations": {"A": "recoverable_tool_failure", "L": "start_then_end_then_result", "T": {"errorTextSource": "caught_exception_or_ad_hoc_string", "secretLeaked": true}, "E": {"preflightExecuted": false}, "C": "next_model_turn"},
+      "omhExpectation": {"A": "recoverable_tool_failure", "L": "start_then_end_then_result", "T": {"allIsError": true, "emptyDetails": true, "secretLeaked": false, "templates": {"ambiguous": "Tool \"echo\" matched more than once", "invalidResult": "Tool \"echo\" produced an invalid result", "invalidUpdate": "Tool \"echo\" produced an invalid update", "missing": "Tool \"absent\" was not found", "nonAwaitable": "Tool \"echo\" execute must return an awaitable", "preparation": "Tool \"echo\" argument preparation failed", "raised": "Tool \"echo\" execution failed", "schema": "Validation failed for tool \"echo\":\n  - #/count [required]: required property is missing\n  - #/extra [additionalProperties]: additional property is not admitted"}}, "E": {"preflightExecuted": false}, "C": {"laterModelTurn": true}},
+      "comparator": "compare failure classification, ordering, empty details, and recovery; do not normalize Reference exception text into omh output",
+      "normalization": "ABD:redacted-tool-runtime-errors",
+      "referenceCitations": ["packages/agent/src/agent-loop.ts#L383-L407", "packages/agent/src/agent-loop.ts#L602-L665", "packages/agent/src/agent-loop.ts#L668-L705"]
+    },
+    {
+      "id": "reference.tool-turn-projection-identity",
+      "captureCaseId": "capture.tool-turn-projection-identity",
+      "obligation": "omh-v0.tool-turn-projection-identity",
+      "referenceRevision": "0e6909f050eeb15e8f6c05185511f3788357ddb3",
+      "canonicalInput": "retain one caller Context and compare EventStream result, awaited-sink result, and AgentEnd messages after one Tool Turn",
+      "observations": {"A": "admitted", "L": {"agentEndMessagesIsResult": true}, "T": {"carrier": "array", "roles": ["user", "assistant", "toolResult", "assistant"]}, "E": {"contextMessagesIdentityPreserved": false}, "C": "shared_history_array"},
+      "omhExpectation": {"A": "admitted", "L": {"sinkAgentEndIsResult": true, "streamAgentEndIsResult": true}, "T": {"carrier": "tuple", "sinkRoles": ["user", "assistant", "toolResult", "assistant"], "streamRoles": ["user", "assistant", "toolResult", "assistant"]}, "E": {"contextUnchanged": true}, "C": "stream_and_sink_agree"},
+      "comparator": "object identity for AgentEnd/result per carrier and value identity for retained input Context",
+      "normalization": "ABD:immutable-loop-context",
+      "referenceCitations": ["packages/agent/src/agent-loop.ts#L89-L110", "packages/agent/src/agent-loop.ts#L135-L141", "packages/agent/src/agent-loop.ts#L251-L255"]
     }
   ]
 }

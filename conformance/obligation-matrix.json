@@ -241,6 +241,54 @@
       "evidenceClass": "PA:closed-lifecycle-error-carrier",
       "corpusCase": "reference.closed-lifecycle-error-carrier",
       "executableCases": ["ticket-04-streams", "ticket-04-installed"]
+    },
+    {
+      "id": "omh-v0.one-validated-tool-turn",
+      "authority": ".scratch/omh-v0/issues/07-choose-agent-loop-and-tool-lifecycle.md#tool-admission-execution-and-projection",
+      "publicInterface": "oh_my_core.runAgentLoop",
+      "scenario": "one Faux Assistant Tool Call is looked up, prepared, converted, validated, executed with one update, and followed by a later Model Turn",
+      "observations": {"A": "valid Tool Call admitted after effect-free preflight", "L": "start, FIFO update, end, Tool Result Message, later Turn", "T": "Tool Outcome with isError false", "E": "one execute and two Model calls", "C": "Run continues after a nonterminating Outcome"},
+      "comparator": "ordered public event types, original vs converted arguments, execute arity, and returned Run suffix after async-carrier normalization",
+      "normalization": "ignore timestamps, chunk sizes, and async carrier mechanics; preserve original Tool Call arguments on events",
+      "evidenceClass": "exact-parity",
+      "corpusCase": "reference.one-validated-tool-turn",
+      "executableCases": ["ticket-05-tool-turn", "ticket-05-installed"]
+    },
+    {
+      "id": "omh-v0.tool-outcome-versus-failure",
+      "authority": ".scratch/omh-v0/issues/07-choose-agent-loop-and-tool-lifecycle.md#tool-outcome-versus-tool-failure",
+      "publicInterface": "oh_my_core.runAgentLoop ToolExecutionEnd and ToolResultMessage",
+      "scenario": "a Tool returns a valid AgentToolResult whose text reports an expected negative domain outcome",
+      "observations": {"A": "callable returned a valid result", "L": "start then successful end", "T": "isError remains false", "E": "no Runtime failure synthesis", "C": "later Model Turn still occurs"},
+      "comparator": "compare error-bit classification and result text; do not treat detailed negative content as a Tool Failure",
+      "normalization": "none beyond the closed Tool Outcome versus Tool Failure terminology",
+      "evidenceClass": "exact-parity",
+      "corpusCase": "reference.tool-outcome-versus-failure",
+      "executableCases": ["ticket-05-tool-turn", "ticket-05-installed"]
+    },
+    {
+      "id": "omh-v0.redacted-tool-runtime-errors",
+      "authority": ".scratch/omh-v0/issues/07-choose-agent-loop-and-tool-lifecycle.md#ABD:redacted-tool-runtime-errors",
+      "publicInterface": "oh_my_core.runAgentLoop Tool Failure projection",
+      "scenario": "missing, ambiguous, preparation, schema, raised, non-awaitable, invalid-update, and invalid-final Tool attempts with secret-bearing private data",
+      "observations": {"A": "recoverable Tool Failure", "L": "start then error end then Tool Result Message", "T": "exact redacted templates, empty details, isError true", "E": "preflight failures never call execute", "C": "later Model Turn receives the failure Result"},
+      "comparator": "compare classification, association, ordering, and recovery while contrasting Reference raw exception text with omh exact templates",
+      "normalization": "ABD:redacted-tool-runtime-errors; schema failures keep the accepted validation text unchanged",
+      "evidenceClass": "ABD:redacted-tool-runtime-errors",
+      "corpusCase": "reference.redacted-tool-runtime-errors",
+      "executableCases": ["ticket-05-tool-turn", "ticket-05-installed"]
+    },
+    {
+      "id": "omh-v0.tool-turn-projection-identity",
+      "authority": ".scratch/omh-v0/issues/07-choose-agent-loop-and-tool-lifecycle.md#ABD:immutable-loop-context",
+      "publicInterface": "oh_my_core.agentLoop and runAgentLoop",
+      "scenario": "retain caller Context and compare EventStream result, awaited-sink result, and AgentEnd.messages after one Tool Turn",
+      "observations": {"A": "valid Tool Turn admitted", "L": "terminal event carries Run suffix", "T": "identical immutable tuple identity per carrier", "E": "zero caller Context mutations", "C": "EventStream and sink agree on roles"},
+      "comparator": "compare returned new Messages directly and apply the accepted private working-history difference to the retained input Context",
+      "normalization": "ABD:immutable-loop-context and PA:frozen-public-value-records for the Run-suffix tuple",
+      "evidenceClass": "ABD:immutable-loop-context",
+      "corpusCase": "reference.tool-turn-projection-identity",
+      "executableCases": ["ticket-05-tool-turn", "ticket-05-installed"]
     }
   ]
 }
