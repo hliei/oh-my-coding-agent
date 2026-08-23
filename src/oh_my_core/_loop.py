@@ -545,6 +545,17 @@ async def _run_agent_loop_body(
             produced.append(tool_result)
         working_messages = (*working_messages, *tool_results)
         await _emit(emit, TurnEnd(message=response, toolResults=tool_results))
+        if signal.aborted:
+            aborted = _terminal_assistant(
+                config.model,
+                None,
+                reason="aborted",
+                error_message="Operation aborted",
+            )
+            await _emit(emit, MessageStart(message=aborted))
+            await _emit(emit, MessageEnd(message=aborted))
+            produced.append(aborted)
+            break
         if terminate:
             break
 
@@ -606,23 +617,23 @@ async def _process_tool_calls(
                 )
             )
 
-    sequential = execution_mode == "sequential" or any(
-        attempt.tool is not None and attempt.tool.executionMode == "sequential"
-        for attempt in attempts
-    )
+    sequential = execution_mode == "sequential" or _has_sequential_tool(calls, tools)
     if sequential:
-        settlements = tuple(
-            [await _settle_tool_attempt(attempt, signal, emit) for attempt in attempts]
-        )
-    else:
-        settlements = tuple(
-            await asyncio.gather(
-                *(
-                    _settle_tool_attempt(attempt, signal, emit)
-                    for attempt in attempts
-                )
+        sequential_settlements: list[tuple[AgentToolResult, bool]] = []
+        for attempt in attempts:
+            sequential_settlements.append(
+                await _settle_tool_attempt(attempt, signal, emit)
             )
+        settlements = tuple(sequential_settlements)
+    else:
+        tasks = tuple(
+            asyncio.create_task(_settle_tool_attempt(attempt, signal, emit))
+            for attempt in attempts
         )
+        try:
+            settlements = tuple(await asyncio.gather(*tasks))
+        except asyncio.CancelledError:
+            settlements = tuple(await asyncio.gather(*tasks))
 
     results: list[ToolResultMessage] = []
     for attempt, (result, is_error) in zip(attempts, settlements, strict=True):
@@ -641,6 +652,16 @@ async def _process_tool_calls(
         for result, is_error in settlements
     )
     return tuple(results), terminate
+
+
+def _has_sequential_tool(
+    calls: list[ToolCall], tools: tuple[AgentTool, ...] | None
+) -> bool:
+    for call in calls:
+        matches = tuple(tool for tool in tools or () if tool.name == call.name)
+        if len(matches) == 1 and matches[0].executionMode == "sequential":
+            return True
+    return False
 
 
 def _truncated_tool_attempt(call: ToolCall) -> _ToolAttempt:
@@ -664,8 +685,28 @@ async def _settle_tool_attempt(
     if attempt.failure is not None:
         result = attempt.failure
         is_error = True
+    elif signal.aborted:
+        result = _tool_failure_result(
+            f"Tool {_quote(attempt.call.name)} execution was cancelled"
+        )
+        is_error = True
     else:
-        result, is_error = await _execute_tool_attempt(attempt, signal, emit)
+        try:
+            result, is_error = await _execute_tool_attempt(attempt, signal, emit)
+        except asyncio.CancelledError:
+            text = (
+                f"Tool {_quote(attempt.call.name)} execution was cancelled"
+                if signal.aborted
+                else f"Tool {_quote(attempt.call.name)} execution failed"
+            )
+            result = _tool_failure_result(text)
+            is_error = True
+        else:
+            if signal.aborted:
+                result = _tool_failure_result(
+                    f"Tool {_quote(attempt.call.name)} execution was cancelled"
+                )
+                is_error = True
     await _emit(
         emit,
         ToolExecutionEnd(
@@ -786,7 +827,7 @@ async def _execute_tool_attempt(
 
     def on_update(partial: object) -> None:
         nonlocal invalid_update
-        if settled or invalid_update:
+        if settled or invalid_update or signal.aborted:
             return
         if type(partial) is not AgentToolResult:
             invalid_update = True
