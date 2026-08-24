@@ -376,6 +376,30 @@
       "comparator": "stop reason, redacted public error text, secret absence, state error field, and reuse",
       "normalization": "ignore timestamps; compare the selected redacted public Model-stream message rather than raw exception text",
       "referenceCitations": ["packages/agent/src/agent-loop.ts#L178-L208", "packages/agent/src/agent.ts#L481-L490"]
+    },
+    {
+      "id": "reference.agent-clean-cancellation",
+      "captureCaseId": "capture.agent-clean-cancellation",
+      "obligation": "omh-v0.agent-clean-cancellation",
+      "referenceRevision": "0e6909f050eeb15e8f6c05185511f3788357ddb3",
+      "canonicalInput": "abort one Agent during a cumulative Model response and at Tool preflight and active-Tool barriers, then observe terminal history, effects, and idle",
+      "observations": {"A": "admitted", "L": {"agentEndCount": 1}, "T": {"stopReason": "aborted"}, "E": {"modelCalls": 1}, "C": {"idle": true}},
+      "omhExpectation": {"A": "admitted", "L": {"cleanupBeforeEnd": true, "agentEndCount": 1}, "T": {"stopReason": "aborted", "errorMessage": "Operation aborted"}, "E": {"modelCalls": 1}, "C": {"idle": true, "signalCleared": true}},
+      "comparator": "compare clean aborted classification and retained terminal history while applying omh complete-settlement, hard-cutoff, and Python-carrier rules",
+      "normalization": "ABD:managed-run-cancellation",
+      "referenceCitations": ["packages/agent/src/agent.ts#L304-L320", "packages/agent/src/agent.ts#L469-L518", "packages/agent/src/agent-loop.ts#L491-L544", "packages/agent/src/agent-loop.ts#L668-L708"]
+    },
+    {
+      "id": "reference.agent-fail-closed-lifecycle",
+      "captureCaseId": "capture.agent-fail-closed-lifecycle",
+      "obligation": "omh-v0.agent-fail-closed-lifecycle",
+      "referenceRevision": "0e6909f050eeb15e8f6c05185511f3788357ddb3",
+      "canonicalInput": "fail the first Agent listener, one awaited event sink, and owned cleanup; separately throw one ordinary Model error and hold cleanup unsettled",
+      "observations": {"A": "admitted", "L": {"listenerAttempts": ["first"], "sinkAgentEnd": false}, "T": {"listener": "raised_callback", "eventSink": "raised_callback", "cleanup": "best_effort", "model": "error"}, "E": {"listenerModelCalls": 0}, "C": {"cleanupIdle": "best_effort"}},
+      "omhExpectation": {"A": "admitted", "L": {"listenerAttempts": ["first", "second"], "sinkAgentEnd": false}, "T": {"listener": "listener", "eventSink": "event_sink", "cleanup": "cleanup", "model": "error"}, "E": {"listenerModelCalls": 0}, "C": {"listenerIdle": true, "cleanupIdle": true, "unconfirmedBusy": true, "unconfirmedIdleAfterSettlement": true}},
+      "comparator": "preserve ordinary Model-error identity and contrast Reference first-failure or best-effort cleanup with omh snapshot completion, typed lifecycle carriers, ordered cleanup, and fail-closed idle",
+      "normalization": "ABD:managed-lifecycle-callbacks and ABD:managed-run-cancellation",
+      "referenceCitations": ["packages/agent/src/agent.ts#L231-L243", "packages/agent/src/agent.ts#L520-L573", "packages/agent/src/agent-loop.ts#L25", "packages/agent/src/agent-loop.ts#L95-L117", "packages/agent/src/agent-loop.ts#L178-L208"]
     }
   ]
 }

@@ -6,6 +6,7 @@ import builtins
 from dataclasses import dataclass, field, replace
 import inspect
 import json
+import sys
 from typing import ClassVar, Literal, NoReturn, TypeAlias, cast, final
 
 from oh_my_llm import (
@@ -265,6 +266,13 @@ class _RunControl:
             _abort_signal(self.signal)
 
 
+class _ListenerFailure(BaseException):
+    __slots__ = ("causes",)
+
+    def __init__(self, causes: tuple[BaseException, ...]) -> None:
+        self.causes = causes
+
+
 async def _emit(sink: AgentEventSink, event: AgentEvent) -> None:
     try:
         settled = sink(event)
@@ -272,6 +280,12 @@ async def _emit(sink: AgentEventSink, event: AgentEvent) -> None:
             await settled
         elif settled is not None:
             raise TypeError("AgentEventSink must return None or an awaitable")
+    except _ListenerFailure as error:
+        raise LifecycleError(
+            "listener",
+            "Agent listener failed",
+            causes=error.causes,
+        ) from error.causes[0]
     except asyncio.CancelledError as error:
         owner = asyncio.current_task()
         if owner is not None and owner.cancelling():
@@ -573,6 +587,32 @@ class _ToolAttempt:
     failure: AgentToolResult | None
 
 
+class _ToolEventGate:
+    __slots__ = ("_failed", "_lock", "_sink")
+
+    def __init__(self, sink: AgentEventSink) -> None:
+        self._sink = sink
+        self._lock = asyncio.Lock()
+        self._failed = False
+
+    async def emit(self, event: AgentEvent) -> None:
+        async with self._lock:
+            if self._failed:
+                return
+            try:
+                settled = self._sink(event)
+                if inspect.isawaitable(settled):
+                    await settled
+                elif settled is not None:
+                    raise TypeError("AgentEventSink must return None or an awaitable")
+            except BaseException:
+                self._failed = True
+                raise
+
+    def close(self) -> None:
+        self._failed = True
+
+
 def _quote(value: str) -> str:
     return json.dumps(value, ensure_ascii=False)
 
@@ -592,15 +632,28 @@ async def _process_tool_calls(
 ) -> tuple[tuple[ToolResultMessage, ...], bool]:
     correlation_failures = _scan_tool_call_ids(calls)
     attempts: list[_ToolAttempt] = []
+    started_count = 0
+    event_gate = _ToolEventGate(emit)
     for call, correlation_failure in zip(calls, correlation_failures, strict=True):
-        await _emit(
-            emit,
-            ToolExecutionStart(
-                toolCallId=call.id,
-                toolName=call.name,
-                args=call.arguments,
-            ),
-        )
+        if signal.aborted:
+            break
+        started_count += 1
+        try:
+            await event_gate.emit(
+                ToolExecutionStart(
+                    toolCallId=call.id,
+                    toolName=call.name,
+                    args=call.arguments,
+                ),
+            )
+        except asyncio.CancelledError:
+            if not signal.aborted:
+                raise
+            attempts.append(_cancelled_tool_attempt(call))
+            break
+        if signal.aborted:
+            attempts.append(_cancelled_tool_attempt(call))
+            break
         if correlation_failure is None:
             attempts.append(
                 _truncated_tool_attempt(call)
@@ -616,24 +669,62 @@ async def _process_tool_calls(
                     failure=correlation_failure,
                 )
             )
+    attempts.extend(_cancelled_tool_attempt(call) for call in calls[len(attempts) :])
 
     sequential = execution_mode == "sequential" or _has_sequential_tool(calls, tools)
     if sequential:
         sequential_settlements: list[tuple[AgentToolResult, bool]] = []
-        for attempt in attempts:
+        for index, attempt in enumerate(attempts):
             sequential_settlements.append(
-                await _settle_tool_attempt(attempt, signal, emit)
+                await _settle_tool_attempt(
+                    attempt,
+                    signal,
+                    event_gate.emit,
+                    emit_end=index < started_count,
+                )
             )
         settlements = tuple(sequential_settlements)
     else:
         tasks = tuple(
-            asyncio.create_task(_settle_tool_attempt(attempt, signal, emit))
-            for attempt in attempts
+            asyncio.create_task(
+                _settle_tool_attempt(
+                    attempt,
+                    signal,
+                    event_gate.emit,
+                    emit_end=index < started_count,
+                )
+            )
+            for index, attempt in enumerate(attempts)
         )
         try:
             settlements = tuple(await asyncio.gather(*tasks))
         except asyncio.CancelledError:
             settlements = tuple(await asyncio.gather(*tasks))
+        except LifecycleError as lifecycle_failure:
+            _abort_signal(signal)
+            event_gate.close()
+            for task in tasks:
+                if not task.done():
+                    task.cancel()
+            cleanup_causes: list[BaseException] = []
+            for settled in await asyncio.gather(*tasks, return_exceptions=True):
+                if settled is lifecycle_failure or isinstance(
+                    settled, asyncio.CancelledError
+                ):
+                    continue
+                if isinstance(settled, LifecycleError):
+                    if settled.code == "cleanup":
+                        cleanup_causes.extend(settled.causes)
+                    continue
+                if isinstance(settled, BaseException):
+                    cleanup_causes.append(settled)
+            if cleanup_causes:
+                raise LifecycleError(
+                    lifecycle_failure.code,
+                    str(lifecycle_failure),
+                    causes=(*lifecycle_failure.causes, *cleanup_causes),
+                ) from lifecycle_failure.causes[0]
+            raise
 
     results: list[ToolResultMessage] = []
     for attempt, (result, is_error) in zip(attempts, settlements, strict=True):
@@ -677,10 +768,23 @@ def _truncated_tool_attempt(call: ToolCall) -> _ToolAttempt:
     )
 
 
+def _cancelled_tool_attempt(call: ToolCall) -> _ToolAttempt:
+    return _ToolAttempt(
+        call=call,
+        tool=None,
+        params=None,
+        failure=_tool_failure_result(
+            f"Tool {_quote(call.name)} execution was cancelled"
+        ),
+    )
+
+
 async def _settle_tool_attempt(
     attempt: _ToolAttempt,
     signal: AbortSignal,
     emit: AgentEventSink,
+    *,
+    emit_end: bool,
 ) -> tuple[AgentToolResult, bool]:
     if attempt.failure is not None:
         result = attempt.failure
@@ -707,15 +811,16 @@ async def _settle_tool_attempt(
                     f"Tool {_quote(attempt.call.name)} execution was cancelled"
                 )
                 is_error = True
-    await _emit(
-        emit,
-        ToolExecutionEnd(
-            toolCallId=attempt.call.id,
-            toolName=attempt.call.name,
-            result=result,
-            isError=is_error,
-        ),
-    )
+    if emit_end:
+        await _emit(
+            emit,
+            ToolExecutionEnd(
+                toolCallId=attempt.call.id,
+                toolName=attempt.call.name,
+                result=result,
+                isError=is_error,
+            ),
+        )
     return result, is_error
 
 
@@ -808,6 +913,7 @@ async def _execute_tool_attempt(
     pending: asyncio.Queue[AgentToolResult | None] = asyncio.Queue()
     invalid_update = False
     settled = False
+    executing = False
     name = attempt.call.name
 
     async def drain() -> None:
@@ -838,10 +944,26 @@ async def _execute_tool_attempt(
         return _tool_failure_result(text), True
 
     drain_task = asyncio.create_task(drain())
+    owner_task = asyncio.current_task()
+
+    def interrupt_on_drain_failure(task: asyncio.Task[None]) -> None:
+        if task.cancelled() or task.exception() is None:
+            return
+        _abort_signal(signal)
+        if executing and owner_task is not None and not owner_task.done():
+            owner_task.cancel()
+
+    drain_task.add_done_callback(interrupt_on_drain_failure)
     try:
         try:
             returned = tool.execute(attempt.call.id, params, signal, on_update)
-        except Exception:
+        except Exception as error:
+            if signal.aborted:
+                raise LifecycleError(
+                    "cleanup",
+                    "Agent loop cleanup failed",
+                    causes=(error,),
+                ) from error
             if invalid_update:
                 return fail(f"Tool {_quote(name)} produced an invalid update")
             return fail(f"Tool {_quote(name)} execution failed")
@@ -854,21 +976,41 @@ async def _execute_tool_attempt(
             return fail(f"Tool {_quote(name)} produced an invalid update")
         if not inspect.isawaitable(returned):
             return fail(f"Tool {_quote(name)} execute must return an awaitable")
+        executing = True
         try:
-            final: object = await returned
-        except Exception:
-            if invalid_update:
-                return fail(f"Tool {_quote(name)} produced an invalid update")
-            return fail(f"Tool {_quote(name)} execution failed")
+            try:
+                final: object = await returned
+            except Exception as error:
+                if signal.aborted:
+                    raise LifecycleError(
+                        "cleanup",
+                        "Agent loop cleanup failed",
+                        causes=(error,),
+                    ) from error
+                if invalid_update:
+                    return fail(f"Tool {_quote(name)} produced an invalid update")
+                return fail(f"Tool {_quote(name)} execution failed")
+        finally:
+            executing = False
         if invalid_update:
             return fail(f"Tool {_quote(name)} produced an invalid update")
         if type(final) is not AgentToolResult:
             return fail(f"Tool {_quote(name)} produced an invalid result")
         return final, False
     finally:
+        primary = sys.exception()
         settled = True
         pending.put_nowait(None)
-        await drain_task
+        try:
+            await drain_task
+        except LifecycleError as callback_failure:
+            if isinstance(primary, LifecycleError) and primary.code == "cleanup":
+                raise LifecycleError(
+                    callback_failure.code,
+                    str(callback_failure),
+                    causes=(*callback_failure.causes, *primary.causes),
+                ) from callback_failure.causes[0]
+            raise
 
 
 async def _consume_response_events(
@@ -907,8 +1049,8 @@ async def _consume_response_events(
             await _close_async_iterator(response_events)
         except BaseException as cleanup_error:
             raise LifecycleError(
-                "event_sink",
-                "Agent event sink failed",
+                sink_error.code,
+                str(sink_error),
                 causes=(*sink_error.causes, cleanup_error),
             ) from sink_error.causes[0]
         raise

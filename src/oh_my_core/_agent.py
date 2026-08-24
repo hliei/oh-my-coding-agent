@@ -5,7 +5,7 @@ from collections.abc import Callable, Sequence
 from dataclasses import dataclass
 import inspect
 import time
-from typing import Any, TypeAlias, cast, final
+from typing import Any, NoReturn, TypeAlias, cast, final
 
 from oh_my_llm import (
     AbortSignal,
@@ -24,6 +24,7 @@ from ._loop import (
     AgentMessage,
     StreamFn,
     ToolExecutionMode,
+    _ListenerFailure,
     _RunControl,
     _run_agent_loop,
     _validate_run,
@@ -144,6 +145,7 @@ class AgentState:
     def _end_run(self) -> None:
         self._is_streaming = False
         self._streaming_message = None
+        self._pending_tool_calls = frozenset()
 
 
 @final
@@ -172,11 +174,11 @@ class _ListenerRecord:
 
 
 class _ActiveRun:
-    __slots__ = ("control", "idle")
+    __slots__ = ("control", "task")
 
-    def __init__(self, control: _RunControl, idle: asyncio.Event) -> None:
+    def __init__(self, control: _RunControl) -> None:
         self.control = control
-        self.idle = idle
+        self.task: asyncio.Task[tuple[AgentMessage, ...]] | None = None
 
 
 @final
@@ -233,12 +235,22 @@ class Agent:
         run = self._run
         if run is not None:
             run.control.requestCancellation()
+            task = run.task
+            if (
+                task is not None
+                and task is not asyncio.current_task()
+                and not task.done()
+            ):
+                task.cancel()
 
     async def waitForIdle(self) -> None:
         run = self._run
         if run is None:
             return
-        await run.idle.wait()
+        task = run.task
+        if task is None:
+            raise RuntimeError("active Agent Run is missing its owner task")
+        await asyncio.shield(task)
 
     def reset(self) -> None:
         if self._run is not None:
@@ -269,25 +281,55 @@ class Agent:
             self._stream_fn,
             continuation=continuation,
         )
-        idle = asyncio.Event()
         control = _RunControl(_AbortController().signal)
-        self._run = _ActiveRun(control, idle)
+        run = _ActiveRun(control)
+        self._run = run
         state._begin_run()
+        task = asyncio.create_task(
+            self._drive_run(
+                run,
+                prompts,
+                context,
+                config,
+                continuation=continuation,
+            )
+        )
+        run.task = task
         try:
-            await _run_agent_loop(
+            await asyncio.shield(task)
+        except asyncio.CancelledError as cancellation:
+            control.requestCancellation()
+            if not task.done():
+                task.cancel()
+            await _settle_operation_task(task, cancellation)
+
+    async def _drive_run(
+        self,
+        run: _ActiveRun,
+        prompts: tuple[AgentMessage, ...],
+        context: AgentContext,
+        config: AgentLoopConfig,
+        *,
+        continuation: bool,
+    ) -> tuple[AgentMessage, ...]:
+        try:
+            return await _run_agent_loop(
                 prompts,
                 context,
                 config,
                 self._dispatch,
                 self._stream_fn,
-                control,
+                run.control,
                 continuation=continuation,
-                cancellationResult=False,
+                cancellationResult=True,
             )
+        except LifecycleError:
+            run.control.requestCancellation()
+            raise
         finally:
-            state._end_run()
-            self._run = None
-            idle.set()
+            if self._run is run:
+                self._state._end_run()
+                self._run = None
 
     async def _dispatch(self, event: AgentEvent) -> None:
         self._reduce(event)
@@ -296,12 +338,33 @@ class Agent:
         if run is None:
             raise RuntimeError("Agent listener dispatched without an active Run")
         signal = run.control.signal
+        failures: list[BaseException] = []
+        cancellation: asyncio.CancelledError | None = None
         for record in snapshot:
-            result = record.listener(event, signal)
-            if inspect.isawaitable(result):
-                await result
-            elif result is not None:
-                raise TypeError("Agent listener must return None or an awaitable")
+            try:
+                result = record.listener(event, signal)
+                if inspect.isawaitable(result):
+                    await result
+                elif result is not None:
+                    raise TypeError("Agent listener must return None or an awaitable")
+            except asyncio.CancelledError as error:
+                owner = asyncio.current_task()
+                if owner is not None and owner.cancelling():
+                    cancellation = error
+                else:
+                    failures.append(error)
+            except BaseException as error:
+                failures.append(error)
+        if cancellation is not None:
+            if failures:
+                cancellation.__cause__ = LifecycleError(
+                    "listener",
+                    "Agent listener failed",
+                    causes=failures,
+                )
+            raise cancellation
+        if failures:
+            raise _ListenerFailure(tuple(failures))
 
     def _reduce(self, event: AgentEvent) -> None:
         state = self._state
@@ -378,3 +441,21 @@ def _coerce_prompt(
     ):
         raise TypeError("prompt messages must contain AgentMessage values")
     return cast(tuple[AgentMessage, ...], messages)
+
+
+async def _settle_operation_task(
+    task: asyncio.Task[tuple[AgentMessage, ...]],
+    cancellation: asyncio.CancelledError,
+) -> NoReturn:
+    while not task.done():
+        try:
+            await asyncio.shield(task)
+        except asyncio.CancelledError:
+            continue
+    try:
+        task.result()
+    except LifecycleError as lifecycle_failure:
+        cancellation.__cause__ = lifecycle_failure
+    except asyncio.CancelledError:
+        pass
+    raise cancellation

@@ -385,6 +385,30 @@
       "evidenceClass": "exact-parity",
       "corpusCase": "reference.agent-ordinary-model-error",
       "executableCases": ["ticket-07-agent", "ticket-07-installed"]
+    },
+    {
+      "id": "omh-v0.agent-clean-cancellation",
+      "authority": ".scratch/omh-v0/issues/07-choose-agent-loop-and-tool-lifecycle.md#cancellation-and-lifecycle-failure",
+      "publicInterface": "oh_my_core.Agent.abort, Agent.waitForIdle, Agent.prompt, and Agent.state",
+      "scenario": "cancel blocked Model and Tool work at explicit cutoffs, retain confirmed values, and settle one aborted Run only after cleanup",
+      "observations": {"A": "current Run captured", "L": "cleanup precedes one ordinary aborted AgentEnd", "T": "latest cumulative Assistant or source-ordered Tool Results plus one aborted tail", "E": "no Model or Tool effect begins after cutoff", "C": "idle and reusable only after confirmed settlement"},
+      "comparator": "compare ordinary clean-abort classification after applying omh hard effect cutoff, complete owned settlement, and Python operation-task carrier normalization",
+      "normalization": "ABD:managed-run-cancellation",
+      "evidenceClass": "ABD:managed-run-cancellation",
+      "corpusCase": "reference.agent-clean-cancellation",
+      "executableCases": ["ticket-08-agent-cancellation", "ticket-08-installed"]
+    },
+    {
+      "id": "omh-v0.agent-fail-closed-lifecycle",
+      "authority": ".scratch/omh-v0/issues/07-choose-agent-loop-and-tool-lifecycle.md#cancellation-and-lifecycle-failure",
+      "publicInterface": "oh_my_core.Agent listeners, runAgentLoop AgentEventSink, LifecycleError, and ordinary Model error",
+      "scenario": "inject listener, event-sink, cleanup, unconfirmed-settlement, and ordinary Model failures at explicit barriers",
+      "observations": {"A": "one Run admitted per fixture", "L": "listener snapshot all attempted; no event after callback failure; no synthetic lifecycle AgentEnd", "T": "listener, event_sink, cleanup, and ordinary error remain distinct", "E": "owned work is cancelled and joined before failure delivery", "C": "confirmed failure normalizes idle; unconfirmed work remains busy until real settlement"},
+      "comparator": "contrast Reference first-failure and best-effort cleanup with omh fixed snapshots, typed carriers, ordered causes, and fail-closed idle ownership",
+      "normalization": "ABD:managed-lifecycle-callbacks and ABD:managed-run-cancellation",
+      "evidenceClass": "ABD:managed-lifecycle-callbacks",
+      "corpusCase": "reference.agent-fail-closed-lifecycle",
+      "executableCases": ["ticket-08-agent-cancellation", "ticket-08-installed"]
     }
   ]
 }
