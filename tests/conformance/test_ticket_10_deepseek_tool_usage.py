@@ -17,6 +17,7 @@ from oh_my_core import (
 )
 from oh_my_llm import (
     AssistantMessageDoneEvent,
+    AssistantMessageErrorEvent,
     AssistantMessageStartEvent,
     AssistantMessageToolCallDeltaEvent,
     AssistantMessageToolCallEndEvent,
@@ -450,17 +451,19 @@ def test_missing_or_incomplete_tool_arguments_fail_without_default_or_repair(
     monkeypatch.setenv("DEEPSEEK_API_KEY", "test-key")
     models, model = _deepseek()
 
-    with pytest.raises(ModelsError) as caught:
-        asyncio.run(
-            _collect(
-                models.streamSimple(
-                    model,
-                    Context(messages=(UserMessage(content="Use echo", timestamp=0),)),
-                )
+    events = asyncio.run(
+        _collect(
+            models.streamSimple(
+                model,
+                Context(messages=(UserMessage(content="Use echo", timestamp=0),)),
             )
         )
+    )
 
-    assert caught.value.code == "stream"
+    terminal = events[-1]
+    assert isinstance(terminal, AssistantMessageErrorEvent)
+    assert terminal.error.stopReason == "error"
+    assert terminal.error.errorMessage == "DeepSeek stream failed"
 
 
 def _usage_sse(usage: object = None) -> bytes:
@@ -534,10 +537,12 @@ def test_terminal_usage_fails_closed_on_missing_or_contradictory_counts(
     models, model = _deepseek()
     context = Context(messages=(UserMessage(content="Hello", timestamp=0),))
 
-    with pytest.raises(ModelsError) as caught:
-        asyncio.run(_collect(models.streamSimple(model, context)))
+    events = asyncio.run(_collect(models.streamSimple(model, context)))
 
-    assert caught.value.code == "stream"
+    terminal = events[-1]
+    assert isinstance(terminal, AssistantMessageErrorEvent)
+    assert terminal.error.stopReason == "error"
+    assert terminal.error.errorMessage == "DeepSeek stream failed"
 
 
 _FINAL_TEXT_SSE = _sse(
@@ -683,14 +688,16 @@ def test_usage_payload_is_unique_and_terminal(
     monkeypatch.setenv("DEEPSEEK_API_KEY", "test-key")
     models, model = _deepseek()
 
-    with pytest.raises(ModelsError) as caught:
-        asyncio.run(
-            _collect(
-                models.streamSimple(
-                    model,
-                    Context(messages=(UserMessage(content="Hello", timestamp=0),)),
-                )
+    events = asyncio.run(
+        _collect(
+            models.streamSimple(
+                model,
+                Context(messages=(UserMessage(content="Hello", timestamp=0),)),
             )
         )
+    )
 
-    assert caught.value.code == "stream"
+    terminal = events[-1]
+    assert isinstance(terminal, AssistantMessageErrorEvent)
+    assert terminal.error.stopReason == "error"
+    assert terminal.error.errorMessage == "DeepSeek stream failed"

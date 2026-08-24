@@ -1,19 +1,21 @@
 from __future__ import annotations
 
+import asyncio
 from collections.abc import AsyncIterator, Mapping
 from dataclasses import replace
 import json
 import os
-from typing import Any, Literal, cast
+from typing import Any, Literal, NoReturn, cast
 
 import httpx
 
-from .._errors import ModelsError
+from .._errors import LifecycleError, ModelsError
 from .._canonical import _decodeJSONValue, encodeCanonical
 from .._models import Model, Provider, _create_model, _create_provider
 from .._values import (
     AssistantMessage,
     AssistantMessageDoneEvent,
+    AssistantMessageErrorEvent,
     AssistantMessageEvent,
     AssistantMessageStartEvent,
     AssistantMessageTextDeltaEvent,
@@ -255,14 +257,35 @@ async def _iter_sse_payloads(response: httpx.Response) -> AsyncIterator[dict[str
                 continue
             data = line[5:].strip()
             if data == b"[DONE]":
+                if bytes(buffer).strip():
+                    raise ModelsError("stream", "DeepSeek stream is invalid")
                 return
             try:
-                payload = json.loads(data.decode("utf-8"))
-            except (UnicodeDecodeError, json.JSONDecodeError) as error:
+                payload = json.loads(
+                    data.decode("utf-8"),
+                    object_pairs_hook=_wire_object,
+                    parse_constant=_reject_json_constant,
+                )
+            except (UnicodeDecodeError, ValueError) as error:
                 raise ModelsError("stream", "DeepSeek stream is invalid") from error
             if type(payload) is not dict:
                 raise ModelsError("stream", "DeepSeek stream is invalid")
             yield cast(dict[str, Any], payload)
+    raise ModelsError("stream", "DeepSeek stream ended without terminal data")
+
+
+def _wire_object(pairs: list[tuple[str, Any]]) -> dict[str, Any]:
+    value: dict[str, Any] = {}
+    for name, item in pairs:
+        if name in value:
+            raise ValueError("duplicate JSON key")
+        value[name] = item
+    return value
+
+
+def _reject_json_constant(value: str) -> NoReturn:
+    del value
+    raise ValueError("invalid JSON constant")
 
 
 def _emit(validator: _AssistantMessageEventValidator, event: AssistantMessageEvent) -> AssistantMessageEvent:
@@ -364,23 +387,97 @@ def _parsed_tool_arguments(fragments: str) -> Mapping[str, JSONValue] | None:
     return decoded
 
 
+class _DeepSeekOperationState:
+    __slots__ = ("latest",)
+
+    def __init__(self, latest: AssistantMessage) -> None:
+        self.latest = latest
+
+    def remember(self, latest: AssistantMessage) -> AssistantMessage:
+        self.latest = latest
+        return latest
+
+
 async def _stream_simple(
     model: Model,
     context: Context,
     options: SimpleStreamOptions | None,
 ) -> AsyncIterator[AssistantMessageEvent]:
+    validator = _AssistantMessageEventValidator()
+    state = _DeepSeekOperationState(_empty_partial(model))
+    try:
+        async for event in _stream_simple_operation(model, context, options, state):
+            validator.accept(event)
+            if isinstance(event, AssistantMessageStartEvent):
+                state.remember(event.partial)
+            elif isinstance(event, AssistantMessageDoneEvent):
+                state.remember(event.message)
+            elif isinstance(event, AssistantMessageErrorEvent):
+                state.remember(event.error)
+            else:
+                state.remember(event.partial)
+            yield event
+    except asyncio.CancelledError:
+        raise
+    except ModelsError as classified:
+        if classified.code == "model_validation":
+            raise
+        public_error = {
+            "auth": "DeepSeek authentication failed",
+            "provider": "DeepSeek request failed",
+            "stream": "DeepSeek stream failed",
+        }.get(classified.code, "DeepSeek request failed")
+        partial = state.latest
+        error = replace(
+            partial,
+            stopReason="error",
+            errorMessage=public_error,
+        )
+        terminal = AssistantMessageErrorEvent(reason="error", error=error)
+        validator.accept(terminal)
+        yield terminal
+    except Exception as cause:
+        owner = asyncio.current_task()
+        if owner is not None and owner.cancelling():
+            raise LifecycleError(
+                "cleanup",
+                "DeepSeek cleanup failed",
+                causes=(cause,),
+            ) from cause
+        transport_failure = ModelsError(
+            "provider",
+            "DeepSeek request failed",
+            cause=cause,
+        )
+        partial = state.latest
+        error = replace(
+            partial,
+            stopReason="error",
+            errorMessage=str(transport_failure),
+        )
+        terminal = AssistantMessageErrorEvent(reason="error", error=error)
+        validator.accept(terminal)
+        yield terminal
+
+
+async def _stream_simple_operation(
+    model: Model,
+    context: Context,
+    options: SimpleStreamOptions | None,
+    operation: _DeepSeekOperationState,
+) -> AsyncIterator[AssistantMessageEvent]:
     body = _request_body(model, context, options)
+    validator = _AssistantMessageEventValidator()
+    partial = operation.latest
     api_key = os.environ.get("DEEPSEEK_API_KEY")
     if not api_key:
-        raise ModelsError("auth", "DeepSeek authentication is not configured")
+        raise ModelsError("auth", "DeepSeek authentication failed")
 
     headers = {
         "Authorization": f"Bearer {api_key}",
         "Content-Type": "application/json",
         "Accept-Encoding": "identity",
     }
-    validator = _AssistantMessageEventValidator()
-    partial = _empty_partial(model)
     text_index: int | None = None
     tool_calls: dict[int, _StreamingToolCall] = {}
     finish: Literal["stop", "length", "toolUse"] | None = None
@@ -400,7 +497,14 @@ async def _stream_simple(
             content=body,
         ) as response:
             if response.status_code != 200:
-                raise ModelsError("provider", "DeepSeek request failed")
+                raise ModelsError(
+                    "auth" if response.status_code in (401, 403) else "provider",
+                    (
+                        "DeepSeek authentication failed"
+                        if response.status_code in (401, 403)
+                        else "DeepSeek request failed"
+                    ),
+                )
             yield _emit(validator, AssistantMessageStartEvent(partial=partial))
             async for payload in _iter_sse_payloads(response):
                 if usage_seen:
@@ -410,15 +514,20 @@ async def _stream_simple(
                 response_id = payload.get("id")
                 response_model = payload.get("model")
                 if type(response_id) is str and partial.responseId is None:
-                    partial = replace(partial, responseId=response_id)
+                    partial = operation.remember(
+                        replace(partial, responseId=response_id)
+                    )
                 if type(response_model) is str and partial.responseModel is None:
-                    partial = replace(partial, responseModel=response_model)
+                    partial = operation.remember(
+                        replace(partial, responseModel=response_model)
+                    )
                 if "usage" in payload:
                     raw_usage = payload["usage"]
                     if not isinstance(raw_usage, Mapping):
                         raise ModelsError("stream", "DeepSeek usage is invalid")
                     usage = _usage_from_payload(raw_usage)
                     usage_seen = True
+                    operation.remember(replace(partial, usage=usage))
                 choices = payload.get("choices")
                 if not isinstance(choices, list) or not choices:
                     continue
@@ -446,13 +555,15 @@ async def _stream_simple(
                                     partial=opened,
                                 ),
                             )
-                            partial = opened
+                            partial = operation.remember(opened)
                         prior_text = partial.content[text_index]
                         assert isinstance(prior_text, TextContent)
-                        partial = _replace_content(
-                            partial,
-                            text_index,
-                            TextContent(text=prior_text.text + fragment),
+                        partial = operation.remember(
+                            _replace_content(
+                                partial,
+                                text_index,
+                                TextContent(text=prior_text.text + fragment),
+                            )
                         )
                         yield _emit(
                             validator,
@@ -483,9 +594,11 @@ async def _stream_simple(
                                     name=name_fragment or "",
                                 )
                                 tool_calls[stream_index] = state
-                                partial = replace(
-                                    partial,
-                                    content=(*partial.content, state.value()),
+                                partial = operation.remember(
+                                    replace(
+                                        partial,
+                                        content=(*partial.content, state.value()),
+                                    )
                                 )
                                 yield _emit(
                                     validator,
@@ -497,10 +610,12 @@ async def _stream_simple(
                             else:
                                 state.append_identity(id_fragment, name_fragment)
                             state.append_arguments(argument_fragment)
-                            partial = _replace_content(
-                                partial,
-                                state.contentIndex,
-                                state.value(),
+                            partial = operation.remember(
+                                _replace_content(
+                                    partial,
+                                    state.contentIndex,
+                                    state.value(),
+                                )
                             )
                             yield _emit(
                                 validator,
@@ -533,7 +648,9 @@ async def _stream_simple(
         else:
             state = tool_calls_by_content[content_index]
             tool_call = state.finalize()
-            partial = _replace_content(partial, content_index, tool_call)
+            partial = operation.remember(
+                _replace_content(partial, content_index, tool_call)
+            )
             yield _emit(
                 validator,
                 AssistantMessageToolCallEndEvent(

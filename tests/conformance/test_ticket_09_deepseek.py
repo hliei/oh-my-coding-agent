@@ -12,6 +12,7 @@ import pytest
 
 from oh_my_llm import (
     AuthResult,
+    AssistantMessageErrorEvent,
     AssistantMessageDoneEvent,
     AssistantMessageStartEvent,
     AssistantMessageTextDeltaEvent,
@@ -203,9 +204,11 @@ def test_missing_auth_and_foreign_models_fail_before_http(
     assert spy.requests == []
     assert spy.client_kwargs == []
 
-    with pytest.raises(ModelsError) as caught:
-        asyncio.run(_collect(dormant))
-    assert caught.value.code == "auth"
+    events = asyncio.run(_collect(dormant))
+    assert len(events) == 1
+    assert isinstance(events[0], AssistantMessageErrorEvent)
+    assert events[0].error.stopReason == "error"
+    assert events[0].error.errorMessage == "DeepSeek authentication failed"
     assert spy.requests == []
     assert spy.client_kwargs == []
 

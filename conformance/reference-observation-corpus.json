@@ -496,6 +496,42 @@
       "comparator": "compare valid categories and component rates directly; contrast malformed admission and total-token preservation",
       "normalization": "ABD:strict-deepseek-usage-finalization",
       "referenceCitations": ["packages/ai/src/api/openai-completions.ts#L1117-L1152", "packages/ai/src/models.ts#L386-L405"]
+    },
+    {
+      "id": "reference.deepseek-failure-classification",
+      "captureCaseId": "capture.deepseek-failure-classification",
+      "obligation": "omh-v0.deepseek-failure-classification",
+      "referenceRevision": "0e6909f050eeb15e8f6c05185511f3788357ddb3",
+      "canonicalInput": "invoke all four Model helpers across missing authentication, HTTP authentication rejection, Provider rejection, and malformed post-start stream data containing one safe partial and one secret canary",
+      "observations": {"A": "admitted", "L": {"preStart": ["error"], "postStart": ["start", "text_start", "text_delta", "error"]}, "T": {"categories": ["auth", "provider", "stream"], "partial": "safe partial", "responseId": "safe-response-id", "secretLeaked": false}, "E": {"requestCount": 3}, "C": "terminal_assistant_all_helpers"},
+      "omhExpectation": {"A": "admitted", "L": {"preStart": ["error"], "postStart": ["start", "text_start", "text_delta", "error"]}, "T": {"missingAuth": "DeepSeek authentication failed", "httpAuth": "DeepSeek authentication failed", "provider": "DeepSeek request failed", "stream": "DeepSeek stream failed", "partial": "safe partial", "responseId": "safe-response-id", "secretLeaked": false}, "E": {"requestCount": 3, "clientCount": 3}, "C": "terminal_assistant_all_helpers"},
+      "comparator": "compare category, terminal grammar, retained legal prefix, request count, and canary absence after redacted-prose and async-carrier normalization",
+      "normalization": "ignore timestamps, wire chunk boundaries, raw Provider prose, exception objects, and authenticated request bytes",
+      "referenceCitations": ["packages/ai/src/api/openai-completions.ts#L184-L450", "packages/ai/src/api/openai-completions.ts#L1117-L1152"]
+    },
+    {
+      "id": "reference.deepseek-failure-reuse",
+      "captureCaseId": "capture.deepseek-failure-reuse",
+      "obligation": "omh-v0.deepseek-failure-reuse",
+      "referenceRevision": "0e6909f050eeb15e8f6c05185511f3788357ddb3",
+      "canonicalInput": "fail one DeepSeek-backed Agent Run, remove the key for a second caller-started Run, rotate it, and start a third successful Run",
+      "observations": {"A": "caller_started_runs", "L": [], "T": {"provider": "error", "removedKey": "error", "recovered": true}, "E": {"requestCount": 2, "requestCountAfterRemoval": 1, "oneAttemptPerActivatedRun": true}, "C": {"idleAfterFailure": true, "freshRunAfterFailure": true, "keyReread": true}},
+      "omhExpectation": {"A": "caller_started_runs", "L": [], "T": {"provider": "DeepSeek request failed", "removedKey": "DeepSeek authentication failed", "recovered": true}, "E": {"requestCount": 2, "requestCountAfterRemoval": 1, "oneAttemptPerActivatedRun": true}, "C": {"idleAfterFailure": true, "freshRunAfterFailure": true, "keyReread": true}},
+      "comparator": "compare terminal categories, request counts, idle continuity, fresh caller-started success, and environment reread",
+      "normalization": "ignore timestamps, raw authenticated headers, and Python task mechanics",
+      "referenceCitations": ["packages/ai/src/api/openai-completions.ts#L184-L194", "packages/agent/src/agent-loop.ts#L178-L208"]
+    },
+    {
+      "id": "reference.deepseek-cancellation-settlement",
+      "captureCaseId": "capture.deepseek-cancellation-settlement",
+      "obligation": "omh-v0.deepseek-cancellation-settlement",
+      "referenceRevision": "0e6909f050eeb15e8f6c05185511f3788357ddb3",
+      "canonicalInput": "abort one DeepSeek-backed Agent while response bytes are blocked, delay cleanup, then start one fresh successful Run",
+      "observations": {"A": "current_run_captured", "L": {"cleanupBeforeTerminal": "best_effort"}, "T": {"stopReason": "aborted"}, "E": {"requestCounts": [1, 1]}, "C": {"freshRun": true}},
+      "omhExpectation": {"A": "current_run_captured", "L": {"cleanupBeforeTerminal": true}, "T": {"stopReason": "aborted", "errorMessage": "Operation aborted"}, "E": {"requestCounts": [1, 1], "transportRetries": [0, 0]}, "C": {"busyBeforeCleanup": true, "responseClosed": true, "transportClosed": true, "freshRun": true}},
+      "comparator": "compare clean abort and fresh success while applying omh complete settlement and hard reuse cutoff",
+      "normalization": "ABD:managed-run-cancellation",
+      "referenceCitations": ["packages/agent/src/agent.ts#L304-L320", "packages/agent/src/agent-loop.ts#L491-L544"]
     }
   ]
 }

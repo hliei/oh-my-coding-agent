@@ -476,7 +476,7 @@
       "authority": ".scratch/omh-v0/issues/05-choose-values-schemas-errors-contract.md#ABD:strict-toolcall-json-finalization",
       "publicInterface": "oh_my_llm.Models stream helpers and AssistantMessageEvent",
       "scenario": "accumulate fragmented DeepSeek Tool Call id, name, and JSON arguments into cumulative partials; separately end on an incomplete object",
-      "observations": {"A": "complete object admitted; incomplete final object rejected", "L": "start, toolcall_start, two toolcall_delta, toolcall_end, done", "T": "one exact ToolCall or ModelsError stream without repair", "E": "one Provider request per operation", "C": "no executable malformed Tool Call published"},
+      "observations": {"A": "complete object admitted; incomplete final object rejected", "L": "start, toolcall_start, two toolcall_delta, toolcall_end, done or terminal error", "T": "one exact ToolCall or redacted stream-error Assistant without repair", "E": "one Provider request per operation", "C": "no executable malformed Tool Call published"},
       "comparator": "compare the complete-object trace directly and apply strict no-repair finalization to the malformed Reference fallback",
       "normalization": "ABD:strict-toolcall-json-finalization",
       "evidenceClass": "ABD:strict-toolcall-json-finalization",
@@ -500,12 +500,48 @@
       "authority": ".scratch/omh-v0/issues/06-choose-model-provider-auth-surface.md#ABD:strict-deepseek-usage-finalization",
       "publicInterface": "oh_my_llm.Models stream and complete helpers",
       "scenario": "finalize valid reported prompt, completion, cache-hit, cache-miss, and total counts with fixed Flash cost; reject missing or contradictory terminal counts",
-      "observations": {"A": "one valid terminal Usage admitted; malformed or contradictory Usage rejected", "L": "all-zero partial Usage then one terminal payload", "T": "reported total preserved and ModelsError stream on invalid input", "E": "fixed unrounded component cost sum", "C": "no guessed, clamped, or zero-filled terminal Usage"},
+      "observations": {"A": "one valid terminal Usage admitted; malformed or contradictory Usage rejected", "L": "all-zero partial Usage then one terminal payload or terminal error", "T": "reported total preserved and redacted stream-error Assistant on invalid input", "E": "fixed unrounded component cost sum", "C": "no guessed, clamped, or zero-filled terminal Usage"},
       "comparator": "compare valid category projection and cost directly, then apply strict preservation-and-validation instead of Reference zero-fill and recomputation",
       "normalization": "ABD:strict-deepseek-usage-finalization",
       "evidenceClass": "ABD:strict-deepseek-usage-finalization",
       "corpusCase": "reference.strict-deepseek-usage-finalization",
       "executableCases": ["ticket-10-deepseek", "ticket-10-installed"]
+    },
+    {
+      "id": "omh-v0.deepseek-failure-classification",
+      "authority": ".scratch/omh-v0/issues/06-choose-model-provider-auth-surface.md#answer",
+      "publicInterface": "all four oh_my_llm.Models helpers",
+      "scenario": "classify missing and rejected authentication, Provider rejection, transport exceptions, malformed wire data, Tool deltas, finish data, reasoning, and Usage through terminal Assistant values",
+      "observations": {"A": "each valid operation admitted", "L": "pre-start failure emits only error; post-start failure preserves the legal cumulative prefix then error", "T": "stable redacted auth, provider, and stream terminal Assistants", "E": "one request at most and no secret, Provider prose, raw exception, or private cause in public observations", "C": "all four helpers expose the same terminal semantics"},
+      "comparator": "compare failure category, event grammar, retained legal partial state, redaction, and request count after normalizing Provider-specific prose and Python async carriers",
+      "normalization": "ignore timestamps, raw wire chunk boundaries, Provider prose, exception objects, and authenticated request bytes",
+      "evidenceClass": "exact-parity",
+      "corpusCase": "reference.deepseek-failure-classification",
+      "executableCases": ["ticket-11-deepseek-failures", "ticket-11-installed"]
+    },
+    {
+      "id": "omh-v0.deepseek-failure-reuse",
+      "authority": ".scratch/omh-v0/issues/06-choose-model-provider-auth-surface.md#answer",
+      "publicInterface": "oh_my_llm.Models and oh_my_core.Agent",
+      "scenario": "settle one Provider failure, remove the environment key for a later Run, rotate it, and start one fresh successful Run",
+      "observations": {"A": "caller-started Runs admitted only while idle", "L": "not_applicable", "T": "Provider error, later auth error, then successful Assistant", "E": "one request per activated effect; removed key starts no request; no automatic retry", "C": "fresh Run rereads the rotated key after complete failure settlement"},
+      "comparator": "compare failure settlement, zero automatic retry, per-effect environment lookup, and caller-started reuse",
+      "normalization": "ignore timestamps, raw authenticated headers, and Python task mechanics",
+      "evidenceClass": "exact-parity",
+      "corpusCase": "reference.deepseek-failure-reuse",
+      "executableCases": ["ticket-11-deepseek-failures", "ticket-11-installed"]
+    },
+    {
+      "id": "omh-v0.deepseek-cancellation-settlement",
+      "authority": ".scratch/omh-v0/issues/06-choose-model-provider-auth-surface.md#answer and .scratch/omh-v0/issues/07-choose-agent-loop-and-tool-lifecycle.md#cancellation-and-lifecycle-failure",
+      "publicInterface": "oh_my_core.Agent.abort, Agent.prompt, and DeepSeek-backed Models",
+      "scenario": "abort while DeepSeek response bytes are blocked, hold response cleanup, reject early reuse, then close response/client/transport and start a fresh successful Run",
+      "observations": {"A": "current Run captured", "L": "cleanup completes before aborted terminal settlement", "T": "one ordinary aborted Assistant", "E": "one request per Run with zero transport retries", "C": "busy before cleanup and reusable only after response and transport closure"},
+      "comparator": "compare clean abort and later reuse while applying omh complete-settlement, hard-cutoff, and Python carrier rules",
+      "normalization": "ABD:managed-run-cancellation",
+      "evidenceClass": "ABD:managed-run-cancellation",
+      "corpusCase": "reference.deepseek-cancellation-settlement",
+      "executableCases": ["ticket-11-deepseek-failures", "ticket-11-installed"]
     }
   ]
 }

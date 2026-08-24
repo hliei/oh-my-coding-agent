@@ -17,6 +17,7 @@ from oh_my_core import (
 )
 from oh_my_llm import (
     AssistantMessageDoneEvent,
+    AssistantMessageErrorEvent,
     AssistantMessageEvent,
     AssistantMessageToolCallEndEvent,
     Context,
@@ -393,17 +394,16 @@ async def _assert_broken_tool_rejected() -> None:
     original = _install(spy)
     try:
         models, model = _deepseek()
-        try:
-            await _collect(
-                models.streamSimple(
-                    model,
-                    Context(messages=(UserMessage(content="Use echo", timestamp=0),)),
-                )
+        events = await _collect(
+            models.streamSimple(
+                model,
+                Context(messages=(UserMessage(content="Use echo", timestamp=0),)),
             )
-        except ModelsError as error:
-            assert error.code == "stream"
-        else:
-            raise AssertionError("incomplete Tool arguments were repaired")
+        )
+        terminal = events[-1]
+        assert isinstance(terminal, AssistantMessageErrorEvent)
+        assert terminal.error.stopReason == "error"
+        assert terminal.error.errorMessage == "DeepSeek stream failed"
     finally:
         setattr(httpx, "AsyncClient", original)
 
