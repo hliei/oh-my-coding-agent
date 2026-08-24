@@ -580,6 +580,30 @@
       "comparator": "compare dual admission, shared path/id projection, absence of lease effects, and independent cleanup",
       "normalization": "ignore Python object ids and async carrier mechanics",
       "referenceCitations": ["packages/coding-agent/src/core/session-manager.ts#L816-L858", "packages/coding-agent/src/core/session-manager.ts#L1449-L1461"]
+    },
+    {
+      "id": "reference.session-prompt-lazy-flush",
+      "captureCaseId": "capture.session-prompt-lazy-flush",
+      "obligation": "omh-v0.session-prompt-lazy-flush",
+      "referenceRevision": "0e6909f050eeb15e8f6c05185511f3788357ddb3",
+      "canonicalInput": "create a fresh persistent Product Session with id prompt-one, activate one text prompt through deterministic no-Tool transport, inspect Session events and physical lines, then reopen the file",
+      "observations": {"A":"one_prompt_admitted","L":["agent_start","turn_start","message_start","message_end","message_start","message_update","message_update","message_update","message_end","turn_end","agent_end","agent_settled"],"T":{"activePathIsCompleteTree":true,"agentEndIsRunSuffix":true,"entryTypes":["model_change","thinking_level_change","message","message"],"messageRoles":["user","assistant"]},"E":{"beforeAwait":{"entries":0,"file":false,"requests":0},"physicalTypes":["session","model_change","thinking_level_change","message","message"],"requestCount":1},"C":{"reopenedValueEqual":true,"recoveredIdle":true}},
+      "omhExpectation": {"A":"one_prompt_admitted","L":["agent_start","turn_start","message_start","message_end","message_start","message_update","message_update","message_update","message_end","turn_end","agent_end","agent_settled"],"T":{"activePathIsCompleteTree":true,"agentEndIsRunSuffix":true,"entryTypes":["model_change","thinking_level_change","message","message"],"messageRoles":["user","assistant"]},"E":{"beforeAwait":{"entries":0,"file":false,"requests":0},"physicalTypes":["session","model_change","thinking_level_change","message","message"],"requestCount":1},"C":{"reopenedValueEqual":true,"recoveredIdle":true}},
+      "comparator": "compare lazy activation, selected Session lifecycle, entry and line order, Run-suffix identity, active path, and reopen",
+      "normalization": "ignore ids, timestamps, authenticated request bytes, Python async carrier mechanics, and product-root path",
+      "referenceCitations": ["packages/coding-agent/src/core/agent-session.ts#L126-L145", "packages/coding-agent/src/core/agent-session.ts#L534-L618", "packages/coding-agent/src/core/agent-session.ts#L1023-L1034", "packages/coding-agent/src/core/session-manager.ts#L946-L979"]
+    },
+    {
+      "id": "reference.session-incomplete-recovery",
+      "captureCaseId": "capture.session-incomplete-recovery",
+      "obligation": "omh-v0.session-incomplete-recovery",
+      "referenceRevision": "0e6909f050eeb15e8f6c05185511f3788357ddb3",
+      "canonicalInput": "complete one persistent Run, block the next Model effect after its User entry append, concurrently reopen the same path, and publish a recovered Product Session",
+      "observations": {"A":"live_nonempty_path_reopened","L":[],"T":{"assistantCount":1,"roles":["user","assistant","user"],"userText":["complete","interrupted"]},"E":{"fileUnchangedByOpen":true,"leaseFiles":0,"requestCount":2},"C":{"freshPromptRequired":true,"recoveredIdle":true,"redispatched":false}},
+      "omhExpectation": {"A":"live_nonempty_path_reopened","L":[],"T":{"assistantCount":1,"roles":["user","assistant","user"],"userText":["complete","interrupted"]},"E":{"fileUnchangedByOpen":true,"leaseFiles":0,"requestCount":2},"C":{"freshPromptRequired":true,"recoveredIdle":true,"redispatched":false}},
+      "comparator": "compare parsed-prefix active context, no lease, no open-time write, no redispatch, and fresh idle recovery",
+      "normalization": "ignore ids, timestamps, Python task mechanics, and the still-live source manager snapshot",
+      "referenceCitations": ["packages/coding-agent/src/core/session-manager.ts#L816-L858", "packages/coding-agent/src/core/session-manager.ts#L946-L979", "packages/coding-agent/src/core/agent-session.ts#L1023-L1034"]
     }
   ]
 }

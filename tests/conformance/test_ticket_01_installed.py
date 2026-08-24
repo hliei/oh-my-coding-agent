@@ -147,6 +147,12 @@ def test_installed_wheel_creates_and_disposes_empty_product_sessions(
     _assert_installed_scenario(installed_python, "ticket_12_scenario.py")
 
 
+def test_installed_wheel_prompts_and_recovers_one_no_tool_product_session(
+    installed_python: Path,
+) -> None:
+    _assert_installed_scenario(installed_python, "ticket_13_scenario.py")
+
+
 def test_first_conformance_authorities_are_closed_and_linked() -> None:
     matrix = json.loads((ROOT / "conformance/obligation-matrix.json").read_text())
     corpus = json.loads((ROOT / "conformance/reference-observation-corpus.json").read_text())

@@ -1,15 +1,27 @@
 from __future__ import annotations
 
 import asyncio
-from collections.abc import AsyncIterator, Awaitable, Callable
-from dataclasses import dataclass
+import builtins
+from collections.abc import AsyncIterator, Awaitable, Callable, Mapping
+from dataclasses import dataclass, field
+import inspect
 import os
-from typing import Any, TypeAlias, cast, final
+import time
+from typing import Any, ClassVar, Literal, TypeAlias, cast, final
 
-from oh_my_core import Agent, AgentEvent, AgentMessage, AgentOptions, AgentState
+from oh_my_core import (
+    Agent,
+    AgentEvent,
+    AgentMessage,
+    AgentOptions,
+    AgentState,
+    AgentToolResult,
+)
 from oh_my_llm import (
     AbortSignal,
+    AssistantMessage,
     AssistantMessageEvent,
+    JSONValue,
     LifecycleError,
     Model,
     ModelsError,
@@ -53,10 +65,169 @@ class PromptOptions:
             raise TypeError("PromptOptions.expandPromptTemplates: must be a bool")
 
 
-AgentSessionEvent: TypeAlias = AgentEvent
+class AgentSessionEvent:
+    __slots__ = ()
+    type: str
+    AgentStart: ClassVar[builtins.type[AgentStart]]
+    AgentEnd: ClassVar[builtins.type[AgentEnd]]
+    TurnStart: ClassVar[builtins.type[TurnStart]]
+    TurnEnd: ClassVar[builtins.type[TurnEnd]]
+    MessageStart: ClassVar[builtins.type[MessageStart]]
+    MessageUpdate: ClassVar[builtins.type[MessageUpdate]]
+    MessageEnd: ClassVar[builtins.type[MessageEnd]]
+    ToolExecutionStart: ClassVar[builtins.type[ToolExecutionStart]]
+    ToolExecutionUpdate: ClassVar[builtins.type[ToolExecutionUpdate]]
+    ToolExecutionEnd: ClassVar[builtins.type[ToolExecutionEnd]]
+    CompactionStart: ClassVar[builtins.type[CompactionStart]]
+    CompactionEnd: ClassVar[builtins.type[CompactionEnd]]
+    AgentSettled: ClassVar[builtins.type[AgentSettled]]
+
+    def __new__(cls, *args: object, **kwargs: object) -> AgentSessionEvent:
+        del args, kwargs
+        if cls is AgentSessionEvent:
+            raise TypeError("AgentSessionEvent is a sealed event base")
+        return super().__new__(cls)
+
+    def __init_subclass__(cls) -> None:
+        if cls.__module__ != __name__:
+            raise TypeError("AgentSessionEvent variants are sealed")
+        super().__init_subclass__()
+
+
+@final
+@dataclass(frozen=True, slots=True, kw_only=True)
+class AgentStart(AgentSessionEvent):
+    type: Literal["agent_start"] = field(init=False, default="agent_start")
+
+
+@final
+@dataclass(frozen=True, slots=True, kw_only=True)
+class AgentEnd(AgentSessionEvent):
+    messages: tuple[AgentMessage, ...]
+    willRetry: bool
+    type: Literal["agent_end"] = field(init=False, default="agent_end")
+
+
+@final
+@dataclass(frozen=True, slots=True, kw_only=True)
+class TurnStart(AgentSessionEvent):
+    type: Literal["turn_start"] = field(init=False, default="turn_start")
+
+
+@final
+@dataclass(frozen=True, slots=True, kw_only=True)
+class TurnEnd(AgentSessionEvent):
+    message: AssistantMessage
+    toolResults: tuple[AgentMessage, ...]
+    type: Literal["turn_end"] = field(init=False, default="turn_end")
+
+
+@final
+@dataclass(frozen=True, slots=True, kw_only=True)
+class MessageStart(AgentSessionEvent):
+    message: AgentMessage
+    type: Literal["message_start"] = field(init=False, default="message_start")
+
+
+@final
+@dataclass(frozen=True, slots=True, kw_only=True)
+class MessageUpdate(AgentSessionEvent):
+    message: AssistantMessage
+    assistantMessageEvent: AssistantMessageEvent
+    type: Literal["message_update"] = field(init=False, default="message_update")
+
+
+@final
+@dataclass(frozen=True, slots=True, kw_only=True)
+class MessageEnd(AgentSessionEvent):
+    message: AgentMessage
+    type: Literal["message_end"] = field(init=False, default="message_end")
+
+
+@final
+@dataclass(frozen=True, slots=True, kw_only=True)
+class ToolExecutionStart(AgentSessionEvent):
+    toolCallId: str
+    toolName: str
+    args: Mapping[str, JSONValue]
+    type: Literal["tool_execution_start"] = field(
+        init=False, default="tool_execution_start"
+    )
+
+
+@final
+@dataclass(frozen=True, slots=True, kw_only=True)
+class ToolExecutionUpdate(AgentSessionEvent):
+    toolCallId: str
+    toolName: str
+    args: Mapping[str, JSONValue]
+    partialResult: AgentToolResult
+    type: Literal["tool_execution_update"] = field(
+        init=False, default="tool_execution_update"
+    )
+
+
+@final
+@dataclass(frozen=True, slots=True, kw_only=True)
+class ToolExecutionEnd(AgentSessionEvent):
+    toolCallId: str
+    toolName: str
+    result: AgentToolResult
+    isError: bool
+    type: Literal["tool_execution_end"] = field(
+        init=False, default="tool_execution_end"
+    )
+
+
+@final
+@dataclass(frozen=True, slots=True, kw_only=True)
+class CompactionStart(AgentSessionEvent):
+    reason: Literal["manual", "threshold", "overflow"]
+    type: Literal["compaction_start"] = field(init=False, default="compaction_start")
+
+
+@final
+@dataclass(frozen=True, slots=True, kw_only=True)
+class CompactionEnd(AgentSessionEvent):
+    reason: Literal["manual", "threshold", "overflow"]
+    result: CompactionResult | None
+    aborted: bool
+    willRetry: bool
+    errorMessage: str | None = None
+    type: Literal["compaction_end"] = field(init=False, default="compaction_end")
+
+
+@final
+@dataclass(frozen=True, slots=True, kw_only=True)
+class AgentSettled(AgentSessionEvent):
+    type: Literal["agent_settled"] = field(init=False, default="agent_settled")
+
+
+AgentSessionEvent.AgentStart = AgentStart
+AgentSessionEvent.AgentEnd = AgentEnd
+AgentSessionEvent.TurnStart = TurnStart
+AgentSessionEvent.TurnEnd = TurnEnd
+AgentSessionEvent.MessageStart = MessageStart
+AgentSessionEvent.MessageUpdate = MessageUpdate
+AgentSessionEvent.MessageEnd = MessageEnd
+AgentSessionEvent.ToolExecutionStart = ToolExecutionStart
+AgentSessionEvent.ToolExecutionUpdate = ToolExecutionUpdate
+AgentSessionEvent.ToolExecutionEnd = ToolExecutionEnd
+AgentSessionEvent.CompactionStart = CompactionStart
+AgentSessionEvent.CompactionEnd = CompactionEnd
+AgentSessionEvent.AgentSettled = AgentSettled
+
+
 AgentSessionEventListener: TypeAlias = Callable[
     [AgentSessionEvent], None | Awaitable[None]
 ]
+
+
+class _SessionListenerRecord:
+    __slots__ = ("listener",)
+
+    def __init__(self, listener: AgentSessionEventListener) -> None:
+        self.listener = listener
 
 
 @final
@@ -64,10 +235,13 @@ class AgentSession:
     __slots__ = (
         "_agent",
         "_auto_compaction_enabled",
+        "_closing",
         "_disposed",
         "_listeners",
         "_model",
         "_operational_cwd",
+        "_prompt_active",
+        "_prompt_settlement",
         "_session_manager",
         "_system_prompt",
     )
@@ -88,9 +262,13 @@ class AgentSession:
         self._operational_cwd = operational_cwd
         self._agent = agent
         self._system_prompt = ""
-        self._listeners: list[AgentSessionEventListener] = []
+        self._listeners: list[_SessionListenerRecord] = []
         self._auto_compaction_enabled = True
+        self._closing = False
         self._disposed = False
+        self._prompt_active = False
+        self._prompt_settlement: asyncio.Future[None] | None = None
+        self._agent.subscribe(self._handle_agent_event)
 
     @property
     def model(self) -> Model:
@@ -136,11 +314,12 @@ class AgentSession:
         self._ensure_open()
         if not callable(listener):
             raise TypeError("listener must be callable")
-        self._listeners.append(listener)
+        record = _SessionListenerRecord(listener)
+        self._listeners.append(record)
 
         def unsubscribe() -> None:
             try:
-                self._listeners.remove(listener)
+                self._listeners.remove(record)
             except ValueError:
                 return
 
@@ -149,29 +328,59 @@ class AgentSession:
     async def prompt(
         self, text: str, options: PromptOptions | None = None
     ) -> None:
-        self._ensure_open()
         if type(text) is not str:
             raise TypeError("text must be a string")
         if options is not None and type(options) is not PromptOptions:
             raise TypeError("options must be a PromptOptions")
-        raise NotImplementedError("Product Session prompts are not implemented")
+        self._ensure_open()
+        if self._prompt_active:
+            raise LifecycleError("busy", "AgentSession is busy")
+        self._prompt_active = True
+        settlement = asyncio.get_running_loop().create_future()
+        self._prompt_settlement = settlement
+        try:
+            if not self._session_manager.getEntries():
+                self._session_manager.appendModelChange(
+                    self._model.provider, self._model.id
+                )
+                self._session_manager.appendThinkingLevelChange("off")
+            user = UserMessage(
+                content=text,
+                timestamp=time.time_ns() // 1_000_000,
+            )
+            self._session_manager.appendMessage(user)
+            try:
+                await self._agent.prompt(user)
+            finally:
+                await self._dispatch(AgentSettled())
+        finally:
+            self._prompt_active = False
+            if not settlement.done():
+                settlement.set_result(None)
+            if self._prompt_settlement is settlement:
+                self._prompt_settlement = None
 
     async def abort(self) -> None:
         if self._disposed:
             return
         self._agent.abort()
-        await self._agent.waitForIdle()
+        await self.waitForIdle()
 
     async def waitForIdle(self) -> None:
         if self._disposed:
             return
-        await self._agent.waitForIdle()
+        settlement = self._prompt_settlement
+        if settlement is None:
+            await self._agent.waitForIdle()
+        else:
+            await asyncio.shield(settlement)
 
     async def dispose(self) -> None:
         if self._disposed:
             return
+        self._closing = True
         self._agent.abort()
-        await self._agent.waitForIdle()
+        await self.waitForIdle()
         self._listeners.clear()
         self._disposed = True
 
@@ -240,6 +449,79 @@ class AgentSession:
     def _ensure_open(self) -> None:
         if self._disposed:
             raise LifecycleError("disposed", "AgentSession is disposed")
+        if self._closing:
+            raise LifecycleError("closing", "AgentSession is closing")
+
+    async def _handle_agent_event(
+        self, event: AgentEvent, signal: AbortSignal
+    ) -> None:
+        del signal
+        if isinstance(event, AgentEvent.MessageEnd) and not isinstance(
+            event.message, UserMessage
+        ):
+            self._session_manager.appendMessage(event.message)
+        await self._dispatch(_project_event(event))
+
+    async def _dispatch(self, event: AgentSessionEvent) -> None:
+        failures: list[BaseException] = []
+        for record in tuple(self._listeners):
+            try:
+                settled = record.listener(event)
+                if inspect.isawaitable(settled):
+                    await settled
+                elif settled is not None:
+                    raise TypeError(
+                        "AgentSession listener must return None or an awaitable"
+                    )
+            except BaseException as error:
+                failures.append(error)
+        if failures:
+            raise LifecycleError(
+                "listener",
+                "AgentSession listener failed",
+                causes=tuple(failures),
+            ) from failures[0]
+
+
+def _project_event(event: AgentEvent) -> AgentSessionEvent:
+    if isinstance(event, AgentEvent.AgentStart):
+        return AgentStart()
+    if isinstance(event, AgentEvent.AgentEnd):
+        return AgentEnd(messages=event.messages, willRetry=False)
+    if isinstance(event, AgentEvent.TurnStart):
+        return TurnStart()
+    if isinstance(event, AgentEvent.TurnEnd):
+        return TurnEnd(message=event.message, toolResults=event.toolResults)
+    if isinstance(event, AgentEvent.MessageStart):
+        return MessageStart(message=event.message)
+    if isinstance(event, AgentEvent.MessageUpdate):
+        return MessageUpdate(
+            message=event.message,
+            assistantMessageEvent=event.assistantMessageEvent,
+        )
+    if isinstance(event, AgentEvent.MessageEnd):
+        return MessageEnd(message=event.message)
+    if isinstance(event, AgentEvent.ToolExecutionStart):
+        return ToolExecutionStart(
+            toolCallId=event.toolCallId,
+            toolName=event.toolName,
+            args=event.args,
+        )
+    if isinstance(event, AgentEvent.ToolExecutionUpdate):
+        return ToolExecutionUpdate(
+            toolCallId=event.toolCallId,
+            toolName=event.toolName,
+            args=event.args,
+            partialResult=event.partialResult,
+        )
+    if isinstance(event, AgentEvent.ToolExecutionEnd):
+        return ToolExecutionEnd(
+            toolCallId=event.toolCallId,
+            toolName=event.toolName,
+            result=event.result,
+            isError=event.isError,
+        )
+    raise TypeError(f"unsupported Agent event: {event.type}")
 
 
 async def createAgentSession(

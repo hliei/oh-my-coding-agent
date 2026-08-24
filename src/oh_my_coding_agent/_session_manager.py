@@ -1,7 +1,7 @@
 from __future__ import annotations
 
 from collections.abc import Awaitable, Callable, Mapping, Sequence
-from dataclasses import dataclass, field
+from dataclasses import dataclass, field, fields, is_dataclass
 from datetime import datetime, timezone
 import inspect
 import json
@@ -9,12 +9,21 @@ import os
 from pathlib import Path
 import secrets
 import time
-from typing import Any, Literal, TypeAlias, final
+from types import MappingProxyType
+from typing import Any, Literal, TypeAlias, cast, final
 from urllib.parse import unquote, urlparse
 import uuid
 
 from oh_my_core import AgentMessage
-from oh_my_llm import TextContent
+from oh_my_llm import (
+    AssistantMessage,
+    TextContent,
+    ToolCall,
+    ToolResultMessage,
+    Usage,
+    UsageCost,
+    UserMessage,
+)
 
 
 CURRENT_SESSION_VERSION: Literal[3] = 3
@@ -264,19 +273,50 @@ def _header_json(header: SessionHeader) -> bytes:
     return json.dumps(value, ensure_ascii=False, separators=(",", ":")).encode("utf-8") + b"\n"
 
 
-def _read_header(path: str) -> SessionHeader:
-    data = Path(path).read_bytes()
-    if not data:
-        raise ValueError(f"Session file is empty: {path}")
-    parsed: object | None = None
-    for physical_line in data.splitlines():
+def _json_value(value: object) -> object:
+    if value is None or type(value) in (bool, int, float, str):
+        return value
+    if type(value) in (list, tuple):
+        return [_json_value(item) for item in cast(Sequence[object], value)]
+    if isinstance(value, Mapping):
+        return {str(key): _json_value(item) for key, item in value.items()}
+    if is_dataclass(value) and not isinstance(value, type):
+        result: dict[str, object] = {}
+        for item in fields(value):
+            item_value = getattr(value, item.name)
+            if item_value is None and item.default is None:
+                continue
+            result[item.name] = _json_value(item_value)
+        return result
+    raise TypeError(f"Session JSON does not support {type(value).__name__}")
+
+
+def _entry_json(entry: SessionEntry) -> bytes:
+    return (
+        json.dumps(
+            _json_value(entry), ensure_ascii=False, separators=(",", ":")
+        ).encode("utf-8")
+        + b"\n"
+    )
+
+
+def _parsed_values(path: str) -> list[object]:
+    values: list[object] = []
+    for physical_line in Path(path).read_bytes().splitlines():
         if not physical_line.strip():
             continue
         try:
-            parsed = json.loads(physical_line)
+            values.append(json.loads(physical_line))
         except (UnicodeDecodeError, json.JSONDecodeError):
             continue
-        break
+    return values
+
+
+def _read_header(path: str) -> SessionHeader:
+    if not Path(path).read_bytes():
+        raise ValueError(f"Session file is empty: {path}")
+    values = _parsed_values(path)
+    parsed = values[0] if values else None
     if not isinstance(parsed, dict) or parsed.get("type") != "session":
         raise ValueError(f"Session file is not a valid omh session: {path}")
     identifier = parsed.get("id")
@@ -293,6 +333,160 @@ def _read_header(path: str) -> SessionHeader:
         cwd=cwd,
         parentSession=parent,
     )
+
+
+def _text_content(value: object) -> TextContent:
+    if type(value) is not dict:
+        raise ValueError("Session Message content is invalid")
+    raw = cast(dict[str, Any], value)
+    return TextContent(
+        text=raw["text"],
+        textSignature=raw.get("textSignature"),
+    )
+
+
+def _tool_call(value: object) -> ToolCall:
+    if type(value) is not dict:
+        raise ValueError("Session Tool Call is invalid")
+    raw = cast(dict[str, Any], value)
+    return ToolCall(
+        id=raw["id"],
+        name=raw["name"],
+        arguments=raw["arguments"],
+        thoughtSignature=raw.get("thoughtSignature"),
+    )
+
+
+def _usage(value: object) -> Usage:
+    if type(value) is not dict:
+        raise ValueError("Session Usage is invalid")
+    raw = cast(dict[str, Any], value)
+    cost_value = raw["cost"]
+    if type(cost_value) is not dict:
+        raise ValueError("Session Usage cost is invalid")
+    cost = cast(dict[str, Any], cost_value)
+    return Usage(
+        input=raw["input"],
+        output=raw["output"],
+        cacheRead=raw["cacheRead"],
+        cacheWrite=raw["cacheWrite"],
+        totalTokens=raw["totalTokens"],
+        cacheWrite1h=raw.get("cacheWrite1h"),
+        cost=UsageCost(
+            input=float(cost["input"]),
+            output=float(cost["output"]),
+            cacheRead=float(cost["cacheRead"]),
+            cacheWrite=float(cost["cacheWrite"]),
+            total=float(cost["total"]),
+        ),
+    )
+
+
+def _message(value: object) -> AgentMessage:
+    if type(value) is not dict:
+        raise ValueError("Session Message is invalid")
+    raw = cast(dict[str, Any], value)
+    role = raw.get("role")
+    content_value = raw.get("content")
+    if role == "user":
+        content = (
+            content_value
+            if type(content_value) is str
+            else tuple(_text_content(item) for item in cast(list[object], content_value))
+        )
+        return UserMessage(content=content, timestamp=raw["timestamp"])
+    if role == "assistant":
+        assistant_content = tuple(
+            _text_content(item)
+            if type(item) is dict and item.get("type") == "text"
+            else _tool_call(item)
+            for item in cast(list[object], content_value)
+        )
+        return AssistantMessage(
+            content=assistant_content,
+            api=raw["api"],
+            provider=raw["provider"],
+            model=raw["model"],
+            usage=_usage(raw["usage"]),
+            stopReason=raw["stopReason"],
+            timestamp=raw["timestamp"],
+            responseModel=raw.get("responseModel"),
+            responseId=raw.get("responseId"),
+            errorMessage=raw.get("errorMessage"),
+        )
+    if role == "toolResult":
+        return ToolResultMessage(
+            toolCallId=raw["toolCallId"],
+            toolName=raw["toolName"],
+            content=tuple(
+                _text_content(item) for item in cast(list[object], content_value)
+            ),
+            details=raw.get("details"),
+            isError=raw["isError"],
+            timestamp=raw["timestamp"],
+        )
+    raise ValueError("Session Message role is invalid")
+
+
+def _entry(value: object) -> SessionEntry:
+    if type(value) is not dict:
+        raise ValueError("Session entry is invalid")
+    raw = cast(dict[str, Any], value)
+    common: dict[str, Any] = {
+        "id": raw["id"],
+        "parentId": raw.get("parentId"),
+        "timestamp": raw["timestamp"],
+    }
+    entry_type = raw.get("type")
+    if entry_type == "message":
+        return SessionMessageEntry(message=_message(raw["message"]), **common)
+    if entry_type == "thinking_level_change":
+        return ThinkingLevelChangeEntry(
+            thinkingLevel=raw["thinkingLevel"], **common
+        )
+    if entry_type == "model_change":
+        return ModelChangeEntry(
+            provider=raw["provider"], modelId=raw["modelId"], **common
+        )
+    if entry_type == "compaction":
+        return CompactionEntry(
+            summary=raw["summary"],
+            firstKeptEntryId=raw["firstKeptEntryId"],
+            tokensBefore=raw["tokensBefore"],
+            details=raw.get("details"),
+            fromHook=raw.get("fromHook", False),
+            **common,
+        )
+    if entry_type == "branch_summary":
+        return BranchSummaryEntry(
+            fromId=raw["fromId"],
+            summary=raw["summary"],
+            details=raw.get("details"),
+            fromHook=raw.get("fromHook", False),
+            **common,
+        )
+    if entry_type == "custom":
+        return CustomEntry(
+            customType=raw["customType"], data=raw.get("data"), **common
+        )
+    if entry_type == "custom_message":
+        content = raw["content"]
+        return CustomMessageEntry(
+            customType=raw["customType"],
+            content=content
+            if type(content) is str
+            else tuple(_text_content(item) for item in cast(list[object], content)),
+            display=raw["display"],
+            details=raw.get("details"),
+            **common,
+        )
+    if entry_type == "label":
+        return LabelEntry(
+            targetId=raw["targetId"], label=raw.get("label"), **common
+        )
+    if entry_type == "session_info":
+        return SessionInfoEntry(name=raw.get("name"), **common)
+    raise ValueError("Session entry type is invalid")
 
 
 @final
@@ -408,6 +602,21 @@ class SessionManager:
         manager._header = header
         manager._session_file = resolved_path
         manager._flushed = True
+        for value in _parsed_values(resolved_path)[1:]:
+            try:
+                entry = _entry(value)
+            except (KeyError, TypeError, ValueError):
+                continue
+            manager._entries.append(entry)
+            manager._by_id[entry.id] = entry
+            manager._leaf_id = entry.id
+            if isinstance(entry, LabelEntry):
+                if entry.label:
+                    manager._labels[entry.targetId] = entry.label
+                    manager._label_timestamps[entry.targetId] = entry.timestamp
+                else:
+                    manager._labels.pop(entry.targetId, None)
+                    manager._label_timestamps.pop(entry.targetId, None)
         return manager
 
     @classmethod
@@ -622,16 +831,38 @@ class SessionManager:
         return self._session_file
 
     def appendMessage(self, message: AgentMessage) -> str:
-        del message
-        raise NotImplementedError("Session entry append is not implemented")
+        if not isinstance(message, (UserMessage, AssistantMessage, ToolResultMessage)):
+            raise TypeError("message must be an AgentMessage")
+        entry = SessionMessageEntry(
+            id=self._entry_id(),
+            parentId=self._leaf_id,
+            timestamp=_timestamp(),
+            message=message,
+        )
+        self._append_entry(entry)
+        return entry.id
 
     def appendThinkingLevelChange(self, thinkingLevel: str) -> str:
-        del thinkingLevel
-        raise NotImplementedError("Session entry append is not implemented")
+        selected = _string(thinkingLevel, "thinkingLevel")
+        entry = ThinkingLevelChangeEntry(
+            id=self._entry_id(),
+            parentId=self._leaf_id,
+            timestamp=_timestamp(),
+            thinkingLevel=selected,
+        )
+        self._append_entry(entry)
+        return entry.id
 
     def appendModelChange(self, provider: str, modelId: str) -> str:
-        del provider, modelId
-        raise NotImplementedError("Session entry append is not implemented")
+        entry = ModelChangeEntry(
+            id=self._entry_id(),
+            parentId=self._leaf_id,
+            timestamp=_timestamp(),
+            provider=_string(provider, "provider"),
+            modelId=_string(modelId, "modelId"),
+        )
+        self._append_entry(entry)
+        return entry.id
 
     def appendCompaction(
         self,
@@ -675,8 +906,7 @@ class SessionManager:
         return self._by_id.get(id)
 
     def getChildren(self, parentId: str) -> tuple[SessionEntry, ...]:
-        del parentId
-        return ()
+        return tuple(entry for entry in self._entries if entry.parentId == parentId)
 
     def getLabel(self, id: str) -> str | None:
         del id
@@ -687,14 +917,46 @@ class SessionManager:
         raise NotImplementedError("Session entry append is not implemented")
 
     def getBranch(self, fromId: str | None = None) -> tuple[SessionEntry, ...]:
-        del fromId
-        return ()
+        current_id = self._leaf_id if fromId is None else fromId
+        branch: list[SessionEntry] = []
+        seen: set[str] = set()
+        while current_id is not None and current_id not in seen:
+            seen.add(current_id)
+            current = self._by_id.get(current_id)
+            if current is None:
+                break
+            branch.append(current)
+            current_id = current.parentId
+        branch.reverse()
+        return tuple(branch)
 
     def buildContextEntries(self) -> tuple[SessionEntry, ...]:
         return self.getBranch()
 
     def buildSessionContext(self) -> SessionContext:
-        return SessionContext(messages=(), thinkingLevel="off", model=None)
+        branch = self.getBranch()
+        thinking_level = "off"
+        model: Mapping[str, str] | None = None
+        messages: list[AgentMessage] = []
+        for entry in branch:
+            if isinstance(entry, ThinkingLevelChangeEntry):
+                thinking_level = entry.thinkingLevel
+            elif isinstance(entry, ModelChangeEntry):
+                model = MappingProxyType(
+                    {"provider": entry.provider, "modelId": entry.modelId}
+                )
+            elif isinstance(entry, SessionMessageEntry):
+                messages.append(entry.message)
+                if isinstance(entry.message, AssistantMessage):
+                    model = MappingProxyType(
+                        {
+                            "provider": entry.message.provider,
+                            "modelId": entry.message.model,
+                        }
+                    )
+        return SessionContext(
+            messages=tuple(messages), thinkingLevel=thinking_level, model=model
+        )
 
     def getHeader(self) -> SessionHeader:
         return self._header
@@ -703,7 +965,37 @@ class SessionManager:
         return tuple(self._entries)
 
     def getTree(self) -> tuple[SessionTreeNode, ...]:
-        return ()
+        children: dict[str, list[SessionTreeNode]] = {
+            entry.id: [] for entry in self._entries
+        }
+        nodes = {
+            entry.id: SessionTreeNode(
+                entry=entry,
+                children=(),
+                label=self._labels.get(entry.id),
+                labelTimestamp=self._label_timestamps.get(entry.id),
+            )
+            for entry in self._entries
+        }
+        roots: list[SessionTreeNode] = []
+        for entry in self._entries:
+            node = nodes[entry.id]
+            if entry.parentId is None or entry.parentId == entry.id:
+                roots.append(node)
+            elif entry.parentId in children:
+                children[entry.parentId].append(node)
+            else:
+                roots.append(node)
+
+        rebuilt: dict[str, SessionTreeNode] = {}
+        for entry in reversed(self._entries):
+            rebuilt[entry.id] = SessionTreeNode(
+                entry=entry,
+                children=tuple(rebuilt[child.entry.id] for child in children[entry.id]),
+                label=self._labels.get(entry.id),
+                labelTimestamp=self._label_timestamps.get(entry.id),
+            )
+        return tuple(rebuilt[root.entry.id] for root in roots)
 
     def branch(self, entryId: str) -> None:
         if entryId not in self._by_id:
@@ -725,3 +1017,33 @@ class SessionManager:
 
     def createBranchedSession(self, leafId: str) -> str | None:
         raise ValueError(f"Entry {leafId} not found")
+
+    def _entry_id(self) -> str:
+        for _ in range(100):
+            identifier = uuid.uuid4().hex[:8]
+            if identifier not in self._by_id:
+                return identifier
+        return str(uuid.uuid4())
+
+    def _append_entry(self, entry: SessionEntry) -> None:
+        self._entries.append(entry)
+        self._by_id[entry.id] = entry
+        self._leaf_id = entry.id
+        if not self._persist or self._session_file is None:
+            return
+        has_assistant = any(
+            isinstance(item, SessionMessageEntry)
+            and isinstance(item.message, AssistantMessage)
+            for item in self._entries
+        )
+        if not self._flushed:
+            if not has_assistant:
+                return
+            with open(self._session_file, "xb") as output:
+                output.write(_header_json(self._header))
+                for item in self._entries:
+                    output.write(_entry_json(item))
+            self._flushed = True
+            return
+        with open(self._session_file, "ab") as output:
+            output.write(_entry_json(entry))

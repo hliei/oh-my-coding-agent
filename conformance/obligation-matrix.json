@@ -590,6 +590,30 @@
       "evidenceClass": "exact-parity",
       "corpusCase": "reference.session-no-continuing-lease",
       "executableCases": ["ticket-12-session", "ticket-12-installed"]
+    },
+    {
+      "id": "omh-v0.session-prompt-lazy-flush",
+      "authority": ".scratch/omh-v0/issues/08-choose-agent-session-surface.md#prompt-agent-projection-and-listeners",
+      "publicInterface": "oh_my_coding_agent.AgentSession.prompt, AgentSession.subscribe, and SessionManager.open",
+      "scenario": "activate one deterministic no-Tool prompt on a fresh persistent Product Session, observe Session events and physical JSONL order, then reopen its active path",
+      "observations": {"A": "one lazy prompt admitted", "L": "selected Core lifecycle followed by AgentSettled", "T": "Model, Thinking, exact User, and Assistant entries plus identical AgentEnd Run suffix", "E": "no file or Model request before await; first Assistant exclusively flushes the complete ordered prefix", "C": "prompt returns None and reopen is value-equal, idle, and active-path complete"},
+      "comparator": "compare lazy activation, event order, Run-suffix identity, physical prefix order, active context, and reopened state",
+      "normalization": "PA:python-async-resource-carriers; ignore entry ids, timestamps, authenticated request bytes, and product-root path",
+      "evidenceClass": "PA:python-async-resource-carriers",
+      "corpusCase": "reference.session-prompt-lazy-flush",
+      "executableCases": ["ticket-13-session", "ticket-13-installed"]
+    },
+    {
+      "id": "omh-v0.session-incomplete-recovery",
+      "authority": ".scratch/omh-v0/issues/08-choose-agent-session-surface.md#jsonl-persistence-and-recovery",
+      "publicInterface": "oh_my_coding_agent.AgentSession.prompt, SessionManager.open, and createAgentSession",
+      "scenario": "after one flushed Run, block the next Model effect after its User entry append, concurrently reopen the same nonempty path, and publish a recovered Product Session",
+      "observations": {"A": "live nonempty path reopened without an owner lease", "L": "not_applicable", "T": "complete prior User/Assistant plus interrupted User active-path suffix", "E": "open performs no write or effect redispatch and creates no lease file", "C": "recovered Session is fresh idle and requires a new caller prompt"},
+      "comparator": "compare parsed-prefix entries, absence of replay and ownership admission, unchanged file, and fresh idle recovery",
+      "normalization": "ignore entry ids, timestamps, Python task mechanics, and the still-live source manager snapshot",
+      "evidenceClass": "exact-parity",
+      "corpusCase": "reference.session-incomplete-recovery",
+      "executableCases": ["ticket-13-session", "ticket-13-installed"]
     }
   ]
 }
