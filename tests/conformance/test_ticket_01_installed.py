@@ -141,6 +141,12 @@ def test_installed_wheel_settles_deepseek_failures_and_cancellation(
     _assert_installed_scenario(installed_python, "ticket_11_scenario.py")
 
 
+def test_installed_wheel_creates_and_disposes_empty_product_sessions(
+    installed_python: Path,
+) -> None:
+    _assert_installed_scenario(installed_python, "ticket_12_scenario.py")
+
+
 def test_first_conformance_authorities_are_closed_and_linked() -> None:
     matrix = json.loads((ROOT / "conformance/obligation-matrix.json").read_text())
     corpus = json.loads((ROOT / "conformance/reference-observation-corpus.json").read_text())

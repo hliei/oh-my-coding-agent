@@ -156,7 +156,7 @@ def main() -> None:
     assert inspect.signature(fauxProvider).parameters == {}
     assert oh_my_llm.__all__
     assert oh_my_core.__all__
-    assert oh_my_coding_agent.__all__ == ()
+    assert oh_my_coding_agent.__all__
     assert not hasattr(oh_my_llm, "Agent")
     assert not hasattr(oh_my_core, "Model")
     assert not hasattr(oh_my_coding_agent, "Agent")

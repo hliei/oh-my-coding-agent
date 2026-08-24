@@ -532,6 +532,54 @@
       "comparator": "compare clean abort and fresh success while applying omh complete settlement and hard reuse cutoff",
       "normalization": "ABD:managed-run-cancellation",
       "referenceCitations": ["packages/agent/src/agent.ts#L304-L320", "packages/agent/src/agent-loop.ts#L491-L544"]
+    },
+    {
+      "id": "reference.session-empty-unflushed",
+      "captureCaseId": "capture.session-empty-unflushed",
+      "obligation": "omh-v0.session-empty-unflushed",
+      "referenceRevision": "0e6909f050eeb15e8f6c05185511f3788357ddb3",
+      "canonicalInput": "create one persistent manager with id empty and one in-memory manager with id memory without appending an Assistant Message",
+      "observations": {"A": "persistent_and_in_memory_admitted", "L": [], "T": {"version": 3, "persistentEmpty": true, "memoryEmpty": true, "leafs": [null, null]}, "E": {"directoryCreated": true, "candidateFileExists": false, "memoryCwdExists": false, "memoryFile": null}, "C": "empty_unflushed"},
+      "omhExpectation": {"A": "persistent_and_in_memory_admitted", "L": [], "T": {"version": 3, "persistentEmpty": true, "memoryEmpty": true, "leafs": [null, null]}, "E": {"directoryCreated": true, "candidateFileExists": false, "memoryCwdExists": false, "memoryFile": null}, "C": "empty_unflushed"},
+      "comparator": "compare version, empty tree and leaf, and filesystem effects after the user-level Session-root mapping",
+      "normalization": "ABD:omh-user-session-root; ignore generated timestamps",
+      "referenceCitations": ["packages/coding-agent/src/core/session-manager.ts#L791-L880", "packages/coding-agent/src/core/session-manager.ts#L1439-L1481"]
+    },
+    {
+      "id": "reference.session-supplied-manager-identity",
+      "captureCaseId": "capture.session-supplied-manager-identity",
+      "obligation": "omh-v0.session-supplied-manager-identity",
+      "referenceRevision": "0e6909f050eeb15e8f6c05185511f3788357ddb3",
+      "canonicalInput": "supply one in-memory manager with id identity to Product Session creation under a different explicit cwd, inspect the empty Session, and dispose it",
+      "observations": {"A": "supplied_manager_admitted", "L": [], "T": {"sameManager": true, "sessionId": "identity", "model": {"provider": "deepseek", "id": "deepseek-v4-flash"}, "messages": 0}, "E": {"managerUnchangedByDisposal": true}, "C": "disposed_idle"},
+      "omhExpectation": {"A": "supplied_manager_admitted", "L": [], "T": {"sameManager": true, "sessionId": "identity", "model": {"provider": "deepseek", "id": "deepseek-v4-flash"}, "messages": 0}, "E": {"managerUnchangedByDisposal": true}, "C": "disposed_idle"},
+      "comparator": "compare manager object identity, fixed Model, empty projections, and retained manager state after logical disposal",
+      "normalization": "PA:python-async-resource-carriers and ABD:managed-session-disposal",
+      "referenceCitations": ["packages/coding-agent/src/core/sdk.ts#L167-L184", "packages/coding-agent/src/core/agent-session.ts#L799-L848"]
+    },
+    {
+      "id": "reference.session-caller-ids",
+      "captureCaseId": "capture.session-caller-ids",
+      "obligation": "omh-v0.session-caller-ids",
+      "referenceRevision": "0e6909f050eeb15e8f6c05185511f3788357ddb3",
+      "canonicalInput": "supply ids empty, memory, reset.id, and fork.id through the four selected manager operations and omit one in-memory id",
+      "observations": {"A": "caller_and_generated_ids_admitted", "L": [], "T": {"create": "empty", "inMemory": "memory", "newSession": "reset.id", "forkFrom": "fork.id", "generatedVersion": 7}, "E": {"forkFileCreated": true}, "C": "ids_preserved"},
+      "omhExpectation": {"A": "caller_and_generated_ids_admitted", "L": [], "T": {"create": "empty", "inMemory": "memory", "newSession": "reset.id", "forkFrom": "fork.id", "generatedVersion": 7}, "E": {"forkFileCreated": true}, "C": "ids_preserved"},
+      "comparator": "compare caller-selected strings and generated UUID version while ignoring generated random bits and timestamps",
+      "normalization": "ignore generated UUIDv7 random bits and timestamps",
+      "referenceCitations": ["packages/coding-agent/src/core/session-manager.ts#L209-L225", "packages/coding-agent/src/core/session-manager.ts#L861-L880", "packages/coding-agent/src/core/session-manager.ts#L1439-L1538"]
+    },
+    {
+      "id": "reference.session-no-continuing-lease",
+      "captureCaseId": "capture.session-no-continuing-lease",
+      "obligation": "omh-v0.session-no-continuing-lease",
+      "referenceRevision": "0e6909f050eeb15e8f6c05185511f3788357ddb3",
+      "canonicalInput": "open the same valid empty Session file twice, publish two idle Product Sessions, and dispose both independently",
+      "observations": {"A": "two_managers_and_sessions_admitted", "L": [], "T": {"samePath": true, "sameId": true}, "E": {"leaseFiles": 0}, "C": "independent_disposal"},
+      "omhExpectation": {"A": "two_managers_and_sessions_admitted", "L": [], "T": {"samePath": true, "sameId": true}, "E": {"leaseFiles": 0}, "C": "independent_disposal"},
+      "comparator": "compare dual admission, shared path/id projection, absence of lease effects, and independent cleanup",
+      "normalization": "ignore Python object ids and async carrier mechanics",
+      "referenceCitations": ["packages/coding-agent/src/core/session-manager.ts#L816-L858", "packages/coding-agent/src/core/session-manager.ts#L1449-L1461"]
     }
   ]
 }

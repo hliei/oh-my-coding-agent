@@ -542,6 +542,54 @@
       "evidenceClass": "ABD:managed-run-cancellation",
       "corpusCase": "reference.deepseek-cancellation-settlement",
       "executableCases": ["ticket-11-deepseek-failures", "ticket-11-installed"]
+    },
+    {
+      "id": "omh-v0.session-empty-unflushed",
+      "authority": ".scratch/omh-v0/issues/08-choose-agent-session-surface.md#jsonl-persistence-and-recovery",
+      "publicInterface": "oh_my_coding_agent.SessionManager.create and SessionManager.inMemory",
+      "scenario": "create one persistent and one in-memory empty SessionManager and inspect their version-3 headers, trees, leaves, and carriers before any Assistant Message",
+      "observations": {"A": "persistent and in-memory managers admitted", "L": "not_applicable", "T": "version-3 empty header, entries, tree, branch, context, and leaf", "E": "persistent directory and candidate path only; no persistent file, discovery row, or in-memory I/O", "C": "empty unflushed managers remain caller-visible"},
+      "comparator": "compare empty header/tree/leaf values and filesystem effects after the accepted product-root path mapping",
+      "normalization": "ABD:omh-user-session-root; ignore generated id and timestamp bytes",
+      "evidenceClass": "ABD:omh-user-session-root",
+      "corpusCase": "reference.session-empty-unflushed",
+      "executableCases": ["ticket-12-session", "ticket-12-installed"]
+    },
+    {
+      "id": "omh-v0.session-supplied-manager-identity",
+      "authority": ".scratch/omh-v0/issues/08-choose-agent-session-surface.md#public-creation-and-closed-surface",
+      "publicInterface": "oh_my_coding_agent.createAgentSession and AgentSession.dispose",
+      "scenario": "create an empty Product Session with a supplied in-memory manager and differing operational cwd, then dispose it",
+      "observations": {"A": "supplied manager admitted unchanged by identity", "L": "not_applicable", "T": "fixed DeepSeek Model plus projected manager id and empty messages", "E": "disposal does not flush, copy, wrap, roll back, or release persistence ownership", "C": "disposed idle with manager state retained"},
+      "comparator": "compare supplied manager identity, fixed Model, empty projections, and logical resource release after Python async normalization",
+      "normalization": "PA:python-async-resource-carriers and ABD:managed-session-disposal",
+      "evidenceClass": "ABD:managed-session-disposal",
+      "corpusCase": "reference.session-supplied-manager-identity",
+      "executableCases": ["ticket-12-session", "ticket-12-installed"]
+    },
+    {
+      "id": "omh-v0.session-caller-ids",
+      "authority": ".scratch/omh-v0/issues/08-choose-agent-session-surface.md#paths-identity-and-selection",
+      "publicInterface": "oh_my_coding_agent.NewSessionOptions and SessionManager factories",
+      "scenario": "supply admitted ids to create, inMemory, newSession, and forkFrom while separately omitting one id",
+      "observations": {"A": "admitted caller ids preserved exactly", "L": "not_applicable", "T": "four exact caller ids and one generated UUIDv7", "E": "invalid ids reject before manager or filesystem mutation", "C": "newSession preserves cwd, mode, and directory"},
+      "comparator": "compare exact admitted ids and generated UUID version while ignoring generated random bits and timestamps",
+      "normalization": "ignore generated UUIDv7 random bits and timestamps",
+      "evidenceClass": "exact-parity",
+      "corpusCase": "reference.session-caller-ids",
+      "executableCases": ["ticket-12-session", "ticket-12-installed"]
+    },
+    {
+      "id": "omh-v0.session-no-continuing-lease",
+      "authority": ".scratch/omh-v0/issues/08-choose-agent-session-surface.md#jsonl-persistence-and-recovery",
+      "publicInterface": "oh_my_coding_agent.SessionManager.open and createAgentSession",
+      "scenario": "open one empty Session file through two managers, publish two idle Product Sessions, and dispose them independently",
+      "observations": {"A": "both managers and Sessions admitted", "L": "not_applicable", "T": "same path and Session id visible through independent managers", "E": "no owner-busy gate, lease file, takeover, or lease release", "C": "independent disposal leaves shared Session state unchanged"},
+      "comparator": "compare admission, path/id projection, absence of lease effects, and independent disposal",
+      "normalization": "ignore Python object ids and async carrier mechanics",
+      "evidenceClass": "exact-parity",
+      "corpusCase": "reference.session-no-continuing-lease",
+      "executableCases": ["ticket-12-session", "ticket-12-installed"]
     }
   ]
 }
