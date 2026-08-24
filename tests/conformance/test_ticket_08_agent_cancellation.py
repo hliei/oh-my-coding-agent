@@ -384,6 +384,166 @@ def test_abort_during_tool_preflight_correlates_every_call_without_later_effects
     asyncio.run(run())
 
 
+def test_listener_abort_before_model_start_skips_the_model_effect() -> None:
+    faux = fauxProvider()
+    model = faux.getModel()
+    assert model is not None
+    effects = 0
+    event_types: list[str] = []
+
+    async def forbidden_stream(
+        model: Model,
+        context: Any,
+        options: object | None,
+        signal: AbortSignal,
+    ) -> AsyncIterator[AssistantMessageEvent]:
+        nonlocal effects
+        del model, context, options, signal
+        effects += 1
+        raise AssertionError("Model effect began after cancellation cutoff")
+        if False:
+            yield
+
+    agent = Agent(
+        AgentOptions(initialState=AgentState(model=model), streamFn=forbidden_stream)
+    )
+
+    def abort_turn_start(event: AgentEvent, signal: AbortSignal) -> None:
+        del signal
+        event_types.append(event.type)
+        if isinstance(event, AgentEvent.TurnStart):
+            agent.abort()
+
+    agent.subscribe(abort_turn_start)
+
+    async def run() -> None:
+        await agent.prompt("go")
+        assert effects == 0
+        assert [message.role for message in agent.state.messages] == [
+            "user",
+            "assistant",
+        ]
+        terminal = agent.state.messages[-1]
+        assert type(terminal) is AssistantMessage
+        assert terminal.stopReason == "aborted"
+        assert event_types[-3:] == ["message_end", "turn_end", "agent_end"]
+
+    asyncio.run(run())
+
+
+def test_external_abort_during_listener_settles_snapshot_then_aborts_normally() -> None:
+    faux = fauxProvider()
+    model = faux.getModel()
+    assert model is not None
+    listener_started = asyncio.Event()
+    listener_cleanup = asyncio.Event()
+    allow_cleanup = asyncio.Event()
+    later_attempted = False
+    effects = 0
+
+    async def forbidden_stream(
+        model: Model,
+        context: Any,
+        options: object | None,
+        signal: AbortSignal,
+    ) -> AsyncIterator[AssistantMessageEvent]:
+        nonlocal effects
+        del model, context, options, signal
+        effects += 1
+        if False:
+            yield
+
+    agent = Agent(
+        AgentOptions(initialState=AgentState(model=model), streamFn=forbidden_stream)
+    )
+
+    async def blocked_listener(event: AgentEvent, signal: AbortSignal) -> None:
+        del signal
+        if isinstance(event, AgentEvent.AgentStart):
+            listener_started.set()
+            try:
+                await asyncio.Event().wait()
+            finally:
+                listener_cleanup.set()
+                await allow_cleanup.wait()
+
+    def later_listener(event: AgentEvent, signal: AbortSignal) -> None:
+        nonlocal later_attempted
+        del signal
+        if isinstance(event, AgentEvent.AgentStart):
+            later_attempted = True
+
+    agent.subscribe(blocked_listener)
+    agent.subscribe(later_listener)
+
+    async def run() -> None:
+        operation = asyncio.create_task(agent.prompt("go"))
+        await listener_started.wait()
+        captured_signal = agent.signal
+        agent.abort()
+        await listener_cleanup.wait()
+        assert captured_signal is not None and captured_signal.aborted
+        assert operation.done() is False
+        allow_cleanup.set()
+        await operation
+        assert later_attempted
+        assert effects == 0
+        terminal = agent.state.messages[-1]
+        assert type(terminal) is AssistantMessage
+        assert terminal.stopReason == "aborted"
+        assert agent.state.isStreaming is False
+
+    asyncio.run(run())
+
+
+def test_listener_abort_at_turn_end_adds_one_aborted_tail() -> None:
+    faux = fauxProvider()
+    model = faux.getModel()
+    assert model is not None
+    completed = fauxAssistantMessage("completed")
+    faux.setResponses((completed,))
+    models = createModels()
+    models.setProvider(faux.provider)
+    event_types: list[str] = []
+
+    async def stream_fn(
+        model: Model,
+        context: Any,
+        options: object | None,
+        signal: AbortSignal,
+    ) -> AsyncIterator[AssistantMessageEvent]:
+        del options, signal
+        async for event in models.streamSimple(model, context, None):
+            yield event
+
+    agent = Agent(
+        AgentOptions(initialState=AgentState(model=model), streamFn=stream_fn)
+    )
+
+    def abort_turn_end(event: AgentEvent, signal: AbortSignal) -> None:
+        del signal
+        event_types.append(event.type)
+        if isinstance(event, AgentEvent.TurnEnd):
+            agent.abort()
+
+    agent.subscribe(abort_turn_end)
+
+    async def run() -> None:
+        await agent.prompt("go")
+        assistants = [
+            message
+            for message in agent.state.messages
+            if isinstance(message, AssistantMessage)
+        ]
+        assert assistants[0] == completed
+        assert [message.stopReason for message in assistants] == ["stop", "aborted"]
+        assert event_types.count("agent_end") == 1
+        assert event_types[-3:] == ["message_start", "message_end", "agent_end"]
+        assert faux.state.callCount == 1
+
+    asyncio.run(run())
+
+
 def test_listener_failure_cancels_and_joins_parallel_tool_cleanup() -> None:
     faux = fauxProvider()
     model = faux.getModel()
@@ -668,6 +828,157 @@ def test_event_sink_failure_has_no_partial_result_or_synthetic_agent_end() -> No
         else:
             raise AssertionError("event-sink failure cannot return a result tuple")
         assert "agent_end" not in event_types
+
+    asyncio.run(run())
+
+
+def test_tool_start_sink_failure_uses_the_typed_lifecycle_carrier() -> None:
+    faux = fauxProvider()
+    model = faux.getModel()
+    assert model is not None
+    call = fauxToolCall(id="never", name="never", arguments={})
+    faux.setResponses((fauxAssistantMessage(call, stopReason="toolUse"),))
+    models = createModels()
+    models.setProvider(faux.provider)
+    sink_error = RuntimeError("tool-start sink canary")
+    event_types: list[str] = []
+    effects = 0
+
+    async def execute(
+        tool_call_id: str,
+        params: dict[str, object],
+        signal: Any,
+        on_update: Any,
+    ) -> AgentToolResult:
+        nonlocal effects
+        del tool_call_id, params, signal, on_update
+        effects += 1
+        return AgentToolResult(content=(), details={})
+
+    async def stream_fn(
+        model: Model,
+        context: Any,
+        options: object | None,
+        signal: AbortSignal,
+    ) -> AsyncIterator[AssistantMessageEvent]:
+        del options, signal
+        async for event in models.streamSimple(model, context, None):
+            yield event
+
+    tool = AgentTool(
+        name="never",
+        label="never",
+        description="never",
+        parameters=TOOL_SCHEMA,
+        execute=execute,
+    )
+
+    def sink(event: AgentEvent) -> None:
+        event_types.append(event.type)
+        if isinstance(event, AgentEvent.ToolExecutionStart):
+            raise sink_error
+
+    async def run() -> None:
+        try:
+            await runAgentLoop(
+                (UserMessage(content="go", timestamp=1),),
+                AgentContext(systemPrompt="", messages=(), tools=(tool,)),
+                AgentLoopConfig(model=model),
+                sink,
+                stream_fn,
+            )
+        except LifecycleError as error:
+            assert error.code == "event_sink"
+            assert error.causes == (sink_error,)
+        else:
+            raise AssertionError("Tool-start sink failure must use LifecycleError")
+        assert effects == 0
+        assert event_types.count("tool_execution_start") == 1
+        assert "agent_end" not in event_types
+
+    asyncio.run(run())
+
+
+def test_operation_cancel_during_tool_start_still_emits_the_matching_end() -> None:
+    faux = fauxProvider()
+    model = faux.getModel()
+    assert model is not None
+    call = fauxToolCall(id="paired", name="paired", arguments={})
+    faux.setResponses((fauxAssistantMessage(call, stopReason="toolUse"),))
+    models = createModels()
+    models.setProvider(faux.provider)
+    start_seen = asyncio.Event()
+    cleanup_started = asyncio.Event()
+    allow_cleanup = asyncio.Event()
+    event_types: list[str] = []
+    effects = 0
+
+    async def execute(
+        tool_call_id: str,
+        params: dict[str, object],
+        signal: Any,
+        on_update: Any,
+    ) -> AgentToolResult:
+        nonlocal effects
+        del tool_call_id, params, signal, on_update
+        effects += 1
+        return AgentToolResult(content=(), details={})
+
+    async def stream_fn(
+        model: Model,
+        context: Any,
+        options: object | None,
+        signal: AbortSignal,
+    ) -> AsyncIterator[AssistantMessageEvent]:
+        del options, signal
+        async for event in models.streamSimple(model, context, None):
+            yield event
+
+    tool = AgentTool(
+        name="paired",
+        label="paired",
+        description="paired",
+        parameters=TOOL_SCHEMA,
+        execute=execute,
+    )
+
+    async def sink(event: AgentEvent) -> None:
+        event_types.append(event.type)
+        if isinstance(event, AgentEvent.ToolExecutionStart):
+            start_seen.set()
+            try:
+                await asyncio.Event().wait()
+            finally:
+                cleanup_started.set()
+                await allow_cleanup.wait()
+
+    async def run() -> None:
+        operation = asyncio.create_task(
+            runAgentLoop(
+                (UserMessage(content="go", timestamp=1),),
+                AgentContext(systemPrompt="", messages=(), tools=(tool,)),
+                AgentLoopConfig(model=model),
+                sink,
+                stream_fn,
+            )
+        )
+        await start_seen.wait()
+        operation.cancel()
+        await cleanup_started.wait()
+        assert operation.done() is False
+        allow_cleanup.set()
+        try:
+            await operation
+        except asyncio.CancelledError:
+            pass
+        else:
+            raise AssertionError("operation cancellation must be re-raised")
+        assert effects == 0
+        assert event_types.count("tool_execution_start") == 1
+        assert event_types.count("tool_execution_end") == 1
+        assert event_types.index("tool_execution_start") < event_types.index(
+            "tool_execution_end"
+        )
 
     asyncio.run(run())
 
@@ -1007,6 +1318,62 @@ def test_terminal_listener_failure_changes_only_the_awaiting_carrier() -> None:
         unsubscribe()
         await agent.prompt("second")
         assert agent.state.messages[-1] == second_response
+
+    asyncio.run(run())
+
+
+def test_external_abort_during_agent_end_listener_is_a_no_op() -> None:
+    faux = fauxProvider()
+    model = faux.getModel()
+    assert model is not None
+    completed = fauxAssistantMessage("committed")
+    faux.setResponses((completed,))
+    models = createModels()
+    models.setProvider(faux.provider)
+    terminal_started = asyncio.Event()
+    release_terminal = asyncio.Event()
+    terminal_signal: AbortSignal | None = None
+    terminal_cancelled = False
+
+    async def stream_fn(
+        model: Model,
+        context: Any,
+        options: object | None,
+        signal: AbortSignal,
+    ) -> AsyncIterator[AssistantMessageEvent]:
+        del options, signal
+        async for event in models.streamSimple(model, context, None):
+            yield event
+
+    agent = Agent(
+        AgentOptions(initialState=AgentState(model=model), streamFn=stream_fn)
+    )
+
+    async def terminal_listener(event: AgentEvent, signal: AbortSignal) -> None:
+        nonlocal terminal_cancelled, terminal_signal
+        if isinstance(event, AgentEvent.AgentEnd):
+            terminal_signal = signal
+            terminal_started.set()
+            try:
+                await release_terminal.wait()
+            except asyncio.CancelledError:
+                terminal_cancelled = True
+                raise
+
+    agent.subscribe(terminal_listener)
+
+    async def run() -> None:
+        operation = asyncio.create_task(agent.prompt("go"))
+        await terminal_started.wait()
+        assert terminal_signal is not None and terminal_signal.aborted is False
+        agent.abort()
+        assert terminal_signal.aborted is False
+        assert operation.done() is False
+        release_terminal.set()
+        await operation
+        assert terminal_cancelled is False
+        assert agent.state.messages[-1] == completed
+        assert agent.state.isStreaming is False
 
     asyncio.run(run())
 

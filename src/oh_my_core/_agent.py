@@ -233,8 +233,7 @@ class Agent:
 
     def abort(self) -> None:
         run = self._run
-        if run is not None:
-            run.control.requestCancellation()
+        if run is not None and run.control.requestCancellation():
             task = run.task
             if (
                 task is not None
@@ -339,7 +338,6 @@ class Agent:
             raise RuntimeError("Agent listener dispatched without an active Run")
         signal = run.control.signal
         failures: list[BaseException] = []
-        cancellation: asyncio.CancelledError | None = None
         for record in snapshot:
             try:
                 result = record.listener(event, signal)
@@ -350,19 +348,12 @@ class Agent:
             except asyncio.CancelledError as error:
                 owner = asyncio.current_task()
                 if owner is not None and owner.cancelling():
-                    cancellation = error
+                    owner.uncancel()
+                    continue
                 else:
                     failures.append(error)
             except BaseException as error:
                 failures.append(error)
-        if cancellation is not None:
-            if failures:
-                cancellation.__cause__ = LifecycleError(
-                    "listener",
-                    "Agent listener failed",
-                    causes=failures,
-                )
-            raise cancellation
         if failures:
             raise _ListenerFailure(tuple(failures))
 

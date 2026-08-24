@@ -261,9 +261,11 @@ class _RunControl:
         self.signal = signal
         self.terminalCommitted = False
 
-    def requestCancellation(self) -> None:
-        if not self.terminalCommitted:
-            _abort_signal(self.signal)
+    def requestCancellation(self) -> bool:
+        if self.terminalCommitted:
+            return False
+        _abort_signal(self.signal)
+        return True
 
 
 class _ListenerFailure(BaseException):
@@ -275,11 +277,7 @@ class _ListenerFailure(BaseException):
 
 async def _emit(sink: AgentEventSink, event: AgentEvent) -> None:
     try:
-        settled = sink(event)
-        if inspect.isawaitable(settled):
-            await settled
-        elif settled is not None:
-            raise TypeError("AgentEventSink must return None or an awaitable")
+        await _invoke_sink(sink, event)
     except _ListenerFailure as error:
         raise LifecycleError(
             "listener",
@@ -301,6 +299,14 @@ async def _emit(sink: AgentEventSink, event: AgentEvent) -> None:
             "Agent event sink failed",
             causes=(error,),
         ) from error
+
+
+async def _invoke_sink(sink: AgentEventSink, event: AgentEvent) -> None:
+    settled = sink(event)
+    if inspect.isawaitable(settled):
+        await settled
+    elif settled is not None:
+        raise TypeError("AgentEventSink must return None or an awaitable")
 
 
 async def runAgentLoop(
@@ -520,15 +526,24 @@ async def _run_agent_loop_body(
             messages=working_messages,
             tools=context.tools,
         )
-        with _bind_abort_signal(signal):
-            response_events = streamFn(config.model, working, None, signal)
-            response = await _consume_response_events(
-                response_events,
-                emit,
+        if signal.aborted:
+            response = _terminal_assistant(
                 config.model,
-                control,
-                cancellationResult=cancellationResult,
+                None,
+                reason="aborted",
+                error_message="Operation aborted",
             )
+            await _emit(emit, MessageStart(message=response))
+        else:
+            with _bind_abort_signal(signal):
+                response_events = streamFn(config.model, working, None, signal)
+                response = await _consume_response_events(
+                    response_events,
+                    emit,
+                    config.model,
+                    control,
+                    cancellationResult=cancellationResult,
+                )
 
         produced.append(response)
         working_messages = (*working_messages, response)
@@ -543,6 +558,8 @@ async def _run_agent_loop_body(
         ]
         if not tool_calls:
             await _emit(emit, TurnEnd(message=response, toolResults=()))
+            if signal.aborted:
+                await _append_aborted_tail(produced, config.model, emit)
             break
 
         tool_results, terminate = await _process_tool_calls(
@@ -560,15 +577,7 @@ async def _run_agent_loop_body(
         working_messages = (*working_messages, *tool_results)
         await _emit(emit, TurnEnd(message=response, toolResults=tool_results))
         if signal.aborted:
-            aborted = _terminal_assistant(
-                config.model,
-                None,
-                reason="aborted",
-                error_message="Operation aborted",
-            )
-            await _emit(emit, MessageStart(message=aborted))
-            await _emit(emit, MessageEnd(message=aborted))
-            produced.append(aborted)
+            await _append_aborted_tail(produced, config.model, emit)
             break
         if terminate:
             break
@@ -577,6 +586,22 @@ async def _run_agent_loop_body(
     control.terminalCommitted = True
     await _emit(emit, AgentEnd(messages=result))
     return result
+
+
+async def _append_aborted_tail(
+    produced: list[AgentMessage],
+    model: Model,
+    emit: AgentEventSink,
+) -> None:
+    aborted = _terminal_assistant(
+        model,
+        None,
+        reason="aborted",
+        error_message="Operation aborted",
+    )
+    await _emit(emit, MessageStart(message=aborted))
+    await _emit(emit, MessageEnd(message=aborted))
+    produced.append(aborted)
 
 
 @dataclass(frozen=True, slots=True, kw_only=True)
@@ -600,11 +625,13 @@ class _ToolEventGate:
             if self._failed:
                 return
             try:
-                settled = self._sink(event)
-                if inspect.isawaitable(settled):
-                    await settled
-                elif settled is not None:
-                    raise TypeError("AgentEventSink must return None or an awaitable")
+                await _invoke_sink(self._sink, event)
+            except asyncio.CancelledError:
+                owner = asyncio.current_task()
+                if owner is not None and owner.cancelling():
+                    raise
+                self._failed = True
+                raise
             except BaseException:
                 self._failed = True
                 raise
@@ -639,7 +666,8 @@ async def _process_tool_calls(
             break
         started_count += 1
         try:
-            await event_gate.emit(
+            await _emit(
+                event_gate.emit,
                 ToolExecutionStart(
                     toolCallId=call.id,
                     toolName=call.name,
@@ -649,6 +677,9 @@ async def _process_tool_calls(
         except asyncio.CancelledError:
             if not signal.aborted:
                 raise
+            owner = asyncio.current_task()
+            if owner is not None and owner.cancelling():
+                owner.uncancel()
             attempts.append(_cancelled_tool_attempt(call))
             break
         if signal.aborted:
@@ -773,10 +804,12 @@ def _cancelled_tool_attempt(call: ToolCall) -> _ToolAttempt:
         call=call,
         tool=None,
         params=None,
-        failure=_tool_failure_result(
-            f"Tool {_quote(call.name)} execution was cancelled"
-        ),
+        failure=_cancelled_tool_result(call),
     )
+
+
+def _cancelled_tool_result(call: ToolCall) -> AgentToolResult:
+    return _tool_failure_result(f"Tool {_quote(call.name)} execution was cancelled")
 
 
 async def _settle_tool_attempt(
@@ -790,26 +823,23 @@ async def _settle_tool_attempt(
         result = attempt.failure
         is_error = True
     elif signal.aborted:
-        result = _tool_failure_result(
-            f"Tool {_quote(attempt.call.name)} execution was cancelled"
-        )
+        result = _cancelled_tool_result(attempt.call)
         is_error = True
     else:
         try:
             result, is_error = await _execute_tool_attempt(attempt, signal, emit)
         except asyncio.CancelledError:
-            text = (
-                f"Tool {_quote(attempt.call.name)} execution was cancelled"
+            result = (
+                _cancelled_tool_result(attempt.call)
                 if signal.aborted
-                else f"Tool {_quote(attempt.call.name)} execution failed"
+                else _tool_failure_result(
+                    f"Tool {_quote(attempt.call.name)} execution failed"
+                )
             )
-            result = _tool_failure_result(text)
             is_error = True
         else:
             if signal.aborted:
-                result = _tool_failure_result(
-                    f"Tool {_quote(attempt.call.name)} execution was cancelled"
-                )
+                result = _cancelled_tool_result(attempt.call)
                 is_error = True
     if emit_end:
         await _emit(
