@@ -676,6 +676,66 @@
       "comparator": "compare manual and overflow summary requests, cut points, durable compaction entries, projected contexts, retained full trees, and one-shot continuation",
       "normalization": "ignore entry ids, timestamps, token-estimate rounding, and Python async carrier mechanics",
       "referenceCitations": ["packages/coding-agent/src/core/compaction/compaction.ts#L97-L101", "packages/coding-agent/src/core/compaction/compaction.ts#L587-L659", "packages/coding-agent/src/core/session-manager.ts#L353-L435", "packages/coding-agent/src/core/agent-session.ts#L1688-L1749"]
+    },
+    {
+      "id": "reference.builtin-tool-registry",
+      "captureCaseId": "capture.builtin-tool-registry",
+      "obligation": "omh-v0.builtin-tool-registry",
+      "referenceRevision": "0e6909f050eeb15e8f6c05185511f3788357ddb3",
+      "canonicalInput": "construct one Product Session and inspect the closed built-in Tool set supplied to the Model",
+      "observations": {"A": "built-ins plus overridable Extension names", "L": [], "T": {"names": ["read", "bash", "edit", "write"], "extensionOverride": true}, "E": [], "C": "session published with replaced built-in"},
+      "omhExpectation": {"A": "four reserved built-ins admitted", "L": [], "T": {"names": ["read", "bash", "edit", "write"], "promptSummaries": ["Read file contents", "Execute bash commands (ls, grep, find, etc.)", "Make precise file edits with exact text replacement, including multiple disjoint edits in one call", "Create or overwrite files"], "excluded": ["grep", "find", "ls"]}, "E": {"selectionField": false}, "C": "no override configuration"},
+      "comparator": "compare reserved identities, canonical order, closed metadata, and absent selection/override configuration",
+      "normalization": "ABD:non-overridable-built-in-tools",
+      "referenceCitations": ["packages/coding-agent/src/core/sdk.ts#L54-L70", "packages/coding-agent/src/core/tools/index.ts#L168-L175", "packages/coding-agent/src/core/agent-session.ts#L2399-L2465"]
+    },
+    {
+      "id": "reference.literal-tool-paths-read",
+      "captureCaseId": "capture.literal-tool-paths-read",
+      "obligation": "omh-v0.literal-tool-paths-read",
+      "referenceRevision": "0e6909f050eeb15e8f6c05185511f3788357ddb3",
+      "canonicalInput": "read a Workspace-relative file, an absolute path outside Workspace, a .. path, a literal tilde path, and a symlink",
+      "observations": {"A": "tilde/file-URL/@ expansion and alternate probes", "L": ["tool_execution_end"], "T": "resolved or probed target text", "E": "I/O may follow expanded spelling", "C": "cwd unchanged"},
+      "omhExpectation": {"A": "literal nonempty NUL-free paths admitted", "L": ["tool_execution_end"], "T": {"absoluteOutsideWorkspace": "escaped", "dotDot": "escaped", "literalTilde": "literal-tilde", "symlink": "linked"}, "E": {"sandboxRejected": false}, "C": "workspace_unchanged"},
+      "comparator": "compare exact lexical target bytes; contrast Reference expansion/probes with omh exact-name success",
+      "normalization": "ABD:literal-tool-paths",
+      "referenceCitations": ["packages/coding-agent/src/utils/paths.ts#L48-L83", "packages/coding-agent/src/core/tools/path-utils.ts#L8-L81"]
+    },
+    {
+      "id": "reference.strict-text-file-read",
+      "captureCaseId": "capture.strict-text-file-read",
+      "obligation": "omh-v0.strict-text-file-read",
+      "referenceRevision": "0e6909f050eeb15e8f6c05185511f3788357ddb3",
+      "canonicalInput": "read BOM/CRLF UTF-8 text, a directory, a FIFO, invalid UTF-8, decoded NUL, and an over-limit first line",
+      "observations": {"A": "bytes admitted without a regular-file gate", "L": ["tool_execution_end"], "T": "replacement-decoded text or image attachment", "E": "may block on special files", "C": "file unchanged"},
+      "omhExpectation": {"A": "regular UTF-8 admitted; other kinds are Outcomes", "L": ["tool_execution_end"], "T": {"bomCrlfPreserved": true, "directory": "not_regular", "fifo": "not_regular", "invalidUtf8": "not_text", "decodedNul": "not_text", "firstLineExceedsLimit": true, "isError": false}, "E": {"spillArtifact": false}, "C": "files_unchanged"},
+      "comparator": "shared regular UTF-8 compares content; kind/encoding rows contrast Reference traces with omh Outcomes",
+      "normalization": "ABD:strict-text-file-read",
+      "referenceCitations": ["packages/coding-agent/src/core/tools/read.ts#L31-L50", "packages/coding-agent/src/core/tools/read.ts#L203-L321", "packages/coding-agent/src/core/tools/truncate.ts#L78-L158"]
+    },
+    {
+      "id": "reference.strict-read-pagination",
+      "captureCaseId": "capture.strict-read-pagination",
+      "obligation": "omh-v0.strict-read-pagination",
+      "referenceRevision": "0e6909f050eeb15e8f6c05185511f3788357ddb3",
+      "canonicalInput": "read empty text, a terminal LF, offset 2 limit 2 of a four-line file, offset 8, and offset 0",
+      "observations": {"A": "unconstrained numbers admitted", "L": ["tool_execution_end"], "T": "slice selection or thrown beyond-end failure", "E": "no write", "C": "reusable"},
+      "omhExpectation": {"A": "positive safe integers admitted; offset 0 rejected by schema", "L": ["tool_execution_end"], "T": {"empty": "", "terminalLf": "", "window": "two\nthree\n\n[1 more lines in file. Use offset=4 to continue.]", "beyondEnd": "offset_out_of_range", "zeroOffsetIsError": true}, "E": {"fileMutated": false}, "C": "continuation_available"},
+      "comparator": "shared positive-integer rows compare notices; zero/beyond-end apply this ABD and schema mapping",
+      "normalization": "ABD:strict-read-pagination and PA:json-schema-mapping",
+      "referenceCitations": ["packages/coding-agent/src/core/tools/read.ts#L20-L24", "packages/coding-agent/src/core/tools/read.ts#L268-L313"]
+    },
+    {
+      "id": "reference.actionable-read-outcomes",
+      "captureCaseId": "capture.actionable-read-outcomes",
+      "obligation": "omh-v0.actionable-read-outcomes",
+      "referenceRevision": "0e6909f050eeb15e8f6c05185511f3788357ddb3",
+      "canonicalInput": "read missing, unreadable, and non-text paths, cancel one started read, and inject EIO",
+      "observations": {"A": "expected filesystem errors throw", "L": ["tool_execution_end"], "T": {"isError": true, "genericFailure": true}, "E": "no write", "C": "agent continues with execution error"},
+      "omhExpectation": {"A": "expected negatives admitted", "L": ["tool_execution_end"], "T": {"missingIsError": false, "missingCode": "not_found", "unreadableIsError": false, "cancelledIsError": true, "unexpectedIoIsError": true}, "E": {"laterIoAfterCancel": false}, "C": "session_reusable"},
+      "comparator": "map Reference thrown expected negatives to omh ordinary Outcomes; keep cancellation and EIO as Tool Failures",
+      "normalization": "ABD:actionable-built-in-outcomes and ABD:managed-run-cancellation",
+      "referenceCitations": ["packages/coding-agent/src/core/tools/read.ts#L216-L327"]
     }
   ]
 }

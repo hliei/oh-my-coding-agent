@@ -686,6 +686,66 @@
       "evidenceClass": "exact-parity",
       "corpusCase": "reference.session-compaction",
       "executableCases": ["ticket-15-session", "ticket-15-installed"]
+    },
+    {
+      "id": "omh-v0.builtin-tool-registry",
+      "authority": ".scratch/omh-v0/issues/10-choose-coding-tools-and-workspace-contract.md#ABD:non-overridable-built-in-tools",
+      "publicInterface": "oh_my_coding_agent.createAgentSession and AgentSession.prompt",
+      "scenario": "create one Product Session and observe the Provider Tool list plus system-prompt summaries with no selection field",
+      "observations": {"A": "four reserved built-ins admitted in canonical order", "L": "not_applicable", "T": "read, bash, edit, write metadata and prompt summaries", "E": "excluded grep/find/ls identities absent", "C": "no caller Tool selection or override configuration"},
+      "comparator": "compare reserved identities, order, closed metadata, excluded names, and construction rejection later owned by Extension collision",
+      "normalization": "ABD:non-overridable-built-in-tools; Extension collision rows remain ticket 21",
+      "evidenceClass": "ABD:non-overridable-built-in-tools",
+      "corpusCase": "reference.builtin-tool-registry",
+      "executableCases": ["ticket-16-read", "ticket-16-installed"]
+    },
+    {
+      "id": "omh-v0.literal-tool-paths-read",
+      "authority": ".scratch/omh-v0/issues/10-choose-coding-tools-and-workspace-contract.md#ABD:literal-tool-paths",
+      "publicInterface": "oh_my_coding_agent.AgentSession.prompt read Tool",
+      "scenario": "read relative Workspace paths, absolute and .. paths outside Workspace, a literal tilde name, and a symlink target",
+      "observations": {"A": "nonempty NUL-free literal paths admitted", "L": "ordinary Tool Outcome", "T": "exact original-path projection", "E": "host I/O at the lexically resolved name without sandbox rejection", "C": "Workspace identity unchanged"},
+      "comparator": "compare exact lexical target bytes and public original path; contrast Reference tilde/file-URL/@/alternate probes with omh exact-name addressing",
+      "normalization": "ABD:literal-tool-paths; normalize only platform separators",
+      "evidenceClass": "ABD:literal-tool-paths",
+      "corpusCase": "reference.literal-tool-paths-read",
+      "executableCases": ["ticket-16-read", "ticket-16-installed"]
+    },
+    {
+      "id": "omh-v0.strict-text-file-read",
+      "authority": ".scratch/omh-v0/issues/10-choose-coding-tools-and-workspace-contract.md#ABD:strict-text-file-read",
+      "publicInterface": "oh_my_coding_agent.AgentSession.prompt read Tool",
+      "scenario": "read BOM/CRLF text, reject directory/FIFO/invalid UTF-8/NUL, and cap output at 2000 complete lines or 51200 UTF-8 bytes",
+      "observations": {"A": "regular UTF-8 text admitted; other kinds rejected as Outcomes", "L": "no Tool updates", "T": "preserved BOM/newlines or exact not_regular/not_text text", "E": "one host read and no spill artifact", "C": "Workspace files unchanged"},
+      "comparator": "shared regular UTF-8 compares byte-for-byte; kind/encoding/image rows contrast Reference replacement/image reading with omh Outcomes",
+      "normalization": "ABD:strict-text-file-read",
+      "evidenceClass": "ABD:strict-text-file-read",
+      "corpusCase": "reference.strict-text-file-read",
+      "executableCases": ["ticket-16-read", "ticket-16-installed"]
+    },
+    {
+      "id": "omh-v0.strict-read-pagination",
+      "authority": ".scratch/omh-v0/issues/10-choose-coding-tools-and-workspace-contract.md#ABD:strict-read-pagination",
+      "publicInterface": "oh_my_coding_agent.AgentSession.prompt read Tool",
+      "scenario": "read an empty file, a terminal LF, a positive offset/limit window, and an offset beyond the logical line count",
+      "observations": {"A": "positive safe offset/limit admitted; empty/zero/non-positive rejected by schema", "L": "ordinary Outcome or schema Tool Failure", "T": "split-by-LF lines, remaining-line notice, or offset_out_of_range", "E": "no file mutation", "C": "later offset continuation remains available"},
+      "comparator": "shared positive-integer selections compare directly; zero/fractional/beyond-end rows apply this ABD and PA:json-schema-mapping",
+      "normalization": "ABD:strict-read-pagination and PA:json-schema-mapping",
+      "evidenceClass": "ABD:strict-read-pagination",
+      "corpusCase": "reference.strict-read-pagination",
+      "executableCases": ["ticket-16-read", "ticket-16-installed"]
+    },
+    {
+      "id": "omh-v0.actionable-read-outcomes",
+      "authority": ".scratch/omh-v0/issues/10-choose-coding-tools-and-workspace-contract.md#ABD:actionable-built-in-outcomes",
+      "publicInterface": "oh_my_coding_agent.AgentSession.prompt read Tool",
+      "scenario": "read missing, non-regular, unreadable, non-text, and out-of-range targets, then cancel one started read and inject an unexpected I/O fault",
+      "observations": {"A": "expected negatives admitted as Results", "L": "Tool end with isError false for Outcomes and true for cancellation/unexpected failure", "T": "closed codes/text/details without errno leakage", "E": "no file mutation; cancellation starts no later I/O", "C": "Session remains reusable after Outcomes and cancellation"},
+      "comparator": "map Reference thrown filesystem errors to omh ordinary Outcomes; keep cancellation and EIO as Tool Failures",
+      "normalization": "ABD:actionable-built-in-outcomes and ABD:managed-run-cancellation",
+      "evidenceClass": "ABD:actionable-built-in-outcomes",
+      "corpusCase": "reference.actionable-read-outcomes",
+      "executableCases": ["ticket-16-read", "ticket-16-installed"]
     }
   ]
 }

@@ -295,7 +295,12 @@ def test_create_agent_session_is_lazy_identity_preserving_and_disposable(
     assert session.sessionFile is None
     assert session.sessionName is None
     assert session.messages == ()
-    assert session.systemPrompt == ""
+    assert session.systemPrompt == (
+        "Read file contents\n"
+        "Execute bash commands (ls, grep, find, etc.)\n"
+        "Make precise file edits with exact text replacement, including multiple disjoint edits in one call\n"
+        "Create or overwrite files"
+    )
     assert session.isStreaming is False
     assert session.isIdle is True
     assert {name for name in dir(AgentSession) if not name.startswith("_")} == _AGENT_SESSION_MEMBERS

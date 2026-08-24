@@ -165,6 +165,12 @@ def test_installed_wheel_settles_product_session_lifecycle(
     _assert_installed_scenario(installed_python, "ticket_15_scenario.py")
 
 
+def test_installed_wheel_registers_builtins_and_inspects_with_read(
+    installed_python: Path,
+) -> None:
+    _assert_installed_scenario(installed_python, "ticket_16_scenario.py")
+
+
 def test_first_conformance_authorities_are_closed_and_linked() -> None:
     matrix = json.loads((ROOT / "conformance/obligation-matrix.json").read_text())
     corpus = json.loads((ROOT / "conformance/reference-observation-corpus.json").read_text())

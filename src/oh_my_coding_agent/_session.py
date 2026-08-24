@@ -40,6 +40,7 @@ from oh_my_llm.providers.deepseek import (
     deepseekProvider,
 )
 
+from ._builtin_tools import builtin_tool_prompt_section, product_session_tools
 from ._compaction import (
     CONTEXT_WINDOW,
     PREFIX_SUMMARY_MAX_TOKENS,
@@ -307,7 +308,7 @@ class AgentSession:
         self._pending_agent_end: AgentEvent | None = None
         self._projecting_agent_end = False
         self._agent = agent
-        self._system_prompt = ""
+        self._system_prompt = agent.state.systemPrompt
         self._listeners: list[_SessionListenerRecord] = []
         self._manager_failure: BaseException | None = None
         self._auto_compaction_enabled = True
@@ -1314,14 +1315,17 @@ async def createAgentSession(
         ):
             yield event
 
+    system_prompt = builtin_tool_prompt_section()
     agent = Agent(
         AgentOptions(
             initialState=AgentState(
                 model=model,
-                systemPrompt="",
+                systemPrompt=system_prompt,
+                tools=product_session_tools(operational_cwd),
                 messages=manager.buildSessionContext().messages,
             ),
             streamFn=stream_fn,
+            toolExecution="parallel",
         )
     )
     session = AgentSession(

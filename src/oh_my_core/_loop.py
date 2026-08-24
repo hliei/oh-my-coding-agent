@@ -1020,6 +1020,8 @@ async def _execute_tool_attempt(
         try:
             returned = tool.execute(attempt.call.id, params, signal, on_update)
         except Exception as error:
+            if isinstance(error, LifecycleError) and error.code == "cleanup":
+                raise
             if signal.aborted:
                 raise LifecycleError(
                     "cleanup",
@@ -1043,6 +1045,8 @@ async def _execute_tool_attempt(
             try:
                 final: object = await returned
             except Exception as error:
+                if isinstance(error, LifecycleError) and error.code == "cleanup":
+                    raise
                 if signal.aborted:
                     raise LifecycleError(
                         "cleanup",
