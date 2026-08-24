@@ -400,6 +400,54 @@
       "comparator": "preserve ordinary Model-error identity and contrast Reference first-failure or best-effort cleanup with omh snapshot completion, typed lifecycle carriers, ordered cleanup, and fail-closed idle",
       "normalization": "ABD:managed-lifecycle-callbacks and ABD:managed-run-cancellation",
       "referenceCitations": ["packages/agent/src/agent.ts#L231-L243", "packages/agent/src/agent.ts#L520-L573", "packages/agent/src/agent-loop.ts#L25", "packages/agent/src/agent-loop.ts#L95-L117", "packages/agent/src/agent-loop.ts#L178-L208"]
+    },
+    {
+      "id": "reference.deepseek-factory-catalog",
+      "captureCaseId": "capture.deepseek-factory-catalog",
+      "obligation": "omh-v0.deepseek-factory-catalog",
+      "referenceRevision": "0e6909f050eeb15e8f6c05185511f3788357ddb3",
+      "canonicalInput": "construct the selected DeepSeek factory and resolve its static Flash catalog",
+      "observations": {"A": "admitted", "L": [], "T": {"providerId": "deepseek", "providerName": "DeepSeek", "modelId": "deepseek-v4-flash", "api": "openai-completions"}, "E": [], "C": "not_applicable"},
+      "omhExpectation": {"A": "admitted", "L": [], "T": {"providerId": "deepseek", "providerName": "DeepSeek", "modelId": "deepseek-v4-flash", "modelName": "DeepSeek V4 Flash", "api": "openai-completions", "provider": "deepseek", "childPath": "oh_my_llm.providers.deepseek", "foreignProviderMissing": true}, "E": [], "C": "not_applicable"},
+      "comparator": "compare selected identity fields after mapping the Reference DeepSeek child path to oh_my_llm.providers.deepseek",
+      "normalization": "map only the selected catalog; ignore excluded aliases and discovery",
+      "referenceCitations": ["packages/ai/src/providers/deepseek.ts#L1-L15"]
+    },
+    {
+      "id": "reference.deepseek-auth-observation",
+      "captureCaseId": "capture.deepseek-auth-observation",
+      "obligation": "omh-v0.deepseek-auth-observation",
+      "referenceRevision": "0e6909f050eeb15e8f6c05185511f3788357ddb3",
+      "canonicalInput": "observe DeepSeek authentication with DEEPSEEK_API_KEY present, absent, and with a Faux Model",
+      "observations": {"reference": "not_applicable", "reason": "product-scope"},
+      "omhExpectation": {"A": "admitted", "L": [], "T": {"configured": {"source": "DEEPSEEK_API_KEY"}, "unconfigured": null, "faux": {"source": null}, "secretLeaked": false}, "E": [], "C": "not_applicable"},
+      "comparator": "assert the secret-free AuthResult envelope without comparing Reference secret-bearing auth payloads",
+      "normalization": "none; Surface Exclusions are not parity-normalized into omh",
+      "referenceCitations": ["packages/ai/src/providers/deepseek.ts#L1-L15"]
+    },
+    {
+      "id": "reference.deepseek-request-bytes",
+      "captureCaseId": "capture.deepseek-request-bytes",
+      "obligation": "omh-v0.deepseek-request-bytes",
+      "referenceRevision": "0e6909f050eeb15e8f6c05185511f3788357ddb3",
+      "canonicalInput": "stream one user Hello turn through DeepSeek with a local transport fixture",
+      "observations": {"A": "admitted", "L": [], "T": {"method": "POST", "url": "https://api.deepseek.com/chat/completions", "model": "deepseek-v4-flash", "stream": true, "thinking": {"type": "disabled"}}, "E": {"requestCount": 1}, "C": "not_applicable"},
+      "omhExpectation": {"A": "admitted", "L": [], "T": {"method": "POST", "url": "https://api.deepseek.com/chat/completions", "model": "deepseek-v4-flash", "stream": true, "thinking": {"type": "disabled"}, "streamOptions": {"include_usage": true}}, "E": {"requestCount": 1, "trustEnv": false, "timeout": null, "followRedirects": false, "retries": 0}, "C": "not_applicable"},
+      "comparator": "compare method, URL, JSON identity fields, and zero-retry isolated transport",
+      "normalization": "ignore HTTPX hop-by-hop headers other than Authorization, Content-Type, and Accept-Encoding; omit excluded tools and option fields",
+      "referenceCitations": ["packages/ai/src/api/openai-completions.ts#L546-L640"]
+    },
+    {
+      "id": "reference.deepseek-text-stream-terminal",
+      "captureCaseId": "capture.deepseek-text-stream-terminal",
+      "obligation": "omh-v0.deepseek-text-stream-terminal",
+      "referenceRevision": "0e6909f050eeb15e8f6c05185511f3788357ddb3",
+      "canonicalInput": "fragment DeepSeek text SSE into Hel then lo with valid terminal usage",
+      "observations": {"A": "admitted", "L": ["start", "text_start", "text_delta", "text_delta", "text_end", "done"], "T": {"text": "Hello", "stopReason": "stop"}, "E": {"requestCount": 1}, "C": "not_applicable"},
+      "omhExpectation": {"A": "admitted", "L": ["start", "text_start", "text_delta", "text_delta", "text_end", "done"], "T": {"text": "Hello", "stopReason": "stop", "input": 8, "output": 2, "cacheRead": 4, "totalTokens": 14, "costTotal": 1.6912e-6}, "E": {"requestCount": 1, "secretLeaked": false}, "C": "not_applicable"},
+      "comparator": "compare event types, concatenated text, stop reason, and selected Usage projection",
+      "normalization": "ignore timestamps and unselected raw chunk sizes",
+      "referenceCitations": ["packages/ai/src/api/openai-completions.ts#L1117-L1152"]
     }
   ]
 }

@@ -304,6 +304,19 @@ class Usage(_PublicValueRecord):
 
 @final
 @dataclass(eq=False, frozen=True, slots=True, kw_only=True)
+class AuthResult(_PublicValueRecord):
+    source: str | None = None
+
+    def __post_init__(self) -> None:
+        object.__setattr__(
+            self,
+            "source",
+            _optional_string(self.source, type(self).__name__, "source"),
+        )
+
+
+@final
+@dataclass(eq=False, frozen=True, slots=True, kw_only=True)
 class TextContent(_PublicValueRecord):
     text: str
     type: Literal["text"] = field(init=False, default="text")

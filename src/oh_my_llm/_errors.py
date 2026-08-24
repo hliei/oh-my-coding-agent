@@ -4,6 +4,25 @@ from collections.abc import Sequence
 from typing import Literal, TypeAlias, final
 
 
+ModelsErrorCode: TypeAlias = Literal[
+    "model_source",
+    "model_validation",
+    "provider",
+    "stream",
+    "auth",
+    "oauth",
+]
+_MODELS_ERROR_CODES = frozenset(
+    {
+        "model_source",
+        "model_validation",
+        "provider",
+        "stream",
+        "auth",
+        "oauth",
+    }
+)
+
 LifecycleErrorCode: TypeAlias = Literal[
     "consumer",
     "busy",
@@ -33,6 +52,31 @@ _ALL_CODES = frozenset(
         "disposal",
     }
 )
+
+
+@final
+class ModelsError(RuntimeError):
+    __slots__ = ("_code",)
+
+    def __init__(
+        self,
+        code: ModelsErrorCode,
+        message: str,
+        *,
+        cause: BaseException | None = None,
+    ) -> None:
+        if code not in _MODELS_ERROR_CODES:
+            raise ValueError("ModelsError.code: unknown code")
+        if type(message) is not str:
+            raise TypeError("ModelsError.message: must be a string")
+        super().__init__(message)
+        self._code = code
+        if cause is not None:
+            self.__cause__ = cause
+
+    @property
+    def code(self) -> ModelsErrorCode:
+        return self._code
 
 
 @final

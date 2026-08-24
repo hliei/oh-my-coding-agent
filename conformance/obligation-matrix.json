@@ -409,6 +409,55 @@
       "evidenceClass": "ABD:managed-lifecycle-callbacks",
       "corpusCase": "reference.agent-fail-closed-lifecycle",
       "executableCases": ["ticket-08-agent-cancellation", "ticket-08-installed"]
+    },
+    {
+      "id": "omh-v0.deepseek-factory-catalog",
+      "authority": ".scratch/omh-v0/issues/06-choose-model-provider-auth-surface.md#answer",
+      "publicInterface": "oh_my_llm.providers.deepseek.deepseekProvider and createModels",
+      "scenario": "import the selected DeepSeek child path, construct the zero-argument factory, and resolve the static one-Model catalog through an empty collection",
+      "observations": {"A": "factory and catalog admitted", "L": "not_applicable", "T": "id deepseek, api openai-completions, model deepseek-v4-flash", "E": "not_applicable", "C": "not_applicable"},
+      "comparator": "compare selected Provider/Model identity fields after mapping the Reference DeepSeek factory to oh_my_llm.providers.deepseek",
+      "normalization": "map only the selected child path and static catalog; ignore excluded aliases, discovery, and capability metadata",
+      "evidenceClass": "exact-parity",
+      "corpusCase": "reference.deepseek-factory-catalog",
+      "executableCases": ["ticket-09-deepseek", "ticket-09-installed"]
+    },
+    {
+      "id": "omh-v0.deepseek-auth-observation",
+      "authority": ".scratch/omh-v0/issues/06-choose-model-provider-auth-surface.md#answer",
+      "publicInterface": "oh_my_llm.Models.getAuth",
+      "scenario": "await getAuth before and after DEEPSEEK_API_KEY is present, and observe Faux as a source-less configured result",
+      "observations": {"A": "auth observation admitted", "L": "not_applicable", "T": "configured source label only; unconfigured DeepSeek is None; Faux source is None", "E": "secret bytes absent from the result", "C": "not_applicable"},
+      "comparator": "assert the independently selected secret-free AuthResult envelope rather than Reference secret-bearing auth payloads",
+      "normalization": "none; secret-bearing AuthResult.auth is a Surface Exclusion",
+      "evidenceClass": "local-release",
+      "referenceApplicability": {"status": "not_applicable", "reason": "product-scope"},
+      "corpusCase": "reference.deepseek-auth-observation",
+      "executableCases": ["ticket-09-deepseek", "ticket-09-installed"]
+    },
+    {
+      "id": "omh-v0.deepseek-request-bytes",
+      "authority": ".scratch/omh-v0/issues/06-choose-model-provider-auth-surface.md#answer",
+      "publicInterface": "oh_my_llm.Models.streamSimple",
+      "scenario": "stream one non-thinking text Context through a local transport fixture and capture the exact request identity",
+      "observations": {"A": "valid DeepSeek Model admitted", "L": "not_applicable", "T": "POST chat/completions with model deepseek-v4-flash, stream true, thinking disabled, and usage inclusion", "E": "one request, trustEnv false, retries 0, no redirect, no timeout", "C": "not_applicable"},
+      "comparator": "compare method, URL, JSON request fields, and transport isolation after removing excluded tools, temperature, and maxTokens",
+      "normalization": "ignore HTTPX-added hop-by-hop headers other than Authorization, Content-Type, and Accept-Encoding",
+      "evidenceClass": "exact-parity",
+      "corpusCase": "reference.deepseek-request-bytes",
+      "executableCases": ["ticket-09-deepseek", "ticket-09-installed"]
+    },
+    {
+      "id": "omh-v0.deepseek-text-stream-terminal",
+      "authority": ".scratch/omh-v0/issues/06-choose-model-provider-auth-surface.md#answer",
+      "publicInterface": "oh_my_llm.Models.streamSimple and completeSimple",
+      "scenario": "accumulate fragmented DeepSeek text SSE into the public Assistant grammar and one terminal Message with valid Usage",
+      "observations": {"A": "stream admitted", "L": "start, text_start, two text_delta, text_end, done", "T": "Hello, stop, Usage input 8 output 2 cacheRead 4 totalTokens 14", "E": "one request and no secret leakage", "C": "not_applicable"},
+      "comparator": "compare event types, concatenated text, stop reason, and selected Usage projection after async-carrier normalization",
+      "normalization": "ignore timestamps and raw SSE chunk boundaries other than the selected two-fragment text split",
+      "evidenceClass": "exact-parity",
+      "corpusCase": "reference.deepseek-text-stream-terminal",
+      "executableCases": ["ticket-09-deepseek", "ticket-09-installed"]
     }
   ]
 }

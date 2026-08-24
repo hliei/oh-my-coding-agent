@@ -129,6 +129,7 @@ def test_public_message_value_surface_is_closed_and_nominal() -> None:
         "AssistantMessageToolCallEndEvent",
         "AssistantMessageDoneEvent",
         "AssistantMessageErrorEvent",
+        "AuthResult",
     }
     assert expected <= set(oh_my_llm.__all__)
     assert not hasattr(oh_my_llm, "encodeCanonical")

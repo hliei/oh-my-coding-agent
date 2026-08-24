@@ -1,11 +1,20 @@
 from __future__ import annotations
 
 import asyncio
-from collections.abc import AsyncIterator, Callable
+from collections.abc import AsyncIterator, Awaitable, Callable
+import os
 from typing import final
 
-from ._values import AssistantMessageEvent, Context
-from ._streams import _active_abort_signal
+from ._errors import ModelsError
+from ._values import (
+    AuthResult,
+    AssistantMessage,
+    AssistantMessageDoneEvent,
+    AssistantMessageErrorEvent,
+    AssistantMessageEvent,
+    Context,
+)
+from ._streams import AbortSignal, EventStream, _active_abort_signal, _create_event_stream
 
 
 StreamSimpleFn = Callable[["Model", Context], AsyncIterator[AssistantMessageEvent]]
@@ -103,6 +112,21 @@ class Models:
     def getModel(self, provider: str, id: str) -> Model | None:
         return next((model for model in self.getModels(provider) if model.id == id), None)
 
+    def _require_provider(self, model: Model) -> Provider:
+        provider = self._providers.get(model.provider)
+        if provider is None or all(candidate is not model for candidate in provider._models):
+            raise LookupError(f"Unknown model: {model.provider}/{model.id}")
+        return provider
+
+    async def getAuth(self, model: Model) -> AuthResult | None:
+        self._require_provider(model)
+        if model.provider == "deepseek":
+            key = os.environ.get("DEEPSEEK_API_KEY")
+            if key:
+                return AuthResult(source="DEEPSEEK_API_KEY")
+            return None
+        return AuthResult(source=None)
+
     def streamSimple(
         self,
         model: Model,
@@ -110,9 +134,7 @@ class Models:
         options: object | None = None,
     ) -> AsyncIterator[AssistantMessageEvent]:
         del options
-        provider = self._providers.get(model.provider)
-        if provider is None or all(candidate is not model for candidate in provider._models):
-            raise LookupError(f"Unknown model: {model.provider}/{model.id}")
+        provider = self._require_provider(model)
 
         async def owned_stream() -> AsyncIterator[AssistantMessageEvent]:
             signal = _active_abort_signal()
@@ -124,6 +146,56 @@ class Models:
                 yield event
 
         return owned_stream()
+
+    def stream(
+        self,
+        model: Model,
+        context: Context,
+        options: object | None = None,
+    ) -> EventStream[AssistantMessageEvent, AssistantMessage]:
+        async def producer(
+            emit: Callable[[AssistantMessageEvent], Awaitable[None]],
+            signal: AbortSignal,
+        ) -> AssistantMessage:
+            del signal
+            return await self._consume_simple(model, context, options, emit)
+
+        return _create_event_stream(producer)
+
+    async def complete(
+        self,
+        model: Model,
+        context: Context,
+        options: object | None = None,
+    ) -> AssistantMessage:
+        return await self.stream(model, context, options).result()
+
+    async def completeSimple(
+        self,
+        model: Model,
+        context: Context,
+        options: object | None = None,
+    ) -> AssistantMessage:
+        return await self._consume_simple(model, context, options, None)
+
+    async def _consume_simple(
+        self,
+        model: Model,
+        context: Context,
+        options: object | None,
+        emit: Callable[[AssistantMessageEvent], Awaitable[None]] | None,
+    ) -> AssistantMessage:
+        terminal: AssistantMessage | None = None
+        async for event in self.streamSimple(model, context, options):
+            if emit is not None:
+                await emit(event)
+            if isinstance(event, AssistantMessageDoneEvent):
+                terminal = event.message
+            elif isinstance(event, AssistantMessageErrorEvent):
+                terminal = event.error
+        if terminal is None:
+            raise ModelsError("stream", "Model stream ended without a terminal value")
+        return terminal
 
 
 @final
