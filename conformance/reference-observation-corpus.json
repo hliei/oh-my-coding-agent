@@ -604,6 +604,42 @@
       "comparator": "compare parsed-prefix active context, no lease, no open-time write, no redispatch, and fresh idle recovery",
       "normalization": "ignore ids, timestamps, Python task mechanics, and the still-live source manager snapshot",
       "referenceCitations": ["packages/coding-agent/src/core/session-manager.ts#L816-L858", "packages/coding-agent/src/core/session-manager.ts#L946-L979", "packages/coding-agent/src/core/agent-session.ts#L1023-L1034"]
+    },
+    {
+      "id": "reference.session-persistence-fault-continuity",
+      "captureCaseId": "capture.session-persistence-fault-continuity",
+      "obligation": "omh-v0.session-persistence-fault-continuity",
+      "referenceRevision": "0e6909f050eeb15e8f6c05185511f3788357ddb3",
+      "canonicalInput": "fail one exclusive first prefix write after 17 bytes, then fail one post-flush label append before its bytes and append a later Model entry from the divergent leaf",
+      "observations": {"A":"raw_file_faults_propagated","L":[],"T":{"errors":["raw_file_error","raw_file_error"],"firstMemoryTypes":["message","message"],"labelRetainedInMemory":true},"E":{"appendPrefixUnchanged":true,"firstPartialBytes":17,"settledMarkers":0},"C":{"continuedFromMissingParent":true,"reopenedBranchTypes":["model_change"],"reopenedLostFailedLabel":true}},
+      "omhExpectation": {"A":"raw_file_faults_propagated","L":[],"T":{"errors":["OSError","OSError"],"firstMemoryTypes":["message","message"],"labelRetainedInMemory":true},"E":{"appendPrefixUnchanged":true,"firstPartialBytes":17,"settledMarkers":0},"C":{"continuedFromMissingParent":true,"reopenedBranchTypes":["model_change"],"reopenedLostFailedLabel":true}},
+      "comparator": "compare raw failure position, actual bytes, retained manager mutations, later missing-parent append, and reopened parseable state",
+      "normalization": "ignore generated ids and timestamps plus language-specific raw filesystem exception class and prose",
+      "referenceCitations": ["packages/coding-agent/src/core/session-manager.ts#L885-L917"]
+    },
+    {
+      "id": "reference.session-best-effort-recovery",
+      "captureCaseId": "capture.session-best-effort-recovery",
+      "obligation": "omh-v0.session-best-effort-recovery",
+      "referenceRevision": "0e6909f050eeb15e8f6c05185511f3788357ddb3",
+      "canonicalInput": "open malformed and final-no-LF physical lines, migrate one v1 file, distinguish recent first-line probing from discovery parsing, and exercise absent, empty, invalid, and in-memory setSessionFile paths",
+      "observations": {"A":"operation_specific_file_admission","L":[],"T":{"label":"kept","listed":["tolerant","strict"],"listedAll":["tolerant","strict"],"migratedVersion":3,"recent":"strict","recoveredTypes":["model_change","label"]},"E":{"absentUnflushed":true,"emptyInitialized":true,"inMemoryDidNotAppend":true,"invalid":"Error","invalidUnchanged":true,"recoveryUnchanged":true},"C":{"leaf":"label","memoryModeRetained":true,"migrationEntryCount":1}},
+      "omhExpectation": {"A":"operation_specific_file_admission","L":[],"T":{"label":"kept","listed":["tolerant","strict"],"listedAll":["tolerant","strict"],"migratedVersion":3,"recent":"strict","recoveredTypes":["model_change","label"]},"E":{"absentUnflushed":true,"emptyInitialized":true,"inMemoryDidNotAppend":true,"invalid":"ValueError","invalidUnchanged":true,"recoveryUnchanged":true},"C":{"leaf":"label","memoryModeRetained":true,"migrationEntryCount":1}},
+      "comparator": "compare best-effort parsing, invalid unchanged failure, direct migration, fast recent probing, discovery, and persistence-mode retention",
+      "normalization": "ignore generated migration ids, timestamps, filesystem mtimes, product-root mapping, and language-specific invalid-file exception class",
+      "referenceCitations": ["packages/coding-agent/src/core/session-manager.ts#L211-L288", "packages/coding-agent/src/core/session-manager.ts#L455-L552", "packages/coding-agent/src/core/session-manager.ts#L771-L860", "packages/coding-agent/src/core/session-manager.ts#L1444-L1512"]
+    },
+    {
+      "id": "reference.session-stale-multi-manager-append",
+      "captureCaseId": "capture.session-stale-multi-manager-append",
+      "obligation": "omh-v0.session-stale-multi-manager-append",
+      "referenceRevision": "0e6909f050eeb15e8f6c05185511f3788357ddb3",
+      "canonicalInput": "open one flushed Session in two processes before either append, release both through one barrier, append sibling Model entries, retain the original stale manager, and reopen",
+      "observations": {"A":"two_process_snapshots_admitted","L":[],"T":{"models":["one","two"],"physicalEntryCount":3,"sharedParent":true},"E":{"exitCodes":[0,0],"leaseFiles":0},"C":{"recoveredLeafInPhysicalSuffix":true,"staleSnapshotCount":1}},
+      "omhExpectation": {"A":"two_process_snapshots_admitted","L":[],"T":{"models":["one","two"],"physicalEntryCount":3,"sharedParent":true},"E":{"exitCodes":[0,0],"leaseFiles":0},"C":{"recoveredLeafInPhysicalSuffix":true,"staleSnapshotCount":1}},
+      "comparator": "compare two admitted appenders, stale shared parents, parseable suffix, original stale snapshot, reopened leaf, and absence of lease effects",
+      "normalization": "sort concurrent model labels and ignore process scheduling, entry ids, timestamps, and physical sibling order",
+      "referenceCitations": ["packages/coding-agent/src/core/session-manager.ts#L765-L917"]
     }
   ]
 }

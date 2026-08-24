@@ -614,6 +614,42 @@
       "evidenceClass": "exact-parity",
       "corpusCase": "reference.session-incomplete-recovery",
       "executableCases": ["ticket-13-session", "ticket-13-installed"]
+    },
+    {
+      "id": "omh-v0.session-persistence-fault-continuity",
+      "authority": ".scratch/omh-v0/issues/08-choose-agent-session-surface.md#jsonl-persistence-and-recovery",
+      "publicInterface": "oh_my_coding_agent.SessionManager append methods and SessionManager.open",
+      "scenario": "inject raw first-flush and later-append file failures through a private seam over real files, inspect partial bytes and divergent manager state, then append again and reopen",
+      "observations": {"A": "raw file failures propagate", "L": "not_applicable", "T": "in-memory entries, indexes, labels, and leaf remain mutated without a settled marker", "E": "target contains only bytes reached by the failed operation and no automatic retry or rollback", "C": "live manager continues from its divergent leaf while reopen sees parseable persisted entries only"},
+      "comparator": "compare raw failure ownership, actual target bytes, in-memory-first mutation, missing-parent continuation, and reopened parsed state",
+      "normalization": "ignore generated ids and timestamps plus language-specific raw filesystem exception class and prose",
+      "evidenceClass": "exact-parity",
+      "corpusCase": "reference.session-persistence-fault-continuity",
+      "executableCases": ["ticket-14-session", "ticket-14-installed"]
+    },
+    {
+      "id": "omh-v0.session-best-effort-recovery",
+      "authority": ".scratch/omh-v0/issues/08-choose-agent-session-surface.md#paths-identity-and-selection and #jsonl-persistence-and-recovery",
+      "publicInterface": "oh_my_coding_agent.SessionManager open, setSessionFile, continueRecent, list, and listAll",
+      "scenario": "exercise absent, empty, invalid, malformed, final-no-LF, migrated, fast-probed, discovered, and in-memory-selected real Session paths",
+      "observations": {"A": "each operation applies its own file admission rule", "L": "not_applicable", "T": "parsed entries, labels, version-3 migration, recent selection, and discovery projections", "E": "ordinary recovery and invalid failure do not rewrite; registered migration and empty initialization rewrite directly", "C": "recovered tree and leaf follow parsed physical order and selected manager mode remains unchanged"},
+      "comparator": "compare operation-specific absence and failure, best-effort physical parsing, registered migration, selection, discovery, and recovered indexes",
+      "normalization": "ignore generated migration ids, timestamps, filesystem mtimes, and product-root mapping",
+      "evidenceClass": "exact-parity",
+      "corpusCase": "reference.session-best-effort-recovery",
+      "executableCases": ["ticket-14-session", "ticket-14-installed"]
+    },
+    {
+      "id": "omh-v0.session-stale-multi-manager-append",
+      "authority": ".scratch/omh-v0/issues/08-choose-agent-session-surface.md#jsonl-persistence-and-recovery",
+      "publicInterface": "oh_my_coding_agent.SessionManager.open and append methods",
+      "scenario": "open one flushed path into two process-local stale snapshots, release both appenders through an explicit barrier, and recover physical file order",
+      "observations": {"A": "both process snapshots append without owner-busy rejection", "L": "not_applicable", "T": "both parseable sibling entries retain their stale shared parent", "E": "no lease, lock, takeover, or safe-ordering side effect", "C": "the original manager remains stale and later open chooses the last physical parseable entry as leaf"},
+      "comparator": "compare dual admission, stale parent links, parseable physical suffix, absent lease effects, and recovery while ignoring cross-process order",
+      "normalization": "sort concurrent model labels and ignore process scheduling, entry ids, timestamps, and physical sibling order",
+      "evidenceClass": "exact-parity",
+      "corpusCase": "reference.session-stale-multi-manager-append",
+      "executableCases": ["ticket-14-session", "ticket-14-installed"]
     }
   ]
 }

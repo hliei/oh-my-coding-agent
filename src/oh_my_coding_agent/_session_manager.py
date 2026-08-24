@@ -1,16 +1,17 @@
 from __future__ import annotations
 
 from collections.abc import Awaitable, Callable, Mapping, Sequence
-from dataclasses import dataclass, field, fields, is_dataclass
+from dataclasses import dataclass, field, fields, is_dataclass, replace
 from datetime import datetime, timezone
 import inspect
 import json
 import os
 from pathlib import Path
+import re
 import secrets
 import time
 from types import MappingProxyType
-from typing import Any, Literal, TypeAlias, cast, final
+from typing import Any, BinaryIO, Literal, TypeAlias, cast, final
 from urllib.parse import unquote, urlparse
 import uuid
 
@@ -227,6 +228,11 @@ def _default_session_dir(cwd: str) -> str:
     return os.path.join(os.path.expanduser("~"), ".omh", "agent", "sessions", f"--{encoded}--")
 
 
+def _ensure_session_dir(path: str) -> None:
+    if path and not os.path.exists(path):
+        os.makedirs(path, exist_ok=True)
+
+
 def _timestamp() -> str:
     return datetime.now(timezone.utc).isoformat(timespec="milliseconds").replace(
         "+00:00", "Z"
@@ -260,7 +266,7 @@ def _session_id(options: NewSessionOptions | None) -> str:
     return selected
 
 
-def _header_json(header: SessionHeader) -> bytes:
+def _header_value(header: SessionHeader) -> dict[str, object]:
     value: dict[str, object] = {
         "type": header.type,
         "version": header.version,
@@ -270,7 +276,11 @@ def _header_json(header: SessionHeader) -> bytes:
     }
     if header.parentSession is not None:
         value["parentSession"] = header.parentSession
-    return json.dumps(value, ensure_ascii=False, separators=(",", ":")).encode("utf-8") + b"\n"
+    return value
+
+
+def _header_json(header: SessionHeader) -> bytes:
+    return _raw_json(_header_value(header))
 
 
 def _json_value(value: object) -> object:
@@ -300,9 +310,34 @@ def _entry_json(entry: SessionEntry) -> bytes:
     )
 
 
+def _raw_json(value: object) -> bytes:
+    return json.dumps(value, ensure_ascii=False, separators=(",", ":")).encode(
+        "utf-8"
+    ) + b"\n"
+
+
+def _write_bytes(output: BinaryIO, data: bytes) -> None:
+    offset = 0
+    while offset < len(data):
+        written = output.write(data[offset:])
+        if written is None or written <= 0:
+            raise OSError("Session file write made no progress")
+        offset += written
+
+
+def _rewrite_values(path: str, values: Sequence[object]) -> None:
+    with open(path, "wb", buffering=0) as output:
+        for value in values:
+            _write_bytes(output, _raw_json(value))
+
+
+def _read_bytes(path: str) -> bytes:
+    return Path(path).read_bytes()
+
+
 def _parsed_values(path: str) -> list[object]:
     values: list[object] = []
-    for physical_line in Path(path).read_bytes().splitlines():
+    for physical_line in _read_bytes(path).split(b"\n"):
         if not physical_line.strip():
             continue
         try:
@@ -312,10 +347,7 @@ def _parsed_values(path: str) -> list[object]:
     return values
 
 
-def _read_header(path: str) -> SessionHeader:
-    if not Path(path).read_bytes():
-        raise ValueError(f"Session file is empty: {path}")
-    values = _parsed_values(path)
+def _read_header_value(values: Sequence[object], path: str) -> SessionHeader:
     parsed = values[0] if values else None
     if not isinstance(parsed, dict) or parsed.get("type") != "session":
         raise ValueError(f"Session file is not a valid omh session: {path}")
@@ -323,16 +355,171 @@ def _read_header(path: str) -> SessionHeader:
     timestamp = parsed.get("timestamp")
     cwd = parsed.get("cwd")
     parent = parsed.get("parentSession")
-    if type(identifier) is not str or type(timestamp) is not str or type(cwd) is not str:
-        raise ValueError(f"Session file is not a valid omh session: {path}")
-    if parent is not None and type(parent) is not str:
+    if type(identifier) is not str:
         raise ValueError(f"Session file is not a valid omh session: {path}")
     return SessionHeader(
         id=identifier,
-        timestamp=timestamp,
-        cwd=cwd,
-        parentSession=parent,
+        timestamp=timestamp if type(timestamp) is str else "",
+        cwd=cwd if type(cwd) is str else "",
+        parentSession=parent if type(parent) is str else None,
     )
+
+
+def _probe_header(path: str) -> SessionHeader | None:
+    try:
+        with open(path, "rb") as source:
+            first_line = source.read(512).split(b"\n", 1)[0]
+        if not first_line:
+            return None
+        value = json.loads(first_line)
+        if (
+            not isinstance(value, dict)
+            or value.get("type") != "session"
+            or type(value.get("id")) is not str
+        ):
+            return None
+        return _read_header_value((value,), path)
+    except (OSError, UnicodeDecodeError, json.JSONDecodeError, ValueError):
+        return None
+
+
+def _legacy_entry_id(used: set[str]) -> str:
+    for _ in range(100):
+        identifier = uuid.uuid4().hex[:8]
+        if identifier not in used:
+            used.add(identifier)
+            return identifier
+    identifier = str(uuid.uuid4())
+    used.add(identifier)
+    return identifier
+
+
+def _migrate_values(values: list[object]) -> bool:
+    header = values[0] if values else None
+    if not isinstance(header, dict) or header.get("type") != "session":
+        return False
+    raw_version = header.get("version")
+    version = raw_version if type(raw_version) is int else 1
+    if version >= CURRENT_SESSION_VERSION:
+        return False
+    if version < 2:
+        used: set[str] = set()
+        previous: str | None = None
+        header["version"] = 2
+        for value in values[1:]:
+            if not isinstance(value, dict):
+                continue
+            identifier = _legacy_entry_id(used)
+            value["id"] = identifier
+            value["parentId"] = previous
+            previous = identifier
+            if value.get("type") == "compaction":
+                index = value.get("firstKeptEntryIndex")
+                if type(index) is int and 0 <= index < len(values):
+                    target = values[index]
+                    if (
+                        isinstance(target, dict)
+                        and target.get("type") != "session"
+                        and type(target.get("id")) is str
+                    ):
+                        value["firstKeptEntryId"] = target["id"]
+                value.pop("firstKeptEntryIndex", None)
+    if version < 3:
+        header["version"] = 3
+        for value in values[1:]:
+            if not isinstance(value, dict) or value.get("type") != "message":
+                continue
+            message = value.get("message")
+            if isinstance(message, dict) and message.get("role") == "hookMessage":
+                message["role"] = "custom"
+    return True
+
+
+def _parse_datetime(value: object) -> datetime | None:
+    if type(value) is not str:
+        return None
+    try:
+        parsed = datetime.fromisoformat(value.replace("Z", "+00:00"))
+        return parsed if parsed.tzinfo is not None else parsed.replace(tzinfo=timezone.utc)
+    except ValueError:
+        return None
+
+
+def _message_text(value: object) -> str:
+    if type(value) is str:
+        return value
+    if type(value) is not list:
+        return ""
+    parts: list[str] = []
+    for item in cast(list[object], value):
+        if (
+            isinstance(item, dict)
+            and item.get("type") == "text"
+            and type(item.get("text")) is str
+        ):
+            parts.append(cast(str, item["text"]))
+    return " ".join(parts)
+
+
+def _session_info(path: str) -> SessionInfo | None:
+    try:
+        stat = os.stat(path)
+        values = _parsed_values(path)
+        header = _read_header_value(values, path)
+        created = _parse_datetime(header.timestamp)
+        if created is None:
+            created = datetime.fromtimestamp(stat.st_mtime, timezone.utc)
+        name: str | None = None
+        message_count = 0
+        first_message = ""
+        all_messages: list[str] = []
+        last_activity: datetime | None = None
+        for value in values[1:]:
+            if not isinstance(value, dict):
+                continue
+            if value.get("type") == "session_info":
+                raw_name = value.get("name")
+                name = (raw_name.strip() or None) if type(raw_name) is str else None
+                continue
+            if value.get("type") != "message":
+                continue
+            message = value.get("message")
+            if not isinstance(message, dict):
+                continue
+            message_count += 1
+            role = message.get("role")
+            if role not in ("user", "assistant"):
+                continue
+            timestamp = message.get("timestamp")
+            activity = (
+                datetime.fromtimestamp(timestamp / 1000, timezone.utc)
+                if type(timestamp) is int
+                else _parse_datetime(value.get("timestamp"))
+            )
+            if activity is not None and activity.timestamp() > 0 and (
+                last_activity is None or activity > last_activity
+            ):
+                last_activity = activity
+            content = _message_text(message.get("content"))
+            if not content:
+                continue
+            all_messages.append(content)
+            if not first_message and role == "user":
+                first_message = content
+        return SessionInfo(
+            path=path,
+            id=header.id,
+            cwd=header.cwd,
+            name=name,
+            parentSessionPath=header.parentSession,
+            created=created,
+            modified=last_activity or created,
+            messageCount=message_count,
+            firstMessage=first_message or "(no messages)",
+            allMessagesText=" ".join(all_messages),
+        )
+    except (OSError, OverflowError, TypeError, ValueError):
+        return None
 
 
 def _text_content(value: object) -> TextContent:
@@ -502,7 +689,6 @@ class SessionManager:
     _persist: bool
     _session_dir: str
     _session_file: str | None
-    _uses_default_dir: bool
 
     __slots__ = (
         "_by_id",
@@ -516,7 +702,6 @@ class SessionManager:
         "_persist",
         "_session_dir",
         "_session_file",
-        "_uses_default_dir",
     )
 
     def __init__(self, *, _token: object) -> None:
@@ -529,13 +714,11 @@ class SessionManager:
         cwd: str,
         session_dir: str,
         persist: bool,
-        uses_default_dir: bool,
     ) -> SessionManager:
         manager = cls(_token=_MANAGER_TOKEN)
         manager._cwd = cwd
         manager._session_dir = session_dir
         manager._persist = persist
-        manager._uses_default_dir = uses_default_dir
         manager._session_file = None
         manager._header = SessionHeader(id=_uuid7(), timestamp=_timestamp(), cwd=cwd)
         manager._entries = []
@@ -555,14 +738,13 @@ class SessionManager:
     ) -> SessionManager:
         resolved_cwd = _resolve_path(cwd, "SessionManager.create.cwd")
         identifier = _session_id(options)
-        uses_default = sessionDir is None
         directory = (
             _default_session_dir(resolved_cwd)
             if sessionDir is None
             else _normalize_path(sessionDir, "SessionManager.create.sessionDir")
         )
-        os.makedirs(directory, exist_ok=True)
-        manager = cls._blank(resolved_cwd, directory, True, uses_default)
+        _ensure_session_dir(directory)
+        manager = cls._blank(resolved_cwd, directory, True)
         manager._start_new(identifier, None if options is None else options.parentSession)
         return manager
 
@@ -584,25 +766,33 @@ class SessionManager:
             if sessionDir is None
             else _normalize_path(sessionDir, "SessionManager.open.sessionDir")
         )
-        os.makedirs(directory, exist_ok=True)
+        _ensure_session_dir(directory)
         if not os.path.exists(resolved_path):
-            manager = cls._blank(override or os.getcwd(), directory, True, False)
+            manager = cls._blank(override or os.getcwd(), directory, True)
             manager._start_new(_uuid7(), None)
             manager._session_file = resolved_path
             return manager
         if os.path.getsize(resolved_path) == 0:
-            manager = cls._blank(override or os.getcwd(), directory, True, False)
+            manager = cls._blank(override or os.getcwd(), directory, True)
             manager._start_new(_uuid7(), None)
             manager._session_file = resolved_path
-            Path(resolved_path).write_bytes(_header_json(manager._header))
+            _rewrite_values(resolved_path, (_header_value(manager._header),))
             manager._flushed = True
             return manager
-        header = _read_header(resolved_path)
-        manager = cls._blank(override or _resolve_path(header.cwd, "SessionHeader.cwd"), directory, True, False)
+        values = _parsed_values(resolved_path)
+        header = _read_header_value(values, resolved_path)
+        if _migrate_values(values):
+            _rewrite_values(resolved_path, values)
+            header = _read_header_value(values, resolved_path)
+        manager = cls._blank(
+            override or _resolve_path(header.cwd, "SessionHeader.cwd"),
+            directory,
+            True,
+        )
         manager._header = header
         manager._session_file = resolved_path
         manager._flushed = True
-        for value in _parsed_values(resolved_path)[1:]:
+        for value in values[1:]:
             try:
                 entry = _entry(value)
             except (KeyError, TypeError, ValueError):
@@ -629,17 +819,27 @@ class SessionManager:
             if sessionDir is None
             else _normalize_path(sessionDir, "SessionManager.continueRecent.sessionDir")
         )
-        candidates = sorted(
-            Path(directory).glob("*.jsonl") if os.path.isdir(directory) else (),
-            key=lambda item: item.stat().st_mtime_ns,
-            reverse=True,
+        if sessionDir is None:
+            _ensure_session_dir(directory)
+        filter_cwd = sessionDir is not None and directory != _default_session_dir(
+            resolved_cwd
         )
+        try:
+            candidates = sorted(
+                Path(directory).glob("*.jsonl") if os.path.isdir(directory) else (),
+                key=lambda item: item.stat().st_mtime_ns,
+                reverse=True,
+            )
+        except OSError:
+            candidates = []
         for candidate in candidates:
-            try:
-                header = _read_header(os.fspath(candidate))
-            except (OSError, ValueError):
+            header = _probe_header(os.fspath(candidate))
+            if header is None:
                 continue
-            if sessionDir is not None and _resolve_path(header.cwd, "SessionHeader.cwd") != resolved_cwd:
+            if filter_cwd and (
+                not header.cwd
+                or _resolve_path(header.cwd, "SessionHeader.cwd") != resolved_cwd
+            ):
                 continue
             return cls.open(os.fspath(candidate), directory, resolved_cwd)
         return cls.create(resolved_cwd, sessionDir)
@@ -654,7 +854,7 @@ class SessionManager:
             os.getcwd() if cwd is None else cwd, "SessionManager.inMemory.cwd"
         )
         identifier = _session_id(options)
-        manager = cls._blank(resolved_cwd, "", False, False)
+        manager = cls._blank(resolved_cwd, "", False)
         manager._start_new(identifier, None if options is None else options.parentSession)
         return manager
 
@@ -668,21 +868,23 @@ class SessionManager:
     ) -> SessionManager:
         source = _resolve_path(sourcePath, "SessionManager.forkFrom.sourcePath")
         target = _resolve_path(targetCwd, "SessionManager.forkFrom.targetCwd")
-        _read_header(source)
+        source_values = _parsed_values(source)
+        _read_header_value(source_values, source)
         identifier = _session_id(options)
         directory = (
             _default_session_dir(target)
             if sessionDir is None
             else _normalize_path(sessionDir, "SessionManager.forkFrom.sessionDir")
         )
-        os.makedirs(directory, exist_ok=True)
-        manager = cls._blank(target, directory, True, sessionDir is None)
+        _ensure_session_dir(directory)
+        manager = cls._blank(target, directory, True)
         manager._start_new(identifier, source)
         assert manager._session_file is not None
-        with open(manager._session_file, "xb") as output:
-            output.write(_header_json(manager._header))
-        manager._flushed = True
-        return manager
+        with open(manager._session_file, "xb", buffering=0) as output:
+            _write_bytes(output, _header_json(manager._header))
+            for value in source_values[1:]:
+                _write_bytes(output, _raw_json(value))
+        return cls.open(manager._session_file, directory, target)
 
     @classmethod
     async def list(
@@ -697,9 +899,14 @@ class SessionManager:
             if sessionDir is None
             else _normalize_path(sessionDir, "SessionManager.list.sessionDir")
         )
+        if sessionDir is None:
+            _ensure_session_dir(directory)
+        filter_cwd = sessionDir is not None and directory != _default_session_dir(
+            resolved_cwd
+        )
         return await cls._list_dir(
             directory,
-            resolved_cwd if sessionDir is not None else None,
+            resolved_cwd if filter_cwd else None,
             onProgress,
         )
 
@@ -715,12 +922,15 @@ class SessionManager:
         root = os.path.join(os.path.expanduser("~"), ".omh", "agent", "sessions")
         if not os.path.isdir(root):
             return ()
-        candidates = tuple(
-            item
-            for directory in Path(root).iterdir()
-            if directory.is_dir()
-            for item in directory.glob("*.jsonl")
-        )
+        try:
+            candidates = tuple(
+                item
+                for directory in Path(root).iterdir()
+                if directory.is_dir()
+                for item in directory.glob("*.jsonl")
+            )
+        except OSError:
+            return ()
         return await cls._list_paths(candidates, None, onProgress)
 
     @classmethod
@@ -743,28 +953,15 @@ class SessionManager:
         results: list[SessionInfo] = []
         total = len(candidates)
         for loaded, candidate in enumerate(candidates, 1):
-            try:
-                header = _read_header(os.fspath(candidate))
-                header_cwd = _resolve_path(header.cwd, "SessionHeader.cwd")
-                if cwd_filter is None or header_cwd == cwd_filter:
-                    stat = candidate.stat()
-                    created = datetime.fromisoformat(header.timestamp.replace("Z", "+00:00"))
-                    results.append(
-                        SessionInfo(
-                            path=os.fspath(candidate),
-                            id=header.id,
-                            cwd=header.cwd,
-                            name=None,
-                            parentSessionPath=header.parentSession,
-                            created=created,
-                            modified=datetime.fromtimestamp(stat.st_mtime, timezone.utc),
-                            messageCount=0,
-                            firstMessage="",
-                            allMessagesText="",
-                        )
-                    )
-            except (OSError, ValueError):
-                pass
+            info = _session_info(os.fspath(candidate))
+            if info is not None and (
+                cwd_filter is None
+                or (
+                    bool(info.cwd)
+                    and _resolve_path(info.cwd, "SessionHeader.cwd") == cwd_filter
+                )
+            ):
+                results.append(info)
             if on_progress is not None:
                 settled = on_progress(loaded, total)
                 if inspect.isawaitable(settled):
@@ -797,15 +994,34 @@ class SessionManager:
             self._session_file = None
 
     def setSessionFile(self, path: str) -> None:
-        replacement = SessionManager.open(path, self._session_dir, self._cwd)
-        self._header = replacement._header
-        self._session_file = replacement._session_file
-        self._entries = list(replacement._entries)
-        self._by_id = dict(replacement._by_id)
-        self._labels = dict(replacement._labels)
-        self._label_timestamps = dict(replacement._label_timestamps)
-        self._leaf_id = replacement._leaf_id
-        self._flushed = replacement._flushed
+        resolved_path = _resolve_path(path, "SessionManager.setSessionFile.path")
+        self._session_file = resolved_path
+        if not os.path.exists(resolved_path):
+            self._start_new(_uuid7(), None)
+            self._session_file = resolved_path
+            return
+        if os.path.getsize(resolved_path) == 0:
+            self._start_new(_uuid7(), None)
+            self._session_file = resolved_path
+            if self._persist:
+                _rewrite_values(resolved_path, (_header_value(self._header),))
+            self._flushed = True
+            return
+        values = _parsed_values(resolved_path)
+        header = _read_header_value(values, resolved_path)
+        if _migrate_values(values) and self._persist:
+            _rewrite_values(resolved_path, values)
+            header = _read_header_value(values, resolved_path)
+        entries: list[SessionEntry] = []
+        for value in values[1:]:
+            try:
+                entries.append(_entry(value))
+            except (KeyError, TypeError, ValueError):
+                continue
+        self._header = header
+        self._entries = entries
+        self._rebuild_indexes()
+        self._flushed = True
 
     def newSession(self, options: NewSessionOptions | None = None) -> str | None:
         identifier = _session_id(options)
@@ -822,7 +1038,7 @@ class SessionManager:
         return self._session_dir
 
     def usesDefaultSessionDir(self) -> bool:
-        return self._uses_default_dir
+        return self._session_dir == _default_session_dir(self._cwd)
 
     def getSessionId(self) -> str:
         return self._header.id
@@ -872,18 +1088,51 @@ class SessionManager:
         details: object | None = None,
         fromHook: bool = False,
     ) -> str:
-        del summary, firstKeptEntryId, tokensBefore, details, fromHook
-        raise NotImplementedError("Session entry append is not implemented")
+        selected_summary = _string(summary, "summary")
+        selected_first = _string(firstKeptEntryId, "firstKeptEntryId")
+        if type(tokensBefore) is not int:
+            raise TypeError("tokensBefore must be an int")
+        if type(fromHook) is not bool:
+            raise TypeError("fromHook must be a bool")
+        entry = CompactionEntry(
+            id=self._entry_id(),
+            parentId=self._leaf_id,
+            timestamp=_timestamp(),
+            summary=selected_summary,
+            firstKeptEntryId=selected_first,
+            tokensBefore=tokensBefore,
+            details=details,
+            fromHook=fromHook,
+        )
+        self._append_entry(entry)
+        return entry.id
 
     def appendCustomEntry(self, customType: str, data: object | None = None) -> str:
-        del customType, data
-        raise NotImplementedError("Session entry append is not implemented")
+        entry = CustomEntry(
+            id=self._entry_id(),
+            parentId=self._leaf_id,
+            timestamp=_timestamp(),
+            customType=_string(customType, "customType"),
+            data=data,
+        )
+        self._append_entry(entry)
+        return entry.id
 
     def appendSessionInfo(self, name: str) -> str:
-        del name
-        raise NotImplementedError("Session entry append is not implemented")
+        sanitized = re.sub(r"[\r\n]+", " ", _string(name, "name")).strip()
+        entry = SessionInfoEntry(
+            id=self._entry_id(),
+            parentId=self._leaf_id,
+            timestamp=_timestamp(),
+            name=sanitized,
+        )
+        self._append_entry(entry)
+        return entry.id
 
     def getSessionName(self) -> str | None:
+        for entry in reversed(self._entries):
+            if isinstance(entry, SessionInfoEntry):
+                return entry.name or None
         return None
 
     def appendCustomMessageEntry(
@@ -893,8 +1142,27 @@ class SessionManager:
         display: bool,
         details: object | None = None,
     ) -> str:
-        del customType, content, display, details
-        raise NotImplementedError("Session entry append is not implemented")
+        if type(content) is str:
+            selected_content: str | tuple[TextContent, ...] = _string(
+                content, "content"
+            )
+        else:
+            selected_content = tuple(cast(Sequence[TextContent], content))
+            if any(type(item) is not TextContent for item in selected_content):
+                raise TypeError("content must contain only TextContent values")
+        if type(display) is not bool:
+            raise TypeError("display must be a bool")
+        entry = CustomMessageEntry(
+            id=self._entry_id(),
+            parentId=self._leaf_id,
+            timestamp=_timestamp(),
+            customType=_string(customType, "customType"),
+            content=selected_content,
+            display=display,
+            details=details,
+        )
+        self._append_entry(entry)
+        return entry.id
 
     def getLeafId(self) -> str | None:
         return self._leaf_id
@@ -909,12 +1177,23 @@ class SessionManager:
         return tuple(entry for entry in self._entries if entry.parentId == parentId)
 
     def getLabel(self, id: str) -> str | None:
-        del id
-        return None
+        return self._labels.get(id)
 
     def appendLabelChange(self, targetId: str, label: str | None) -> str:
-        del targetId, label
-        raise NotImplementedError("Session entry append is not implemented")
+        selected_target = _string(targetId, "targetId")
+        if selected_target not in self._by_id:
+            raise ValueError(f"Entry {selected_target} not found")
+        if label is not None:
+            _string(label, "label")
+        entry = LabelEntry(
+            id=self._entry_id(),
+            parentId=self._leaf_id,
+            timestamp=_timestamp(),
+            targetId=selected_target,
+            label=label,
+        )
+        self._append_entry(entry)
+        return entry.id
 
     def getBranch(self, fromId: str | None = None) -> tuple[SessionEntry, ...]:
         current_id = self._leaf_id if fromId is None else fromId
@@ -965,37 +1244,48 @@ class SessionManager:
         return tuple(self._entries)
 
     def getTree(self) -> tuple[SessionTreeNode, ...]:
-        children: dict[str, list[SessionTreeNode]] = {
-            entry.id: [] for entry in self._entries
-        }
-        nodes = {
-            entry.id: SessionTreeNode(
-                entry=entry,
-                children=(),
-                label=self._labels.get(entry.id),
-                labelTimestamp=self._label_timestamps.get(entry.id),
-            )
-            for entry in self._entries
-        }
-        roots: list[SessionTreeNode] = []
+        entries_by_id = {entry.id: entry for entry in self._entries}
+        children: dict[str, list[str]] = {entry.id: [] for entry in self._entries}
+        root_ids: list[str] = []
         for entry in self._entries:
-            node = nodes[entry.id]
             if entry.parentId is None or entry.parentId == entry.id:
-                roots.append(node)
+                root_ids.append(entry.id)
             elif entry.parentId in children:
-                children[entry.parentId].append(node)
+                children[entry.parentId].append(entry.id)
             else:
-                roots.append(node)
+                root_ids.append(entry.id)
+
+        def timestamp_key(entry_id: str) -> float:
+            parsed = _parse_datetime(entries_by_id[entry_id].timestamp)
+            return parsed.timestamp() if parsed is not None else 0.0
+
+        for siblings in children.values():
+            siblings.sort(key=timestamp_key)
 
         rebuilt: dict[str, SessionTreeNode] = {}
-        for entry in reversed(self._entries):
-            rebuilt[entry.id] = SessionTreeNode(
-                entry=entry,
-                children=tuple(rebuilt[child.entry.id] for child in children[entry.id]),
-                label=self._labels.get(entry.id),
-                labelTimestamp=self._label_timestamps.get(entry.id),
-            )
-        return tuple(rebuilt[root.entry.id] for root in roots)
+        for root_id in root_ids:
+            stack = [(root_id, False)]
+            while stack:
+                entry_id, expanded = stack.pop()
+                if entry_id in rebuilt:
+                    continue
+                if not expanded:
+                    stack.append((entry_id, True))
+                    stack.extend(
+                        (child_id, False)
+                        for child_id in reversed(children[entry_id])
+                    )
+                    continue
+                entry = entries_by_id[entry_id]
+                rebuilt[entry_id] = SessionTreeNode(
+                    entry=entry,
+                    children=tuple(
+                        rebuilt[child_id] for child_id in children[entry_id]
+                    ),
+                    label=self._labels.get(entry_id),
+                    labelTimestamp=self._label_timestamps.get(entry_id),
+                )
+        return tuple(rebuilt[root_id] for root_id in root_ids)
 
     def branch(self, entryId: str) -> None:
         if entryId not in self._by_id:
@@ -1012,11 +1302,96 @@ class SessionManager:
         details: object | None = None,
         fromHook: bool = False,
     ) -> str:
-        del targetId, summary, details, fromHook
-        raise NotImplementedError("Session entry append is not implemented")
+        if targetId is not None and targetId not in self._by_id:
+            raise ValueError(f"Entry {targetId} not found")
+        if type(fromHook) is not bool:
+            raise TypeError("fromHook must be a bool")
+        self._leaf_id = targetId
+        entry = BranchSummaryEntry(
+            id=self._entry_id(),
+            parentId=targetId,
+            timestamp=_timestamp(),
+            fromId=targetId or "root",
+            summary=_string(summary, "summary"),
+            details=details,
+            fromHook=fromHook,
+        )
+        self._append_entry(entry)
+        return entry.id
 
     def createBranchedSession(self, leafId: str) -> str | None:
-        raise ValueError(f"Entry {leafId} not found")
+        path = self.getBranch(leafId)
+        if not path:
+            raise ValueError(f"Entry {leafId} not found")
+        previous_file = self._session_file
+        retained: list[SessionEntry] = []
+        parent_id: str | None = None
+        for entry in path:
+            if isinstance(entry, LabelEntry):
+                continue
+            copied = replace(entry, parentId=parent_id)
+            retained.append(copied)
+            parent_id = copied.id
+        retained_ids = {entry.id for entry in retained}
+        label_entries: list[SessionEntry] = []
+        used_ids = set(retained_ids)
+        for target_id, label in self._labels.items():
+            if target_id not in retained_ids:
+                continue
+            label_entry = LabelEntry(
+                id=_legacy_entry_id(used_ids),
+                parentId=parent_id,
+                timestamp=self._label_timestamps[target_id],
+                targetId=target_id,
+                label=label,
+            )
+            label_entries.append(label_entry)
+            parent_id = label_entry.id
+        identifier = _uuid7()
+        timestamp = _timestamp()
+        self._header = SessionHeader(
+            id=identifier,
+            timestamp=timestamp,
+            cwd=self._cwd,
+            parentSession=previous_file if self._persist else None,
+        )
+        self._entries = retained + label_entries
+        self._rebuild_indexes()
+        self._flushed = False
+        if not self._persist:
+            self._session_file = None
+            return None
+        filename_timestamp = timestamp.replace(":", "-").replace(".", "-")
+        self._session_file = os.path.join(
+            self._session_dir, f"{filename_timestamp}_{identifier}.jsonl"
+        )
+        if any(
+            isinstance(entry, SessionMessageEntry)
+            and isinstance(entry.message, AssistantMessage)
+            for entry in self._entries
+        ):
+            _rewrite_values(
+                self._session_file,
+                (_header_value(self._header), *map(_json_value, self._entries)),
+            )
+            self._flushed = True
+        return self._session_file
+
+    def _rebuild_indexes(self) -> None:
+        self._by_id.clear()
+        self._labels.clear()
+        self._label_timestamps.clear()
+        self._leaf_id = None
+        for entry in self._entries:
+            self._by_id[entry.id] = entry
+            self._leaf_id = entry.id
+            if isinstance(entry, LabelEntry):
+                if entry.label:
+                    self._labels[entry.targetId] = entry.label
+                    self._label_timestamps[entry.targetId] = entry.timestamp
+                else:
+                    self._labels.pop(entry.targetId, None)
+                    self._label_timestamps.pop(entry.targetId, None)
 
     def _entry_id(self) -> str:
         for _ in range(100):
@@ -1029,6 +1404,13 @@ class SessionManager:
         self._entries.append(entry)
         self._by_id[entry.id] = entry
         self._leaf_id = entry.id
+        if isinstance(entry, LabelEntry):
+            if entry.label:
+                self._labels[entry.targetId] = entry.label
+                self._label_timestamps[entry.targetId] = entry.timestamp
+            else:
+                self._labels.pop(entry.targetId, None)
+                self._label_timestamps.pop(entry.targetId, None)
         if not self._persist or self._session_file is None:
             return
         has_assistant = any(
@@ -1039,11 +1421,11 @@ class SessionManager:
         if not self._flushed:
             if not has_assistant:
                 return
-            with open(self._session_file, "xb") as output:
-                output.write(_header_json(self._header))
+            with open(self._session_file, "xb", buffering=0) as output:
+                _write_bytes(output, _header_json(self._header))
                 for item in self._entries:
-                    output.write(_entry_json(item))
+                    _write_bytes(output, _entry_json(item))
             self._flushed = True
             return
-        with open(self._session_file, "ab") as output:
-            output.write(_entry_json(entry))
+        with open(self._session_file, "ab", buffering=0) as output:
+            _write_bytes(output, _entry_json(entry))
