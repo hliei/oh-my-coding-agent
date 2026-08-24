@@ -105,6 +105,60 @@ def test_model_abort_preserves_latest_assistant_and_waits_for_cleanup() -> None:
     asyncio.run(run())
 
 
+def test_repeated_abort_does_not_interrupt_owned_model_cleanup() -> None:
+    faux = fauxProvider()
+    model = faux.getModel()
+    assert model is not None
+    model_started = asyncio.Event()
+    cleanup_started = asyncio.Event()
+    allow_cleanup = asyncio.Event()
+    cleanup_interrupted = False
+    cleaned = False
+
+    async def blocked_stream(
+        model: Model,
+        context: Any,
+        options: object | None,
+        signal: AbortSignal,
+    ) -> AsyncIterator[AssistantMessageEvent]:
+        nonlocal cleaned, cleanup_interrupted
+        del model, context, options, signal
+        model_started.set()
+        try:
+            await asyncio.Event().wait()
+        finally:
+            cleanup_started.set()
+            try:
+                await allow_cleanup.wait()
+            except asyncio.CancelledError:
+                cleanup_interrupted = True
+                raise
+            cleaned = True
+        if False:
+            yield
+
+    agent = Agent(
+        AgentOptions(initialState=AgentState(model=model), streamFn=blocked_stream)
+    )
+
+    async def run() -> None:
+        operation = asyncio.create_task(agent.prompt("go"))
+        await model_started.wait()
+        agent.abort()
+        await cleanup_started.wait()
+        agent.abort()
+        allow_cleanup.set()
+        await operation
+        assert cleanup_interrupted is False
+        assert cleaned
+        terminal = agent.state.messages[-1]
+        assert type(terminal) is AssistantMessage
+        assert terminal.stopReason == "aborted"
+        assert agent.state.isStreaming is False
+
+    asyncio.run(run())
+
+
 def test_operation_task_cancellation_settles_the_same_run_before_reraising() -> None:
     faux = fauxProvider()
     model = faux.getModel()
@@ -427,6 +481,59 @@ def test_listener_abort_before_model_start_skips_the_model_effect() -> None:
         assert type(terminal) is AssistantMessage
         assert terminal.stopReason == "aborted"
         assert event_types[-3:] == ["message_end", "turn_end", "agent_end"]
+
+    asyncio.run(run())
+
+
+def test_message_listener_abort_does_not_resume_the_model_after_cutoff() -> None:
+    faux = fauxProvider()
+    model = faux.getModel()
+    assert model is not None
+    faux.setResponses((fauxAssistantMessage("unused"),))
+    models = createModels()
+    models.setProvider(faux.provider)
+    resumed_after_start = False
+    cleaned = False
+
+    async def observed_stream(
+        model: Model,
+        context: Any,
+        options: object | None,
+        signal: AbortSignal,
+    ) -> AsyncIterator[AssistantMessageEvent]:
+        nonlocal cleaned, resumed_after_start
+        del options, signal
+        first = True
+        try:
+            async for event in models.streamSimple(model, context, None):
+                yield event
+                if first:
+                    resumed_after_start = True
+                    first = False
+        finally:
+            cleaned = True
+
+    agent = Agent(
+        AgentOptions(initialState=AgentState(model=model), streamFn=observed_stream)
+    )
+
+    def abort_message_start(event: AgentEvent, signal: AbortSignal) -> None:
+        del signal
+        if isinstance(event, AgentEvent.MessageStart) and isinstance(
+            event.message, AssistantMessage
+        ):
+            agent.abort()
+
+    agent.subscribe(abort_message_start)
+
+    async def run() -> None:
+        await agent.prompt("go")
+        assert resumed_after_start is False
+        assert cleaned
+        terminal = agent.state.messages[-1]
+        assert type(terminal) is AssistantMessage
+        assert terminal.stopReason == "aborted"
+        assert faux.state.callCount == 1
 
     asyncio.run(run())
 

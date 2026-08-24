@@ -262,7 +262,7 @@ class _RunControl:
         self.terminalCommitted = False
 
     def requestCancellation(self) -> bool:
-        if self.terminalCommitted:
+        if self.terminalCommitted or self.signal.aborted:
             return False
         _abort_signal(self.signal)
         return True
@@ -1056,7 +1056,14 @@ async def _consume_response_events(
     response_started = False
     latest: AssistantMessage | None = None
     try:
-        async for event in response_events:
+        iterator = response_events.__aiter__()
+        while True:
+            if signal.aborted:
+                raise asyncio.CancelledError
+            try:
+                event = await anext(iterator)
+            except StopAsyncIteration:
+                break
             if signal.aborted:
                 raise asyncio.CancelledError
             if isinstance(event, AssistantMessageStartEvent):
