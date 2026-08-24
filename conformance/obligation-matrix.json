@@ -619,7 +619,7 @@
       "id": "omh-v0.session-persistence-fault-continuity",
       "authority": ".scratch/omh-v0/issues/08-choose-agent-session-surface.md#jsonl-persistence-and-recovery",
       "publicInterface": "oh_my_coding_agent.SessionManager append methods and SessionManager.open",
-      "scenario": "inject raw first-flush and later-append file failures through a private seam over real files, inspect partial bytes and divergent manager state, then append again and reopen",
+      "scenario": "inject raw first-flush, later-append, direct-rewrite, and whole-read failures through a private seam over real files, inspect actual bytes and divergent manager state, then append again and reopen",
       "observations": {"A": "raw file failures propagate", "L": "not_applicable", "T": "in-memory entries, indexes, labels, and leaf remain mutated without a settled marker", "E": "target contains only bytes reached by the failed operation and no automatic retry or rollback", "C": "live manager continues from its divergent leaf while reopen sees parseable persisted entries only"},
       "comparator": "compare raw failure ownership, actual target bytes, in-memory-first mutation, missing-parent continuation, and reopened parsed state",
       "normalization": "ignore generated ids and timestamps plus language-specific raw filesystem exception class and prose",

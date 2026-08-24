@@ -615,6 +615,23 @@ def test_continue_recent_directory_failure_returns_fresh_lazy_manager(
     assert not Path(manager.getSessionFile() or "").exists()
 
 
+def test_discovery_top_level_enumeration_failure_returns_empty(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    sessions = tmp_path / "sessions"
+    sessions.mkdir()
+
+    def fail_glob(_self: Path, _pattern: str) -> object:
+        raise OSError("enumeration cutoff")
+
+    monkeypatch.setattr(Path, "glob", fail_glob)
+
+    assert asyncio.run(
+        SessionManager.list(os.fspath(tmp_path / "project"), os.fspath(sessions))
+    ) == ()
+    assert asyncio.run(SessionManager.listAll(os.fspath(sessions))) == ()
+
+
 def test_ticket_14_matrix_records_fault_recovery_and_concurrency() -> None:
     root = Path(__file__).parents[2]
     matrix = json.loads((root / "conformance/obligation-matrix.json").read_text())

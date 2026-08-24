@@ -79,17 +79,66 @@ def _fault_continuity(root: Path) -> dict[str, object]:
     later = reopened.getEntry(later_id)
     assert isinstance(later, ModelChangeEntry)
 
+    rewrite = root / "rewrite.jsonl"
+    rewrite.touch()
+    rewrite_cutoff = 19
+
+    def fail_rewrite(output: BinaryIO, data: bytes) -> None:
+        output.write(data[:rewrite_cutoff])
+        raise OSError("rewrite cutoff")
+
+    session_manager_module._write_bytes = fail_rewrite
+    rewrite_error = ""
+    try:
+        SessionManager.open(os.fspath(rewrite), cwdOverride=os.fspath(root))
+    except OSError as error:
+        rewrite_error = type(error).__name__
+    finally:
+        session_manager_module._write_bytes = original_write
+
+    read_target = root / "read.jsonl"
+    read_target.write_bytes(
+        _json_bytes(
+            {
+                "type": "session",
+                "version": 3,
+                "id": "read-cutoff",
+                "timestamp": "2026-08-24T00:00:00.000Z",
+                "cwd": os.fspath(root),
+            }
+        )
+        + b"\n"
+    )
+    read_target_bytes = read_target.read_bytes()
+    original_read = session_manager_module._read_bytes
+
+    def fail_read(path: str) -> bytes:
+        del path
+        raise OSError("read cutoff")
+
+    session_manager_module._read_bytes = fail_read
+    read_error = ""
+    try:
+        SessionManager.open(os.fspath(read_target))
+    except OSError as error:
+        read_error = type(error).__name__
+    finally:
+        session_manager_module._read_bytes = original_read
+
     return {
         "A": "raw_file_faults_propagated",
         "L": [],
         "T": {
             "errors": [first_error, append_error],
             "firstMemoryTypes": [entry.type for entry in first.getEntries()],
+            "installedCutoffErrors": [rewrite_error, read_error],
             "labelRetainedInMemory": append.getLabel(assistant_id) == "memory-only",
         },
         "E": {
             "firstPartialBytes": Path(first_file).stat().st_size,
             "appendPrefixUnchanged": durable == Path(append_file).read_bytes()[: len(durable)],
+            "readTargetUnchanged": read_target.read_bytes() == read_target_bytes,
+            "rewritePartialBytes": rewrite.stat().st_size,
             "settledMarkers": 0,
         },
         "C": {

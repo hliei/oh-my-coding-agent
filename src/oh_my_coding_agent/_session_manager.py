@@ -280,7 +280,7 @@ def _header_value(header: SessionHeader) -> dict[str, object]:
 
 
 def _header_json(header: SessionHeader) -> bytes:
-    return _raw_json(_header_value(header))
+    return _json_line(_header_value(header))
 
 
 def _json_value(value: object) -> object:
@@ -302,15 +302,10 @@ def _json_value(value: object) -> object:
 
 
 def _entry_json(entry: SessionEntry) -> bytes:
-    return (
-        json.dumps(
-            _json_value(entry), ensure_ascii=False, separators=(",", ":")
-        ).encode("utf-8")
-        + b"\n"
-    )
+    return _json_line(_json_value(entry))
 
 
-def _raw_json(value: object) -> bytes:
+def _json_line(value: object) -> bytes:
     return json.dumps(value, ensure_ascii=False, separators=(",", ":")).encode(
         "utf-8"
     ) + b"\n"
@@ -328,7 +323,7 @@ def _write_bytes(output: BinaryIO, data: bytes) -> None:
 def _rewrite_values(path: str, values: Sequence[object]) -> None:
     with open(path, "wb", buffering=0) as output:
         for value in values:
-            _write_bytes(output, _raw_json(value))
+            _write_bytes(output, _json_line(value))
 
 
 def _read_bytes(path: str) -> bytes:
@@ -798,15 +793,7 @@ class SessionManager:
             except (KeyError, TypeError, ValueError):
                 continue
             manager._entries.append(entry)
-            manager._by_id[entry.id] = entry
-            manager._leaf_id = entry.id
-            if isinstance(entry, LabelEntry):
-                if entry.label:
-                    manager._labels[entry.targetId] = entry.label
-                    manager._label_timestamps[entry.targetId] = entry.timestamp
-                else:
-                    manager._labels.pop(entry.targetId, None)
-                    manager._label_timestamps.pop(entry.targetId, None)
+            manager._index_entry(entry)
         return manager
 
     @classmethod
@@ -883,7 +870,7 @@ class SessionManager:
         with open(manager._session_file, "xb", buffering=0) as output:
             _write_bytes(output, _header_json(manager._header))
             for value in source_values[1:]:
-                _write_bytes(output, _raw_json(value))
+                _write_bytes(output, _json_line(value))
         return cls.open(manager._session_file, directory, target)
 
     @classmethod
@@ -940,7 +927,14 @@ class SessionManager:
         cwd_filter: str | None,
         on_progress: _Progress | None,
     ) -> tuple[SessionInfo, ...]:
-        candidates = tuple(Path(directory).glob("*.jsonl")) if os.path.isdir(directory) else ()
+        try:
+            candidates = (
+                tuple(Path(directory).glob("*.jsonl"))
+                if os.path.isdir(directory)
+                else ()
+            )
+        except OSError:
+            return ()
         return await cls._list_paths(candidates, cwd_filter, on_progress)
 
     @classmethod
@@ -1383,15 +1377,18 @@ class SessionManager:
         self._label_timestamps.clear()
         self._leaf_id = None
         for entry in self._entries:
-            self._by_id[entry.id] = entry
-            self._leaf_id = entry.id
-            if isinstance(entry, LabelEntry):
-                if entry.label:
-                    self._labels[entry.targetId] = entry.label
-                    self._label_timestamps[entry.targetId] = entry.timestamp
-                else:
-                    self._labels.pop(entry.targetId, None)
-                    self._label_timestamps.pop(entry.targetId, None)
+            self._index_entry(entry)
+
+    def _index_entry(self, entry: SessionEntry) -> None:
+        self._by_id[entry.id] = entry
+        self._leaf_id = entry.id
+        if isinstance(entry, LabelEntry):
+            if entry.label:
+                self._labels[entry.targetId] = entry.label
+                self._label_timestamps[entry.targetId] = entry.timestamp
+            else:
+                self._labels.pop(entry.targetId, None)
+                self._label_timestamps.pop(entry.targetId, None)
 
     def _entry_id(self) -> str:
         for _ in range(100):
@@ -1402,15 +1399,7 @@ class SessionManager:
 
     def _append_entry(self, entry: SessionEntry) -> None:
         self._entries.append(entry)
-        self._by_id[entry.id] = entry
-        self._leaf_id = entry.id
-        if isinstance(entry, LabelEntry):
-            if entry.label:
-                self._labels[entry.targetId] = entry.label
-                self._label_timestamps[entry.targetId] = entry.timestamp
-            else:
-                self._labels.pop(entry.targetId, None)
-                self._label_timestamps.pop(entry.targetId, None)
+        self._index_entry(entry)
         if not self._persist or self._session_file is None:
             return
         has_assistant = any(
