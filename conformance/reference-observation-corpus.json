@@ -640,6 +640,42 @@
       "comparator": "compare two admitted appenders, stale shared parents, parseable suffix, original stale snapshot, reopened leaf, and absence of lease effects",
       "normalization": "sort concurrent model labels and ignore process scheduling, entry ids, timestamps, and physical sibling order",
       "referenceCitations": ["packages/coding-agent/src/core/session-manager.ts#L765-L917"]
+    },
+    {
+      "id": "reference.session-cancel-error-reuse",
+      "captureCaseId": "capture.session-cancel-error-reuse",
+      "obligation": "omh-v0.session-cancel-error-reuse",
+      "referenceRevision": "0e6909f050eeb15e8f6c05185511f3788357ddb3",
+      "canonicalInput": "settle one ordinary Model error, concurrently abort one blocked Model request, compose the ticket-08 blocked Tool cancellation barrier, complete one later prompt, then dispose during another blocked request",
+      "observations": {"A":"error_cancel_and_reuse","L":["agent_end","agent_end","agent_end","agent_end"],"T":{"stopReasons":["error","aborted","stop"]},"E":{"cancelledRequests":2,"requestCountBeforeDisposal":3},"C":{"reuseSucceeded":true}},
+      "omhExpectation": {"A":"error_cancel_and_reuse","L":["agent_end","agent_settled","agent_end","agent_settled","agent_end","agent_settled","agent_end","agent_settled"],"T":{"stopReasons":["error","aborted","stop"]},"E":{"cancelledRequests":2,"requestCountBeforeDisposal":3,"settledMarkers":0},"C":{"reuseSucceeded":true}},
+      "comparator": "compare terminal classes, cancellation effect count, retained history, later reuse, and omh AgentSettled projection after applying managed-run cancellation",
+      "normalization": "ABD:managed-run-cancellation and PA:python-async-resource-carriers",
+      "referenceCitations": ["packages/coding-agent/src/core/agent-session.ts#L1398-L1411", "packages/agent/src/agent.ts#L258-L293"]
+    },
+    {
+      "id": "reference.session-managed-disposal",
+      "captureCaseId": "capture.session-managed-disposal",
+      "obligation": "omh-v0.session-managed-disposal",
+      "referenceRevision": "0e6909f050eeb15e8f6c05185511f3788357ddb3",
+      "canonicalInput": "call disposal twice while a Product Session Model request is active, cancel one disposal waiter, inject one cleanup failure and retry, preserve a context-manager body failure over disposal failure, then attempt one later prompt",
+      "observations": {"A":"concurrent_active_disposal","L":[],"T":{"finalStopReason":"aborted"},"E":{"requestCount":4},"C":{"disposedAdmission":"admitted","idle":true,"streaming":false}},
+      "omhExpectation": {"A":"concurrent_active_disposal","L":[],"T":{"finalStopReason":"aborted"},"E":{"requestCount":4},"C":{"bodyPrimary":true,"cancelledWaiter":true,"cleanupRetry":true,"disposalAdditional":true,"disposedAdmission":"disposed","idle":true,"streaming":false}},
+      "comparator": "contrast Reference best-effort disposal with the accepted omh shared cleanup attempt, cancelled-waiter shielding, cleanup retry, body-first failure precedence, and permanent disposed admission",
+      "normalization": "ABD:managed-session-disposal and PA:python-async-resource-carriers",
+      "referenceCitations": ["packages/coding-agent/src/core/agent-session.ts#L799-L816", "packages/coding-agent/src/core/agent-session.ts#L1398-L1411"]
+    },
+    {
+      "id": "reference.session-compaction",
+      "captureCaseId": "capture.session-compaction",
+      "obligation": "omh-v0.session-compaction",
+      "referenceRevision": "0e6909f050eeb15e8f6c05185511f3788357ddb3",
+      "canonicalInput": "manually compact a four-message active branch, then drive one overflow through successful automatic compaction and one internal continuation",
+      "observations": {"A":"manual_compaction","L":["compaction_start","compaction_end"],"T":{"entryDelta":1,"firstKeptMatches":true,"fullTreeRetained":true,"summary":"installed checkpoint"},"E":{"requestCount":1},"C":{"contextRoles":["user","user","assistant"],"managerMatchesSession":true},"automatic":{"agentEndWillRetry":[true,false],"compactionReasons":["overflow"],"entryDelta":4,"requestCount":3,"settled":true}},
+      "omhExpectation": {"A":"manual_compaction","L":["compaction_start","compaction_end"],"T":{"entryDelta":1,"firstKeptMatches":true,"fullTreeRetained":true,"summary":"installed checkpoint"},"E":{"requestCount":1},"C":{"contextRoles":["user","user","assistant"],"managerMatchesSession":true},"automatic":{"agentEndWillRetry":[true,false],"compactionReasons":["overflow"],"entryDelta":4,"requestCount":3,"settled":true}},
+      "comparator": "compare manual and overflow summary requests, cut points, durable compaction entries, projected contexts, retained full trees, and one-shot continuation",
+      "normalization": "ignore entry ids, timestamps, token-estimate rounding, and Python async carrier mechanics",
+      "referenceCitations": ["packages/coding-agent/src/core/compaction/compaction.ts#L97-L101", "packages/coding-agent/src/core/compaction/compaction.ts#L587-L659", "packages/coding-agent/src/core/session-manager.ts#L353-L435", "packages/coding-agent/src/core/agent-session.ts#L1688-L1749"]
     }
   ]
 }

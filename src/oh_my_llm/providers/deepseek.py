@@ -45,6 +45,7 @@ __all__ = ("deepseekProvider",)
 
 _DEEPSEEK_URL = "https://api.deepseek.com/chat/completions"
 _DEEPSEEK_MODEL_ID = "deepseek-v4-flash"
+_CONTEXT_OVERFLOW_ERROR = "DeepSeek context window exceeded"
 _ZERO_COST = UsageCost(
     input=0.0,
     output=0.0,
@@ -453,11 +454,15 @@ async def _stream_simple(
     except ModelsError as classified:
         if classified.code == "model_validation":
             raise
-        public_error = {
-            "auth": "DeepSeek authentication failed",
-            "provider": "DeepSeek request failed",
-            "stream": "DeepSeek stream failed",
-        }.get(classified.code, "DeepSeek request failed")
+        public_error = (
+            _CONTEXT_OVERFLOW_ERROR
+            if str(classified) == _CONTEXT_OVERFLOW_ERROR
+            else {
+                "auth": "DeepSeek authentication failed",
+                "provider": "DeepSeek request failed",
+                "stream": "DeepSeek stream failed",
+            }.get(classified.code, "DeepSeek request failed")
+        )
         yield _terminal_error(
             validator,
             state,
@@ -555,6 +560,22 @@ async def _deepseek_response(
         yield response
 
 
+async def _is_context_overflow_response(response: httpx.Response) -> bool:
+    if response.status_code != 400:
+        return False
+    try:
+        payload = json.loads(await response.aread())
+    except (json.JSONDecodeError, UnicodeDecodeError):
+        return False
+    if type(payload) is not dict or type(payload.get("error")) is not dict:
+        return False
+    error = cast(dict[str, object], payload["error"])
+    return error.get("code") in {
+        "context_length_exceeded",
+        "context_window_exceeded",
+    }
+
+
 async def _stream_simple_operation(
     model: Model,
     context: Context,
@@ -582,11 +603,14 @@ async def _stream_simple_operation(
     async with _deepseek_client() as client:
         async with _deepseek_response(client, headers=headers, body=body) as response:
             if response.status_code != 200:
+                context_overflow = await _is_context_overflow_response(response)
                 raise ModelsError(
                     "auth" if response.status_code in (401, 403) else "provider",
                     (
                         "DeepSeek authentication failed"
                         if response.status_code in (401, 403)
+                        else _CONTEXT_OVERFLOW_ERROR
+                        if context_overflow
                         else "DeepSeek request failed"
                     ),
                 )

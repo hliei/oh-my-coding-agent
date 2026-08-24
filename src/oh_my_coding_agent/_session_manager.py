@@ -1204,7 +1204,24 @@ class SessionManager:
         return tuple(branch)
 
     def buildContextEntries(self) -> tuple[SessionEntry, ...]:
-        return self.getBranch()
+        branch = self.getBranch()
+        latest: CompactionEntry | None = None
+        for entry in branch:
+            if isinstance(entry, CompactionEntry):
+                latest = entry
+        if latest is None:
+            return branch
+
+        compaction_index = branch.index(latest)
+        context_entries: list[SessionEntry] = [latest]
+        found_first_kept = False
+        for entry in branch[:compaction_index]:
+            if entry.id == latest.firstKeptEntryId:
+                found_first_kept = True
+            if found_first_kept:
+                context_entries.append(entry)
+        context_entries.extend(branch[compaction_index + 1 :])
+        return tuple(context_entries)
 
     def buildSessionContext(self) -> SessionContext:
         branch = self.getBranch()
@@ -1218,15 +1235,33 @@ class SessionManager:
                 model = MappingProxyType(
                     {"provider": entry.provider, "modelId": entry.modelId}
                 )
-            elif isinstance(entry, SessionMessageEntry):
+            elif isinstance(entry, SessionMessageEntry) and isinstance(
+                entry.message, AssistantMessage
+            ):
+                model = MappingProxyType(
+                    {
+                        "provider": entry.message.provider,
+                        "modelId": entry.message.model,
+                    }
+                )
+        for entry in self.buildContextEntries():
+            if isinstance(entry, SessionMessageEntry):
                 messages.append(entry.message)
-                if isinstance(entry.message, AssistantMessage):
-                    model = MappingProxyType(
-                        {
-                            "provider": entry.message.provider,
-                            "modelId": entry.message.model,
-                        }
+            elif isinstance(entry, CompactionEntry):
+                parsed = _parse_datetime(entry.timestamp)
+                timestamp = (
+                    0 if parsed is None else int(parsed.timestamp() * 1000)
+                )
+                messages.append(
+                    UserMessage(
+                        content=(
+                            "The conversation history before this point was "
+                            "compacted into the following summary:\n<summary>\n"
+                            f"{entry.summary}\n</summary>"
+                        ),
+                        timestamp=timestamp,
                     )
+                )
         return SessionContext(
             messages=tuple(messages), thinkingLevel=thinking_level, model=model
         )

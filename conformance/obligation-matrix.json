@@ -650,6 +650,42 @@
       "evidenceClass": "exact-parity",
       "corpusCase": "reference.session-stale-multi-manager-append",
       "executableCases": ["ticket-14-session", "ticket-14-installed"]
+    },
+    {
+      "id": "omh-v0.session-cancel-error-reuse",
+      "authority": ".scratch/omh-v0/issues/04-choose-async-stream-cancellation-contract.md#agent-and-product-session-lifecycle",
+      "publicInterface": "oh_my_coding_agent.AgentSession prompt, abort, waitForIdle, subscribe, and retained reads",
+      "scenario": "settle an ordinary Model error, concurrently abort blocked Model work through Product Session, compose the ticket-08 blocked Tool cancellation barrier, reuse the same Product Session, and retain complete Session history",
+      "observations": {"A": "error, cancellation, and later reuse admitted", "L": "each ordinary attempt ends before AgentSettled", "T": "error, aborted, and stop Assistants retained in order", "E": "one shared cancellation and no settled marker", "C": "same Session idle and reusable after each settled attempt"},
+      "comparator": "compare terminal classes, fixed listener order, single captured cancellation, retained entries, and later-run isolation under the managed cancellation ABD",
+      "normalization": "ABD:managed-run-cancellation and PA:python-async-resource-carriers",
+      "evidenceClass": "ABD:managed-run-cancellation",
+      "corpusCase": "reference.session-cancel-error-reuse",
+      "executableCases": ["ticket-08-agent-cancellation", "ticket-15-session", "ticket-15-installed"]
+    },
+    {
+      "id": "omh-v0.session-managed-disposal",
+      "authority": ".scratch/omh-v0/issues/04-choose-async-stream-cancellation-contract.md#agent-and-product-session-lifecycle",
+      "publicInterface": "oh_my_coding_agent.AgentSession dispose, abort, waitForIdle, prompt, and async context manager",
+      "scenario": "dispose one Product Session concurrently during active work, cancel a disposal waiter, retry a failed shared cleanup attempt, and retain a context-manager body failure as primary",
+      "observations": {"A": "one closing barrier admitted", "L": "active settlement precedes cleanup", "T": "one aborted terminal retained", "E": "waiter cancellation cannot abandon cleanup or start another cancellation policy", "C": "disposed admission rejects while final reads remain available"},
+      "comparator": "contrast Reference best-effort disposal with the accepted shared fail-closed cleanup barrier and permanent disposed admission",
+      "normalization": "ABD:managed-session-disposal and PA:python-async-resource-carriers",
+      "evidenceClass": "ABD:managed-session-disposal",
+      "corpusCase": "reference.session-managed-disposal",
+      "executableCases": ["ticket-15-session", "ticket-15-installed"]
+    },
+    {
+      "id": "omh-v0.session-compaction",
+      "authority": ".scratch/omh-v0/issues/08-choose-agent-session-surface.md#compaction-and-overflow-continuation",
+      "publicInterface": "oh_my_coding_agent.AgentSession compact, abortCompaction, prompt, messages, and SessionManager.buildSessionContext",
+      "scenario": "manually compact a long active branch, then recover one overflow through successful automatic compaction and exactly one continuation",
+      "observations": {"A": "manual and automatic compaction admitted", "L": "compaction start precedes exactly one terminal compaction end", "T": "summary boundary plus kept messages project into active Model context", "E": "one summary Model request and one compaction append only after success", "C": "full tree retained and overflow continuation occurs at most once"},
+      "comparator": "compare summary request, cut point, durable boundary, projected context, full-tree retention, and one-shot overflow continuation",
+      "normalization": "ignore entry ids, timestamps, token-estimate rounding, and Python async carrier mechanics",
+      "evidenceClass": "exact-parity",
+      "corpusCase": "reference.session-compaction",
+      "executableCases": ["ticket-15-session", "ticket-15-installed"]
     }
   ]
 }
