@@ -31,6 +31,7 @@ from oh_my_llm.providers.deepseek import deepseekProvider
 
 def test_deepseek_factory_exposes_the_static_one_model_catalog() -> None:
     assert tuple(inspect.signature(deepseekProvider).parameters) == ()
+    assert deepseekProvider.__module__ == "oh_my_llm.providers.deepseek"
     with pytest.raises(TypeError):
         deepseekProvider("https://example.invalid")  # type: ignore[call-arg]
 
