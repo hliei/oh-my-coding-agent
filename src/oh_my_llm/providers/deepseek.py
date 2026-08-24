@@ -6,13 +6,14 @@ from contextlib import asynccontextmanager
 from dataclasses import replace
 import json
 import os
-from typing import Any, Literal, NoReturn, cast
+from typing import Any, Literal, NoReturn, Protocol, TypeVar, cast
 
 import httpx
 
 from .._errors import LifecycleError, ModelsError
 from .._canonical import _decodeJSONValue, encodeCanonical
 from .._models import Model, Provider, _create_model, _create_provider
+from .._streams import _active_abort_signal
 from .._values import (
     AssistantMessage,
     AssistantMessageDoneEvent,
@@ -64,6 +65,7 @@ _FINISH_REASONS: dict[str, Literal["stop", "length", "toolUse"]] = {
     "length": "length",
     "tool_calls": "toolUse",
 }
+_ClosableT = TypeVar("_ClosableT", bound="_AsyncClosable")
 _DEEPSEEK_MODEL = _create_model(
     id=_DEEPSEEK_MODEL_ID,
     name="DeepSeek V4 Flash",
@@ -437,6 +439,9 @@ async def _stream_simple(
                 state.remember(event.partial)
             yield event
     except asyncio.CancelledError:
+        signal = _active_abort_signal()
+        if signal is None or not signal.aborted:
+            raise
         yield _terminal_error(
             validator,
             state,
@@ -477,16 +482,47 @@ def _raise_cleanup_failure(
     pending: BaseException | None,
     failure: BaseException,
 ) -> NoReturn:
+    prior_carrier: BaseException | None = pending
+    if isinstance(pending, asyncio.CancelledError):
+        prior_carrier = pending.__cause__
     prior = (
-        pending.causes
-        if isinstance(pending, LifecycleError) and pending.code == "cleanup"
+        prior_carrier.causes
+        if isinstance(prior_carrier, LifecycleError)
+        and prior_carrier.code == "cleanup"
         else ()
     )
-    raise LifecycleError(
+    cleanup = LifecycleError(
         "cleanup",
         "DeepSeek cleanup failed",
         causes=(*prior, failure),
-    ) from failure
+    )
+    signal = _active_abort_signal()
+    if (
+        isinstance(pending, asyncio.CancelledError)
+        and (signal is None or not signal.aborted)
+    ):
+        pending.__cause__ = cleanup
+        raise pending
+    raise cleanup from failure
+
+
+class _AsyncClosable(Protocol):
+    async def aclose(self) -> None: ...
+
+
+@asynccontextmanager
+async def _owned_resource(resource: _ClosableT) -> AsyncIterator[_ClosableT]:
+    pending: BaseException | None = None
+    try:
+        yield resource
+    except BaseException as failure:
+        pending = failure
+    try:
+        await resource.aclose()
+    except BaseException as failure:
+        _raise_cleanup_failure(pending, failure)
+    if pending is not None:
+        raise pending
 
 
 @asynccontextmanager
@@ -497,17 +533,8 @@ async def _deepseek_client() -> AsyncIterator[httpx.AsyncClient]:
         follow_redirects=False,
         timeout=None,
     )
-    pending: BaseException | None = None
-    try:
+    async with _owned_resource(client):
         yield client
-    except BaseException as failure:
-        pending = failure
-    try:
-        await client.aclose()
-    except BaseException as failure:
-        _raise_cleanup_failure(pending, failure)
-    if pending is not None:
-        raise pending
 
 
 @asynccontextmanager
@@ -524,17 +551,8 @@ async def _deepseek_response(
         content=body,
     )
     response = await client.send(request, stream=True)
-    pending: BaseException | None = None
-    try:
+    async with _owned_resource(response):
         yield response
-    except BaseException as failure:
-        pending = failure
-    try:
-        await response.aclose()
-    except BaseException as failure:
-        _raise_cleanup_failure(pending, failure)
-    if pending is not None:
-        raise pending
 
 
 async def _stream_simple_operation(

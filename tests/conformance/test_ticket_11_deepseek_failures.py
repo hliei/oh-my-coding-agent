@@ -619,6 +619,70 @@ def test_models_cancellation_commits_aborted_terminal_after_cleanup(
     asyncio.run(run())
 
 
+@pytest.mark.parametrize("helper", ("streamSimple", "completeSimple"))
+def test_direct_simple_caller_cancellation_remains_cancelled_after_cleanup(
+    monkeypatch: pytest.MonkeyPatch,
+    helper: str,
+) -> None:
+    factory = _TransportFactory(["blocked"], b"")
+    monkeypatch.setattr(httpx, "AsyncHTTPTransport", factory)
+    monkeypatch.setenv("DEEPSEEK_API_KEY", "configured-key")
+    models, model, context = _deepseek()
+
+    async def run() -> None:
+        async def invoke() -> None:
+            if helper == "streamSimple":
+                async for _ in models.streamSimple(model, context):
+                    pass
+            else:
+                await models.completeSimple(model, context)
+
+        operation = asyncio.create_task(invoke())
+        await factory.created.wait()
+        transport = factory.transports[0]
+        assert transport.stream is not None
+        await transport.stream.read_started.wait()
+
+        operation.cancel()
+        await transport.stream.close_started.wait()
+        assert not operation.done()
+        transport.stream.allow_close.set()
+        with pytest.raises(asyncio.CancelledError):
+            await operation
+
+        assert transport.stream.closed.is_set()
+        assert transport.closed.is_set()
+
+    asyncio.run(run())
+
+
+def test_direct_simple_cancellation_keeps_cleanup_failure_chained(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    factory = _TransportFactory(["blocked_cleanup_failure"], b"")
+    monkeypatch.setattr(httpx, "AsyncHTTPTransport", factory)
+    monkeypatch.setenv("DEEPSEEK_API_KEY", "configured-key")
+    models, model, context = _deepseek()
+
+    async def run() -> None:
+        operation = asyncio.create_task(models.completeSimple(model, context))
+        await factory.created.wait()
+        transport = factory.transports[0]
+        assert transport.stream is not None
+        await transport.stream.read_started.wait()
+
+        operation.cancel()
+        with pytest.raises(asyncio.CancelledError) as cancelled:
+            await operation
+
+        assert isinstance(cancelled.value.__cause__, LifecycleError)
+        assert cancelled.value.__cause__.code == "cleanup"
+        assert transport.stream.closed.is_set()
+        assert transport.closed.is_set()
+
+    asyncio.run(run())
+
+
 def test_provider_failure_plus_cleanup_failure_remains_lifecycle_error(
     monkeypatch: pytest.MonkeyPatch,
 ) -> None:

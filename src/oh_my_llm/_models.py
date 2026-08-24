@@ -16,7 +16,13 @@ from ._values import (
     SimpleStreamOptions,
     StreamOptions,
 )
-from ._streams import AbortSignal, EventStream, _active_abort_signal, _create_event_stream
+from ._streams import (
+    AbortSignal,
+    EventStream,
+    _active_abort_signal,
+    _bind_abort_signal,
+    _create_event_stream,
+)
 
 
 StreamSimpleFn = Callable[
@@ -146,8 +152,17 @@ class Models:
                 raise asyncio.CancelledError
             async for event in provider._streamSimple(model, context, options):
                 if signal is not None and signal.aborted:
-                    raise asyncio.CancelledError
+                    if not (
+                        isinstance(event, AssistantMessageErrorEvent)
+                        and event.reason == "aborted"
+                    ):
+                        raise asyncio.CancelledError
                 yield event
+                if (
+                    isinstance(event, AssistantMessageErrorEvent)
+                    and event.reason == "aborted"
+                ):
+                    return
 
         return owned_stream()
 
@@ -161,8 +176,8 @@ class Models:
             emit: Callable[[AssistantMessageEvent], Awaitable[None]],
             signal: AbortSignal,
         ) -> AssistantMessage:
-            del signal
-            return await self._consume_simple(model, context, options, emit)
+            with _bind_abort_signal(signal):
+                return await self._consume_simple(model, context, options, emit)
 
         return _create_event_stream(producer)
 
