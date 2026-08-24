@@ -458,6 +458,54 @@
       "evidenceClass": "exact-parity",
       "corpusCase": "reference.deepseek-text-stream-terminal",
       "executableCases": ["ticket-09-deepseek", "ticket-09-installed"]
+    },
+    {
+      "id": "omh-v0.deepseek-request-preflight",
+      "authority": ".scratch/omh-v0/issues/06-choose-model-provider-auth-surface.md#ABD:deepseek-request-preflight",
+      "publicInterface": "oh_my_llm.StreamOptions and all four Models helpers through Core",
+      "scenario": "send accepted temperature and maxTokens boundaries unchanged, then reject each first out-of-range DeepSeek value before transport construction",
+      "observations": {"A": "0.0 through 2.0 and 1 through 384000 admitted; first values outside rejected", "L": "not_applicable", "T": "ModelsError model_validation without clamping", "E": "identical request bytes across four helpers; zero transport construction for rejected values", "C": "fresh accepted operation remains available"},
+      "comparator": "compare accepted option names and values directly, then apply the accepted local-preflight deviation to Reference post-admission handling",
+      "normalization": "ABD:deepseek-request-preflight",
+      "evidenceClass": "ABD:deepseek-request-preflight",
+      "corpusCase": "reference.deepseek-request-preflight",
+      "executableCases": ["ticket-10-deepseek", "ticket-10-installed"]
+    },
+    {
+      "id": "omh-v0.strict-toolcall-json-finalization",
+      "authority": ".scratch/omh-v0/issues/05-choose-values-schemas-errors-contract.md#ABD:strict-toolcall-json-finalization",
+      "publicInterface": "oh_my_llm.Models stream helpers and AssistantMessageEvent",
+      "scenario": "accumulate fragmented DeepSeek Tool Call id, name, and JSON arguments into cumulative partials; separately end on an incomplete object",
+      "observations": {"A": "complete object admitted; incomplete final object rejected", "L": "start, toolcall_start, two toolcall_delta, toolcall_end, done", "T": "one exact ToolCall or ModelsError stream without repair", "E": "one Provider request per operation", "C": "no executable malformed Tool Call published"},
+      "comparator": "compare the complete-object trace directly and apply strict no-repair finalization to the malformed Reference fallback",
+      "normalization": "ABD:strict-toolcall-json-finalization",
+      "evidenceClass": "ABD:strict-toolcall-json-finalization",
+      "corpusCase": "reference.strict-toolcall-json-finalization",
+      "executableCases": ["ticket-10-deepseek", "ticket-10-installed"]
+    },
+    {
+      "id": "omh-v0.deepseek-tool-round-trip",
+      "authority": ".scratch/omh-v0/issues/06-choose-model-provider-auth-surface.md#answer",
+      "publicInterface": "oh_my_llm.Models and oh_my_core.runAgentLoop",
+      "scenario": "one DeepSeek Tool Call terminal drives the existing validated echo Tool Turn and a second DeepSeek text response",
+      "observations": {"A": "converted Tool definition and exact Tool Call admitted", "L": "Provider Tool events, Core Tool lifecycle, Tool Result, later Provider text Turn", "T": "toolUse then stop with terminal Assistant identity retained", "E": "two requests and one Tool execution", "C": "Core continues from canonical assistant and tool history"},
+      "comparator": "compare request Tool definitions/history, terminal ToolCall, Tool parameters, roles, effect counts, and stop reasons after async-carrier normalization",
+      "normalization": "ignore timestamps, raw SSE chunk boundaries, and Python async carrier mechanics",
+      "evidenceClass": "exact-parity",
+      "corpusCase": "reference.deepseek-tool-round-trip",
+      "executableCases": ["ticket-10-deepseek", "ticket-10-installed"]
+    },
+    {
+      "id": "omh-v0.strict-deepseek-usage-finalization",
+      "authority": ".scratch/omh-v0/issues/06-choose-model-provider-auth-surface.md#ABD:strict-deepseek-usage-finalization",
+      "publicInterface": "oh_my_llm.Models stream and complete helpers",
+      "scenario": "finalize valid reported prompt, completion, cache-hit, cache-miss, and total counts with fixed Flash cost; reject missing or contradictory terminal counts",
+      "observations": {"A": "one valid terminal Usage admitted; malformed or contradictory Usage rejected", "L": "all-zero partial Usage then one terminal payload", "T": "reported total preserved and ModelsError stream on invalid input", "E": "fixed unrounded component cost sum", "C": "no guessed, clamped, or zero-filled terminal Usage"},
+      "comparator": "compare valid category projection and cost directly, then apply strict preservation-and-validation instead of Reference zero-fill and recomputation",
+      "normalization": "ABD:strict-deepseek-usage-finalization",
+      "evidenceClass": "ABD:strict-deepseek-usage-finalization",
+      "corpusCase": "reference.strict-deepseek-usage-finalization",
+      "executableCases": ["ticket-10-deepseek", "ticket-10-installed"]
     }
   ]
 }

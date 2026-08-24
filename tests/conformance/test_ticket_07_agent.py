@@ -26,6 +26,7 @@ from oh_my_llm import (
     AssistantMessageEvent,
     LifecycleError,
     Model,
+    SimpleStreamOptions,
     ToolResultMessage,
     UserMessage,
     createModels,
@@ -38,7 +39,7 @@ def _stream_fn(models: Any) -> StreamFn:
     async def stream_fn(
         model: Model,
         context: Any,
-        options: object | None,
+        options: SimpleStreamOptions | None,
         signal: AbortSignal,
     ) -> AsyncIterator[AssistantMessageEvent]:
         del signal
@@ -251,7 +252,7 @@ def test_invalid_and_busy_prompts_reject_before_run_identity_or_effect() -> None
     async def gated_stream(
         model: Model,
         context: Any,
-        options: object | None,
+        options: SimpleStreamOptions | None,
         signal: AbortSignal,
     ) -> AsyncIterator[AssistantMessageEvent]:
         del signal
@@ -339,7 +340,7 @@ def test_idle_assignment_is_atomic_and_busy_mutation_fails_without_change() -> N
     async def gated_stream(
         model: Model,
         context: Any,
-        options: object | None,
+        options: SimpleStreamOptions | None,
         signal: AbortSignal,
     ) -> AsyncIterator[AssistantMessageEvent]:
         del signal
@@ -412,7 +413,7 @@ def test_idle_reset_clears_messages_and_error_and_busy_reset_does_not_mutate() -
         async def gated_stream(
             model: Model,
             context: Any,
-            options: object | None,
+            options: SimpleStreamOptions | None,
             signal: AbortSignal,
         ) -> AsyncIterator[AssistantMessageEvent]:
             del signal
@@ -546,7 +547,7 @@ def test_ordinary_model_failure_commits_error_assistant_and_allows_reuse() -> No
     async def failing_then_ok(
         model: Model,
         context: Any,
-        options: object | None,
+        options: SimpleStreamOptions | None,
         signal: AbortSignal,
     ) -> AsyncIterator[AssistantMessageEvent]:
         del signal
@@ -627,7 +628,7 @@ def test_wait_for_idle_captures_only_the_current_run() -> None:
     async def gated_stream(
         model: Model,
         context: Any,
-        options: object | None,
+        options: SimpleStreamOptions | None,
         signal: AbortSignal,
     ) -> AsyncIterator[AssistantMessageEvent]:
         del signal

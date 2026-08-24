@@ -13,11 +13,16 @@ from ._values import (
     AssistantMessageErrorEvent,
     AssistantMessageEvent,
     Context,
+    SimpleStreamOptions,
+    StreamOptions,
 )
 from ._streams import AbortSignal, EventStream, _active_abort_signal, _create_event_stream
 
 
-StreamSimpleFn = Callable[["Model", Context], AsyncIterator[AssistantMessageEvent]]
+StreamSimpleFn = Callable[
+    ["Model", Context, SimpleStreamOptions | None],
+    AsyncIterator[AssistantMessageEvent],
+]
 _MODEL_TOKEN = object()
 _PROVIDER_TOKEN = object()
 _MODELS_TOKEN = object()
@@ -131,16 +136,15 @@ class Models:
         self,
         model: Model,
         context: Context,
-        options: object | None = None,
+        options: SimpleStreamOptions | None = None,
     ) -> AsyncIterator[AssistantMessageEvent]:
-        del options
         provider = self._require_provider(model)
 
         async def owned_stream() -> AsyncIterator[AssistantMessageEvent]:
             signal = _active_abort_signal()
             if signal is not None and signal.aborted:
                 raise asyncio.CancelledError
-            async for event in provider._streamSimple(model, context):
+            async for event in provider._streamSimple(model, context, options):
                 if signal is not None and signal.aborted:
                     raise asyncio.CancelledError
                 yield event
@@ -151,7 +155,7 @@ class Models:
         self,
         model: Model,
         context: Context,
-        options: object | None = None,
+        options: StreamOptions | None = None,
     ) -> EventStream[AssistantMessageEvent, AssistantMessage]:
         async def producer(
             emit: Callable[[AssistantMessageEvent], Awaitable[None]],
@@ -166,7 +170,7 @@ class Models:
         self,
         model: Model,
         context: Context,
-        options: object | None = None,
+        options: StreamOptions | None = None,
     ) -> AssistantMessage:
         return await self.stream(model, context, options).result()
 
@@ -174,7 +178,7 @@ class Models:
         self,
         model: Model,
         context: Context,
-        options: object | None = None,
+        options: SimpleStreamOptions | None = None,
     ) -> AssistantMessage:
         return await self._consume_simple(model, context, options, None)
 
@@ -182,7 +186,7 @@ class Models:
         self,
         model: Model,
         context: Context,
-        options: object | None,
+        options: StreamOptions | None,
         emit: Callable[[AssistantMessageEvent], Awaitable[None]] | None,
     ) -> AssistantMessage:
         terminal: AssistantMessage | None = None

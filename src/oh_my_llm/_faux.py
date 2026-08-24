@@ -20,6 +20,7 @@ from ._values import (
     Context,
     JSONValue,
     StopReason,
+    SimpleStreamOptions,
     TextContent,
     ToolCall,
     Usage,
@@ -93,12 +94,13 @@ class FauxProviderHandle:
         self,
         model: Model,
         context: Context,
+        options: SimpleStreamOptions | None,
     ) -> AsyncIterator[AssistantMessageEvent]:
         self._state._callCount += 1
         if not self._pending:
             raise RuntimeError("No more faux responses queued")
         step = self._pending.pop(0)
-        response = step(context, None, self._state, model) if callable(step) else step
+        response = step(context, options, self._state, model) if callable(step) else step
         if inspect.isawaitable(response):
             response = await response
         if not isinstance(response, AssistantMessage):

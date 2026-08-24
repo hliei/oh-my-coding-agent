@@ -317,6 +317,39 @@ class AuthResult(_PublicValueRecord):
 
 @final
 @dataclass(eq=False, frozen=True, slots=True, kw_only=True)
+class StreamOptions(_PublicValueRecord):
+    temperature: float | None = None
+    maxTokens: int | None = None
+
+    def __post_init__(self) -> None:
+        type_name = type(self).__name__
+        if self.temperature is not None:
+            object.__setattr__(
+                self,
+                "temperature",
+                _finite_float(
+                    self.temperature,
+                    type_name,
+                    "temperature",
+                    nonnegative=True,
+                ),
+            )
+        if self.maxTokens is not None:
+            max_tokens = _safe_integer(
+                self.maxTokens,
+                type_name,
+                "maxTokens",
+                nonnegative=True,
+            )
+            if max_tokens == 0:
+                _fail_value(type_name, "maxTokens", "must be positive")
+
+
+SimpleStreamOptions: TypeAlias = StreamOptions
+
+
+@final
+@dataclass(eq=False, frozen=True, slots=True, kw_only=True)
 class TextContent(_PublicValueRecord):
     text: str
     type: Literal["text"] = field(init=False, default="text")

@@ -22,6 +22,7 @@ from oh_my_llm import (
     LifecycleError,
     Message,
     Model,
+    SimpleStreamOptions,
     TextContent,
     ToolCall,
     ToolResultMessage,
@@ -31,7 +32,13 @@ from oh_my_llm import (
     validateToolArguments,
 )
 from oh_my_llm._tool_validation import _mutable_copy
-from oh_my_llm._values import _bool, _snapshot_json, _string
+from oh_my_llm._values import (
+    _bool,
+    _finite_float,
+    _safe_integer,
+    _snapshot_json,
+    _string,
+)
 from oh_my_llm._streams import (
     _AbortController,
     _abort_signal,
@@ -44,7 +51,8 @@ from ._tools import AgentTool, AgentToolResult
 
 AgentMessage: TypeAlias = Message
 StreamFn: TypeAlias = Callable[
-    [Model, Context, object | None, AbortSignal], AsyncIterator[AssistantMessageEvent]
+    [Model, Context, SimpleStreamOptions | None, AbortSignal],
+    AsyncIterator[AssistantMessageEvent],
 ]
 ToolExecutionMode: TypeAlias = Literal["sequential", "parallel"]
 
@@ -88,6 +96,22 @@ class AgentLoopConfig:
     def __post_init__(self) -> None:
         if not isinstance(self.model, Model):
             raise TypeError("AgentLoopConfig.model must be a Model")
+        if self.temperature is not None:
+            _finite_float(
+                self.temperature,
+                "AgentLoopConfig",
+                "temperature",
+                nonnegative=True,
+            )
+        if self.maxTokens is not None:
+            max_tokens = _safe_integer(
+                self.maxTokens,
+                "AgentLoopConfig",
+                "maxTokens",
+                nonnegative=True,
+            )
+            if max_tokens == 0:
+                raise ValueError("AgentLoopConfig.maxTokens: must be positive")
 
 
 class AgentEvent:
@@ -536,7 +560,15 @@ async def _run_agent_loop_body(
             await _emit(emit, MessageStart(message=response))
         else:
             with _bind_abort_signal(signal):
-                response_events = streamFn(config.model, working, None, signal)
+                response_events = streamFn(
+                    config.model,
+                    working,
+                    SimpleStreamOptions(
+                        temperature=config.temperature,
+                        maxTokens=config.maxTokens,
+                    ),
+                    signal,
+                )
                 response = await _consume_response_events(
                     response_events,
                     emit,

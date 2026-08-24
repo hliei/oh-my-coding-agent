@@ -448,6 +448,54 @@
       "comparator": "compare event types, concatenated text, stop reason, and selected Usage projection",
       "normalization": "ignore timestamps and unselected raw chunk sizes",
       "referenceCitations": ["packages/ai/src/api/openai-completions.ts#L1117-L1152"]
+    },
+    {
+      "id": "reference.deepseek-request-preflight",
+      "captureCaseId": "capture.deepseek-request-preflight",
+      "obligation": "omh-v0.deepseek-request-preflight",
+      "referenceRevision": "0e6909f050eeb15e8f6c05185511f3788357ddb3",
+      "canonicalInput": "exercise temperature 0.0, 2.0, and 2.000001 plus maxTokens 1, 384000, and 384001",
+      "observations": {"A": {"validBoundaries": "admitted", "firstOutside": "admitted_to_request"}, "L": [], "T": {"temperatureField": "temperature", "maxTokensField": "max_completion_tokens", "clamped": false}, "E": {"firstOutsideCanReachEffect": true}, "C": "provider_owned_rejection"},
+      "omhExpectation": {"A": {"validBoundaries": "admitted", "firstOutside": "model_validation"}, "L": [], "T": {"temperatureField": "temperature", "maxTokensField": "max_completion_tokens", "clamped": false}, "E": {"validRequestBodiesIdenticalAcrossHelpers": true, "invalidTransportConstructions": 0, "invalidRequests": 0}, "C": "fresh_valid_operation_available"},
+      "comparator": "compare valid field names and values directly; contrast first-outside admission and effect boundary",
+      "normalization": "ABD:deepseek-request-preflight",
+      "referenceCitations": ["packages/ai/src/api/openai-completions.ts#L546-L586"]
+    },
+    {
+      "id": "reference.strict-toolcall-json-finalization",
+      "captureCaseId": "capture.strict-toolcall-json-finalization",
+      "obligation": "omh-v0.strict-toolcall-json-finalization",
+      "referenceRevision": "0e6909f050eeb15e8f6c05185511f3788357ddb3",
+      "canonicalInput": "fragment call-1, echo, and {\"count\":\"2\"} over two indexed Tool deltas; separately terminate after {\"count\":",
+      "observations": {"A": {"complete": "admitted", "incomplete": "repaired_or_empty_fallback"}, "L": ["start", "toolcall_start", "toolcall_delta", "toolcall_delta", "toolcall_end", "done"], "T": {"id": "call-1", "name": "echo", "arguments": {"count": "2"}}, "E": {"requestCount": 1}, "C": "malformed_fallback_can_publish"},
+      "omhExpectation": {"A": {"complete": "admitted", "incomplete": "stream_error"}, "L": ["start", "toolcall_start", "toolcall_delta", "toolcall_delta", "toolcall_end", "done"], "T": {"id": "call-1", "name": "echo", "arguments": {"count": "2"}, "terminalIdentity": true}, "E": {"requestCount": 1}, "C": "no_malformed_tool_call_published"},
+      "comparator": "compare complete cumulative Tool Call values directly and contrast malformed finalization",
+      "normalization": "ABD:strict-toolcall-json-finalization",
+      "referenceCitations": ["packages/ai/src/api/openai-completions.ts#L205-L450", "packages/ai/src/utils/json-parse.ts#L85-L124"]
+    },
+    {
+      "id": "reference.deepseek-tool-round-trip",
+      "captureCaseId": "capture.deepseek-tool-round-trip",
+      "obligation": "omh-v0.deepseek-tool-round-trip",
+      "referenceRevision": "0e6909f050eeb15e8f6c05185511f3788357ddb3",
+      "canonicalInput": "send one echo Tool definition, receive call-1 with count string 2, execute after integer conversion, send Tool Result, and receive done",
+      "observations": {"A": "admitted", "L": ["assistant:toolUse", "tool:start", "tool:end", "toolResult", "assistant:stop"], "T": {"roles": ["user", "assistant", "toolResult", "assistant"], "convertedParams": {"count": 2}}, "E": {"providerRequests": 2, "toolExecutions": 1}, "C": "continued_after_tool_result"},
+      "omhExpectation": {"A": "admitted", "L": ["assistant:toolUse", "tool:start", "tool:end", "toolResult", "assistant:stop"], "T": {"roles": ["user", "assistant", "toolResult", "assistant"], "convertedParams": {"count": 2}, "terminalAssistantIdentity": true, "secondRequestRoles": ["system", "user", "assistant", "tool"]}, "E": {"providerRequests": 2, "toolExecutions": 1}, "C": "continued_after_tool_result"},
+      "comparator": "compare canonical Tool request/history, converted parameters, lifecycle roles, terminal identity, and effect counts",
+      "normalization": "ignore timestamps, SSE chunk sizes, and async carrier mechanics",
+      "referenceCitations": ["packages/ai/src/api/openai-completions.ts#L397-L438", "packages/ai/src/api/openai-completions.ts#L925-L1052", "packages/agent/src/agent-loop.ts#L294-L373"]
+    },
+    {
+      "id": "reference.strict-deepseek-usage-finalization",
+      "captureCaseId": "capture.strict-deepseek-usage-finalization",
+      "obligation": "omh-v0.strict-deepseek-usage-finalization",
+      "referenceRevision": "0e6909f050eeb15e8f6c05185511f3788357ddb3",
+      "canonicalInput": "finalize prompt 20, completion 5, cache hit 4, cache miss 16, reported total 25; separately omit or contradict each count and relationship",
+      "observations": {"A": {"valid": "admitted", "malformed": "zero_filled_or_recomputed"}, "L": "terminal usage projection", "T": {"input": 16, "output": 5, "cacheRead": 4, "totalTokens": 25}, "E": {"costRatesPerMillion": {"input": 0.14, "output": 0.28, "cacheRead": 0.0028, "cacheWrite": 0}}, "C": "reported_total_not_preserved_as_independent_observation"},
+      "omhExpectation": {"A": {"valid": "admitted", "malformed": "stream_error"}, "L": {"partialUsage": "all_zero", "terminalUsagePayloads": 1}, "T": {"input": 16, "output": 5, "cacheRead": 4, "cacheWrite": 0, "totalTokens": 25, "reportedTotalPreserved": true}, "E": {"cost": {"input": 0.00000224, "output": 0.0000014000000000000001, "cacheRead": 0.0000000112, "cacheWrite": 0.0, "total": 0.0000036512000000000003}, "unroundedComponentSum": true}, "C": "no_guess_clamp_or_zero_fill"},
+      "comparator": "compare valid categories and component rates directly; contrast malformed admission and total-token preservation",
+      "normalization": "ABD:strict-deepseek-usage-finalization",
+      "referenceCitations": ["packages/ai/src/api/openai-completions.ts#L1117-L1152", "packages/ai/src/models.ts#L386-L405"]
     }
   ]
 }

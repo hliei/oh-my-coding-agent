@@ -20,6 +20,7 @@ from oh_my_llm import (
     AssistantMessageEvent,
     LifecycleError,
     Model,
+    SimpleStreamOptions,
     UserMessage,
     createModels,
     fauxAssistantMessage,
@@ -31,7 +32,7 @@ def _stream_fn(models: Any) -> StreamFn:
     async def stream_fn(
         model: Model,
         context: Any,
-        options: object | None,
+        options: SimpleStreamOptions | None,
         signal: AbortSignal,
     ) -> AsyncIterator[AssistantMessageEvent]:
         del signal
@@ -81,7 +82,7 @@ async def _admission() -> dict[str, object]:
     async def gated(
         model: Model,
         context: Any,
-        options: object | None,
+        options: SimpleStreamOptions | None,
         signal: AbortSignal,
     ) -> AsyncIterator[AssistantMessageEvent]:
         del signal
@@ -158,7 +159,7 @@ async def _mutation_and_reset() -> dict[str, object]:
     async def gated(
         model: Model,
         context: Any,
-        options: object | None,
+        options: SimpleStreamOptions | None,
         signal: AbortSignal,
     ) -> AsyncIterator[AssistantMessageEvent]:
         del signal
@@ -313,7 +314,7 @@ async def _model_error() -> dict[str, object]:
     async def failing_then_ok(
         model: Model,
         context: Any,
-        options: object | None,
+        options: SimpleStreamOptions | None,
         signal: AbortSignal,
     ) -> AsyncIterator[AssistantMessageEvent]:
         del signal
