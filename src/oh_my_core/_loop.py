@@ -1071,9 +1071,9 @@ async def _consume_response_events(
                 latest = event.partial
                 await _emit(emit, MessageStart(message=event.partial))
             elif isinstance(event, AssistantMessageDoneEvent):
-                response = event.message
+                response = latest = event.message
             elif isinstance(event, AssistantMessageErrorEvent):
-                response = event.error
+                response = latest = event.error
             else:
                 latest = event.partial
                 await _emit(

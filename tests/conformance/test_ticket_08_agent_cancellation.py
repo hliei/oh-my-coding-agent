@@ -2,6 +2,7 @@ from __future__ import annotations
 
 import asyncio
 from collections.abc import AsyncIterator
+from dataclasses import replace
 import json
 from pathlib import Path
 from typing import Any
@@ -20,6 +21,7 @@ from oh_my_core import (
 from oh_my_llm import (
     AbortSignal,
     AssistantMessage,
+    AssistantMessageDoneEvent,
     AssistantMessageEvent,
     AssistantMessageTextDeltaEvent,
     LifecycleError,
@@ -155,6 +157,65 @@ def test_repeated_abort_does_not_interrupt_owned_model_cleanup() -> None:
         assert type(terminal) is AssistantMessage
         assert terminal.stopReason == "aborted"
         assert agent.state.isStreaming is False
+
+    asyncio.run(run())
+
+
+def test_abort_after_model_done_preserves_the_final_cumulative_value() -> None:
+    faux = fauxProvider()
+    model = faux.getModel()
+    assert model is not None
+    faux.setResponses((fauxAssistantMessage("confirmed"),))
+    models = createModels()
+    models.setProvider(faux.provider)
+    eof_wait_started = asyncio.Event()
+    cleaned = False
+    final_usage = None
+
+    async def blocked_after_done(
+        model: Model,
+        context: Any,
+        options: object | None,
+        signal: AbortSignal,
+    ) -> AsyncIterator[AssistantMessageEvent]:
+        nonlocal cleaned, final_usage
+        del options, signal
+        try:
+            async for event in models.streamSimple(model, context, None):
+                if isinstance(event, AssistantMessageDoneEvent):
+                    final_usage = replace(
+                        event.message.usage,
+                        output=15,
+                        totalTokens=15,
+                    )
+                    event = AssistantMessageDoneEvent(
+                        reason=event.reason,
+                        message=replace(event.message, usage=final_usage),
+                    )
+                    yield event
+                    eof_wait_started.set()
+                    await asyncio.Event().wait()
+                else:
+                    yield event
+        finally:
+            cleaned = True
+
+    agent = Agent(
+        AgentOptions(initialState=AgentState(model=model), streamFn=blocked_after_done)
+    )
+
+    async def run() -> None:
+        operation = asyncio.create_task(agent.prompt("go"))
+        await eof_wait_started.wait()
+        agent.abort()
+        await operation
+        assert cleaned
+        assert final_usage is not None
+        terminal = agent.state.messages[-1]
+        assert type(terminal) is AssistantMessage
+        assert terminal.content == (TextContent(text="confirmed"),)
+        assert terminal.usage == final_usage
+        assert terminal.stopReason == "aborted"
 
     asyncio.run(run())
 
