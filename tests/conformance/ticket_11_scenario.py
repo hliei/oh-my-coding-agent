@@ -119,6 +119,22 @@ def _deepseek() -> tuple[Any, Model, Context]:
     return models, model, context
 
 
+def _deepseek_agent(models: Any, model: Model) -> Agent:
+    async def stream_fn(
+        selected: Model,
+        context: Context,
+        options: SimpleStreamOptions | None,
+        signal: AbortSignal,
+    ) -> AsyncIterator[AssistantMessageEvent]:
+        del signal
+        async for event in models.streamSimple(selected, context, options):
+            yield event
+
+    return Agent(
+        AgentOptions(initialState=AgentState(model=model), streamFn=stream_fn)
+    )
+
+
 async def _collect(stream: Any) -> list[AssistantMessageEvent]:
     return [event async for event in stream]
 
@@ -180,19 +196,7 @@ async def _reuse() -> dict[str, object]:
     try:
         models, model, _ = _deepseek()
 
-        async def stream_fn(
-            selected: Model,
-            context: Context,
-            options: SimpleStreamOptions | None,
-            signal: AbortSignal,
-        ) -> AsyncIterator[AssistantMessageEvent]:
-            del signal
-            async for event in models.streamSimple(selected, context, options):
-                yield event
-
-        agent = Agent(
-            AgentOptions(initialState=AgentState(model=model), streamFn=stream_fn)
-        )
+        agent = _deepseek_agent(models, model)
         os.environ["DEEPSEEK_API_KEY"] = "first-key"
         await agent.prompt("provider failure")
         provider_error = agent.state.messages[-1]
@@ -290,19 +294,7 @@ async def _cancellation() -> dict[str, object]:
         os.environ["DEEPSEEK_API_KEY"] = "cancellation-key"
         models, model, _ = _deepseek()
 
-        async def stream_fn(
-            selected: Model,
-            context: Context,
-            options: SimpleStreamOptions | None,
-            signal: AbortSignal,
-        ) -> AsyncIterator[AssistantMessageEvent]:
-            del signal
-            async for event in models.streamSimple(selected, context, options):
-                yield event
-
-        agent = Agent(
-            AgentOptions(initialState=AgentState(model=model), streamFn=stream_fn)
-        )
+        agent = _deepseek_agent(models, model)
         operation = asyncio.create_task(agent.prompt("cancel"))
         await factory.created.wait()
         blocked = factory.transports[0]

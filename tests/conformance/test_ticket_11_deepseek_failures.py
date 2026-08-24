@@ -128,12 +128,14 @@ class _BarrierTransport(httpx.AsyncBaseTransport):
         self.requests.append(request)
         if self.stream is not None:
             return httpx.Response(200, stream=self.stream, request=request)
-        if self.mode == "provider_failure":
+        if self.mode in ("provider_failure", "provider_failure_cleanup_failure"):
             return httpx.Response(503, content=b"private provider prose", request=request)
         return httpx.Response(200, content=self.success_body, request=request)
 
     async def aclose(self) -> None:
         self.closed.set()
+        if self.mode == "provider_failure_cleanup_failure":
+            raise RuntimeError("SECRET_TRANSPORT_CLOSE_CANARY")
 
 
 class _TransportFactory:
@@ -159,6 +161,22 @@ def _deepseek() -> tuple[Any, Any, Context]:
     assert model is not None
     context = Context(messages=(UserMessage(content="Hello", timestamp=0),))
     return models, model, context
+
+
+def _deepseek_agent(models: Any, model: Model) -> Agent:
+    async def stream_fn(
+        selected: Model,
+        context: Context,
+        options: SimpleStreamOptions | None,
+        signal: AbortSignal,
+    ) -> AsyncIterator[Any]:
+        del signal
+        async for event in models.streamSimple(selected, context, options):
+            yield event
+
+    return Agent(
+        AgentOptions(initialState=AgentState(model=model), streamFn=stream_fn)
+    )
 
 
 def _sse(*payloads: dict[str, Any] | str) -> bytes:
@@ -515,17 +533,7 @@ def test_agent_cancellation_drains_deepseek_before_fresh_run(
     monkeypatch.setenv("DEEPSEEK_API_KEY", "first-key")
     models, model, _ = _deepseek()
 
-    async def stream_fn(
-        selected: Model,
-        context: Context,
-        options: SimpleStreamOptions | None,
-        signal: AbortSignal,
-    ) -> AsyncIterator[Any]:
-        del signal
-        async for event in models.streamSimple(selected, context, options):
-            yield event
-
-    agent = Agent(AgentOptions(initialState=AgentState(model=model), streamFn=stream_fn))
+    agent = _deepseek_agent(models, model)
 
     async def run() -> None:
         first = asyncio.create_task(agent.prompt("block"))
@@ -567,6 +575,70 @@ def test_agent_cancellation_drains_deepseek_before_fresh_run(
     assert factory.transports[1].closed.is_set()
 
 
+def test_models_cancellation_commits_aborted_terminal_after_cleanup(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    factory = _TransportFactory(["blocked"], b"")
+    monkeypatch.setattr(httpx, "AsyncHTTPTransport", factory)
+    monkeypatch.setenv("DEEPSEEK_API_KEY", "configured-key")
+    models, model, context = _deepseek()
+
+    async def run() -> None:
+        stream = models.stream(model, context)
+
+        async def collect_events() -> list[Any]:
+            return [event async for event in stream]
+
+        events_task = asyncio.create_task(collect_events())
+        cancelled_waiter = asyncio.create_task(stream.result())
+        surviving_waiter = asyncio.create_task(stream.result())
+        await factory.created.wait()
+        transport = factory.transports[0]
+        assert transport.stream is not None
+        await transport.stream.read_started.wait()
+
+        cancelled_waiter.cancel()
+        await transport.stream.close_started.wait()
+        assert not cancelled_waiter.done()
+        assert not surviving_waiter.done()
+
+        transport.stream.allow_close.set()
+        with pytest.raises(asyncio.CancelledError):
+            await cancelled_waiter
+        terminal = await surviving_waiter
+        events = await events_task
+
+        assert transport.stream.closed.is_set()
+        assert transport.closed.is_set()
+        assert terminal.stopReason == "aborted"
+        assert terminal.errorMessage == "Operation aborted"
+        assert isinstance(events[-1], AssistantMessageErrorEvent)
+        assert events[-1].reason == "aborted"
+        assert events[-1].error is terminal
+
+    asyncio.run(run())
+
+
+def test_provider_failure_plus_cleanup_failure_remains_lifecycle_error(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    factory = _TransportFactory(["provider_failure_cleanup_failure"], b"")
+    monkeypatch.setattr(httpx, "AsyncHTTPTransport", factory)
+    monkeypatch.setenv("DEEPSEEK_API_KEY", "configured-key")
+    models, model, context = _deepseek()
+
+    async def run() -> None:
+        with pytest.raises(LifecycleError) as cleanup:
+            await models.completeSimple(model, context)
+
+        assert cleanup.value.code == "cleanup"
+        assert len(cleanup.value.causes) == 1
+        assert "SECRET_TRANSPORT_CLOSE_CANARY" not in str(cleanup.value)
+        assert factory.transports[0].closed.is_set()
+
+    asyncio.run(run())
+
+
 def test_agent_reuses_after_provider_failure_and_rereads_removed_key(
     monkeypatch: pytest.MonkeyPatch,
 ) -> None:
@@ -589,17 +661,7 @@ def test_agent_reuses_after_provider_failure_and_rereads_removed_key(
     monkeypatch.setenv("DEEPSEEK_API_KEY", "first-key")
     models, model, _ = _deepseek()
 
-    async def stream_fn(
-        selected: Model,
-        context: Context,
-        options: SimpleStreamOptions | None,
-        signal: AbortSignal,
-    ) -> AsyncIterator[Any]:
-        del signal
-        async for event in models.streamSimple(selected, context, options):
-            yield event
-
-    agent = Agent(AgentOptions(initialState=AgentState(model=model), streamFn=stream_fn))
+    agent = _deepseek_agent(models, model)
 
     async def run() -> None:
         await agent.prompt("provider failure")
@@ -641,17 +703,7 @@ def test_cancellation_cleanup_failure_remains_a_lifecycle_carrier(
     monkeypatch.setenv("DEEPSEEK_API_KEY", "configured-key")
     models, model, _ = _deepseek()
 
-    async def stream_fn(
-        selected: Model,
-        context: Context,
-        options: SimpleStreamOptions | None,
-        signal: AbortSignal,
-    ) -> AsyncIterator[Any]:
-        del signal
-        async for event in models.streamSimple(selected, context, options):
-            yield event
-
-    agent = Agent(AgentOptions(initialState=AgentState(model=model), streamFn=stream_fn))
+    agent = _deepseek_agent(models, model)
 
     async def run() -> None:
         operation = asyncio.create_task(agent.prompt("cancel"))

@@ -2,6 +2,7 @@ from __future__ import annotations
 
 import asyncio
 from collections.abc import AsyncIterator, Mapping
+from contextlib import asynccontextmanager
 from dataclasses import replace
 import json
 import os
@@ -398,6 +399,23 @@ class _DeepSeekOperationState:
         return latest
 
 
+def _terminal_error(
+    validator: _AssistantMessageEventValidator,
+    state: _DeepSeekOperationState,
+    *,
+    reason: Literal["error", "aborted"],
+    message: str,
+) -> AssistantMessageErrorEvent:
+    error = replace(
+        state.latest,
+        stopReason=reason,
+        errorMessage=message,
+    )
+    terminal = AssistantMessageErrorEvent(reason=reason, error=error)
+    validator.accept(terminal)
+    return terminal
+
+
 async def _stream_simple(
     model: Model,
     context: Context,
@@ -406,8 +424,9 @@ async def _stream_simple(
     validator = _AssistantMessageEventValidator()
     state = _DeepSeekOperationState(_empty_partial(model))
     try:
-        async for event in _stream_simple_operation(model, context, options, state):
-            validator.accept(event)
+        async for event in _stream_simple_operation(
+            model, context, options, state, validator
+        ):
             if isinstance(event, AssistantMessageStartEvent):
                 state.remember(event.partial)
             elif isinstance(event, AssistantMessageDoneEvent):
@@ -418,6 +437,13 @@ async def _stream_simple(
                 state.remember(event.partial)
             yield event
     except asyncio.CancelledError:
+        yield _terminal_error(
+            validator,
+            state,
+            reason="aborted",
+            message="Operation aborted",
+        )
+    except LifecycleError:
         raise
     except ModelsError as classified:
         if classified.code == "model_validation":
@@ -427,37 +453,88 @@ async def _stream_simple(
             "provider": "DeepSeek request failed",
             "stream": "DeepSeek stream failed",
         }.get(classified.code, "DeepSeek request failed")
-        partial = state.latest
-        error = replace(
-            partial,
-            stopReason="error",
-            errorMessage=public_error,
+        yield _terminal_error(
+            validator,
+            state,
+            reason="error",
+            message=public_error,
         )
-        terminal = AssistantMessageErrorEvent(reason="error", error=error)
-        validator.accept(terminal)
-        yield terminal
     except Exception as cause:
-        owner = asyncio.current_task()
-        if owner is not None and owner.cancelling():
-            raise LifecycleError(
-                "cleanup",
-                "DeepSeek cleanup failed",
-                causes=(cause,),
-            ) from cause
         transport_failure = ModelsError(
             "provider",
             "DeepSeek request failed",
             cause=cause,
         )
-        partial = state.latest
-        error = replace(
-            partial,
-            stopReason="error",
-            errorMessage=str(transport_failure),
+        yield _terminal_error(
+            validator,
+            state,
+            reason="error",
+            message=str(transport_failure),
         )
-        terminal = AssistantMessageErrorEvent(reason="error", error=error)
-        validator.accept(terminal)
-        yield terminal
+
+
+def _raise_cleanup_failure(
+    pending: BaseException | None,
+    failure: BaseException,
+) -> NoReturn:
+    prior = (
+        pending.causes
+        if isinstance(pending, LifecycleError) and pending.code == "cleanup"
+        else ()
+    )
+    raise LifecycleError(
+        "cleanup",
+        "DeepSeek cleanup failed",
+        causes=(*prior, failure),
+    ) from failure
+
+
+@asynccontextmanager
+async def _deepseek_client() -> AsyncIterator[httpx.AsyncClient]:
+    client = httpx.AsyncClient(
+        transport=httpx.AsyncHTTPTransport(retries=0),
+        trust_env=False,
+        follow_redirects=False,
+        timeout=None,
+    )
+    pending: BaseException | None = None
+    try:
+        yield client
+    except BaseException as failure:
+        pending = failure
+    try:
+        await client.aclose()
+    except BaseException as failure:
+        _raise_cleanup_failure(pending, failure)
+    if pending is not None:
+        raise pending
+
+
+@asynccontextmanager
+async def _deepseek_response(
+    client: httpx.AsyncClient,
+    *,
+    headers: Mapping[str, str],
+    body: bytes,
+) -> AsyncIterator[httpx.Response]:
+    request = client.build_request(
+        "POST",
+        _DEEPSEEK_URL,
+        headers=headers,
+        content=body,
+    )
+    response = await client.send(request, stream=True)
+    pending: BaseException | None = None
+    try:
+        yield response
+    except BaseException as failure:
+        pending = failure
+    try:
+        await response.aclose()
+    except BaseException as failure:
+        _raise_cleanup_failure(pending, failure)
+    if pending is not None:
+        raise pending
 
 
 async def _stream_simple_operation(
@@ -465,9 +542,9 @@ async def _stream_simple_operation(
     context: Context,
     options: SimpleStreamOptions | None,
     operation: _DeepSeekOperationState,
+    validator: _AssistantMessageEventValidator,
 ) -> AsyncIterator[AssistantMessageEvent]:
     body = _request_body(model, context, options)
-    validator = _AssistantMessageEventValidator()
     partial = operation.latest
     api_key = os.environ.get("DEEPSEEK_API_KEY")
     if not api_key:
@@ -484,18 +561,8 @@ async def _stream_simple_operation(
     usage = _ZERO_USAGE
     usage_seen = False
 
-    async with httpx.AsyncClient(
-        transport=httpx.AsyncHTTPTransport(retries=0),
-        trust_env=False,
-        follow_redirects=False,
-        timeout=None,
-    ) as client:
-        async with client.stream(
-            "POST",
-            _DEEPSEEK_URL,
-            headers=headers,
-            content=body,
-        ) as response:
+    async with _deepseek_client() as client:
+        async with _deepseek_response(client, headers=headers, body=body) as response:
             if response.status_code != 200:
                 raise ModelsError(
                     "auth" if response.status_code in (401, 403) else "provider",
