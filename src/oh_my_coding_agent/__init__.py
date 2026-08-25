@@ -7,6 +7,7 @@ from ._session import (
     PromptOptions,
     createAgentSession,
 )
+from ._extensions import ExtensionAPI, ExtensionContext
 from ._session_manager import (
     CURRENT_SESSION_VERSION,
     BranchSummaryEntry,
@@ -43,6 +44,8 @@ __all__ = (
     "CreateAgentSessionResult",
     "CustomEntry",
     "CustomMessageEntry",
+    "ExtensionAPI",
+    "ExtensionContext",
     "FileEntry",
     "LabelEntry",
     "ModelChangeEntry",

@@ -1000,6 +1000,90 @@
       "comparator": "compare the six semantic section roles and order after product-identity and owned-path normalization",
       "normalization": "ABD:fixed-session-system-prompt",
       "referenceCitations": ["packages/coding-agent/src/core/system-prompt.ts#L8-L25", "packages/coding-agent/src/core/system-prompt.ts#L48-L80", "packages/coding-agent/src/core/system-prompt.ts#L95-L170"]
+    },
+    {
+      "id": "reference.deterministic-extension-discovery",
+      "captureCaseId": "capture.deterministic-extension-discovery",
+      "obligation": "omh-v0.deterministic-extension-discovery",
+      "referenceRevision": "0e6909f050eeb15e8f6c05185511f3788357ddb3",
+      "canonicalInput": "place valid, hidden, nested, invalid-name, and symlink Extension sources under .omh/extensions",
+      "observations": {"A": "unsorted filesystem enumeration across several source tiers", "L": [], "T": "order depends on readdir", "E": ["user/global/settings sources"], "C": "session published with mixed sources"},
+      "omhExpectation": {"A": "valid_names_admitted_invalid_selected_rejected", "C": "untrusted_zero_extension_probes", "E": {"hiddenNestedNonPyIgnored": true}, "L": [], "T": {"builtinThenAlphaThenZeta": true, "symlinkRejected": true}},
+      "comparator": "use language-equivalent direct project modules and compare registered capabilities after forcing opposite enumeration orders",
+      "normalization": "ABD:deterministic-extension-discovery",
+      "referenceCitations": ["packages/coding-agent/src/core/package-manager.ts#L172-L188", "packages/coding-agent/src/core/package-manager.ts#L536-L627", "packages/coding-agent/src/core/resource-loader.ts#L395-L404"]
+    },
+    {
+      "id": "reference.python-extension-entrypoint",
+      "captureCaseId": "capture.python-extension-entrypoint",
+      "obligation": "omh-v0.python-extension-entrypoint",
+      "referenceRevision": "0e6909f050eeb15e8f6c05185511f3788357ddb3",
+      "canonicalInput": "load a default-export factory versus missing, noncallable, alias, and syntax-invalid modules",
+      "observations": {"A": "default export admitted", "L": ["factory invoked"], "T": "diagnostics for invalid export", "E": "later modules continue", "C": "partial session"},
+      "omhExpectation": {"A": "exact_extension_name_required", "C": "manager_unchanged", "E": {"laterModuleStopped": true}, "L": [], "T": {"invalidCarrier": "ValueError"}},
+      "comparator": "pair Reference default-export with omh extension() and compare call count, argument role, and terminal result",
+      "normalization": "PA:python-extension-entrypoint",
+      "referenceCitations": ["packages/coding-agent/src/core/extensions/types.ts#L1466-L1467", "packages/coding-agent/src/core/extensions/loader.ts#L397-L405", "packages/coding-agent/src/core/extensions/loader.ts#L432-L457"]
+    },
+    {
+      "id": "reference.fixed-extension-registration",
+      "captureCaseId": "capture.fixed-extension-registration",
+      "obligation": "omh-v0.fixed-extension-registration",
+      "referenceRevision": "0e6909f050eeb15e8f6c05185511f3788357ddb3",
+      "canonicalInput": "register during factory execution, retain the API, attempt late registration, and create duplicate Tool names",
+      "observations": {"A": "broad runtime registration", "L": [], "T": "first-registration-wins plus refresh", "E": "late registerTool mutates", "C": "session published with refreshed tools"},
+      "omhExpectation": {"A": "initialization_only_registration", "C": "retained_api_cannot_mutate_published_session", "E": {"refresh": false}, "L": [], "T": {"lateToolAbsent": true, "duplicateRejected": true}},
+      "comparator": "compare equivalent initial registrations; contrast Reference refresh/first-wins with omh rejection",
+      "normalization": "ABD:fixed-extension-registration",
+      "referenceCitations": ["packages/coding-agent/src/core/extensions/types.ts#L1162-L1399", "packages/coding-agent/src/core/extensions/loader.ts#L208-L277", "packages/coding-agent/src/core/extensions/runner.ts#L421-L442"]
+    },
+    {
+      "id": "reference.snapshot-extension-context",
+      "captureCaseId": "capture.snapshot-extension-context",
+      "obligation": "omh-v0.snapshot-extension-context",
+      "referenceRevision": "0e6909f050eeb15e8f6c05185511f3788357ddb3",
+      "canonicalInput": "retain handler context across session_start, agent_start, later prompts, and disposal",
+      "observations": {"A": "live context", "L": [], "T": "current runtime properties", "E": "actions available", "C": "invalidated on disposal"},
+      "omhExpectation": {"A": "factory_produced_readonly_snapshot", "C": "distinct_immutable_objects", "E": {"liveSessionActions": false}, "L": {"sessionStartSignal": false, "agentStartSignal": true}, "T": {"retainedStartMessagesUnchanged": true}},
+      "comparator": "compare immediate retained-field reads; after state change contrast live/invalidation with unchanged snapshots",
+      "normalization": "ABD:snapshot-extension-context",
+      "referenceCitations": ["packages/coding-agent/src/core/extensions/types.ts#L297-L370", "packages/coding-agent/src/core/extensions/runner.ts#L514-L527", "packages/coding-agent/src/core/extensions/runner.ts#L632-L679"]
+    },
+    {
+      "id": "reference.fail-closed-extension-handlers",
+      "captureCaseId": "capture.fail-closed-extension-handlers",
+      "obligation": "omh-v0.fail-closed-extension-handlers",
+      "referenceRevision": "0e6909f050eeb15e8f6c05185511f3788357ddb3",
+      "canonicalInput": "fail one agent_start handler and one session_shutdown handler across two Extensions",
+      "observations": {"A": "handler error reported", "L": "later handlers continue", "T": "ordinary continuation", "E": "later effects proceed", "C": "session continues"},
+      "omhExpectation": {"A": "session_start_before_publication", "C": "history_preserved_shutdown_retryable", "E": {"laterModelEffects": false}, "L": {"publicListenersAfterFailure": false}, "T": {"hook": "Python Extension handler failed"}},
+      "comparator": "inject one failure and compare suffix, terminal carrier, durable history, cleanup order, and continuity",
+      "normalization": "ABD:fail-closed-extension-handlers",
+      "referenceCitations": ["packages/coding-agent/src/core/extensions/runner.ts#L755-L786"]
+    },
+    {
+      "id": "reference.session-scoped-extension-modules",
+      "captureCaseId": "capture.session-scoped-extension-modules",
+      "obligation": "omh-v0.session-scoped-extension-modules",
+      "referenceRevision": "0e6909f050eeb15e8f6c05185511f3788357ddb3",
+      "canonicalInput": "construct two Sessions from one counter module, then edit the source and recover",
+      "observations": {"A": "cached factory reuse", "L": [], "T": "one module load, repeated factory", "E": "shared module cache", "C": "in-place reload possible"},
+      "omhExpectation": {"A": "fresh_generation_per_construction", "C": "recovery_executes_current_sources", "E": {"pycache": false, "publicSysModules": false, "pathInjection": false}, "L": [], "T": {"independentCounters": [1, 1]}},
+      "comparator": "compare one-Session behavior and contrast cross-construction module/factory counts",
+      "normalization": "ABD:session-scoped-extension-modules",
+      "referenceCitations": ["packages/coding-agent/src/core/extensions/loader.ts#L132-L153", "packages/coding-agent/src/core/extensions/loader.ts#L373-L405", "packages/coding-agent/test/suite/regressions/extension-factory-cache.test.ts#L69-L129"]
+    },
+    {
+      "id": "reference.atomic-extension-initialization",
+      "captureCaseId": "capture.atomic-extension-initialization",
+      "obligation": "omh-v0.atomic-extension-initialization",
+      "referenceRevision": "0e6909f050eeb15e8f6c05185511f3788357ddb3",
+      "canonicalInput": "fail the second Extension factory after the first module has executed top-level side effects, and collide with a built-in Tool name",
+      "observations": {"A": "per-extension diagnostics", "L": [], "T": "partial session with remaining Extensions", "E": "later modules continue", "C": "partial result published"},
+      "omhExpectation": {"A": "first_failure_stops_later_modules", "C": "no_partial_session_or_image_mutation", "E": {"arbitraryEffectsRetained": true}, "L": [], "T": {"hook": "Python Extension \".omh/extensions/zeta.py\" initialization failed", "builtinCollisionHook": true}},
+      "comparator": "compare Reference partial capabilities/diagnostics with omh no publication and retained arbitrary effects",
+      "normalization": "ABD:atomic-extension-initialization",
+      "referenceCitations": ["packages/coding-agent/src/core/extensions/loader.ts#L432-L457", "packages/coding-agent/src/core/extensions/loader.ts#L481-L518"]
     }
   ]
 }

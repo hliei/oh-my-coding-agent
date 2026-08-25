@@ -40,6 +40,12 @@ from oh_my_llm.providers.deepseek import (
     deepseekProvider,
 )
 
+from ._extensions import (
+    ExtensionContext,
+    ExtensionRuntime,
+    load_extensions,
+    snapshot_extension_context,
+)
 from ._prompt_resources import (
     PromptResourceSnapshot,
     expand_prompt,
@@ -279,6 +285,7 @@ class AgentSession:
         "_compaction_terminal_committed",
         "_disposal_task",
         "_disposed",
+        "_extensions",
         "_listeners",
         "_manager_failure",
         "_model",
@@ -286,6 +293,8 @@ class AgentSession:
         "_operational_cwd",
         "_overflow_recovery_attempted",
         "_pending_agent_end",
+        "_pending_agent_end_signal",
+        "_last_run_signal",
         "_projecting_agent_end",
         "_prompt_active",
         "_prompt_cancel_requested",
@@ -305,6 +314,7 @@ class AgentSession:
         operational_cwd: str,
         agent: Agent,
         prompt_resources: PromptResourceSnapshot,
+        extensions: ExtensionRuntime,
         _token: object,
     ) -> None:
         if _token is not _SESSION_TOKEN:
@@ -314,8 +324,11 @@ class AgentSession:
         self._session_manager = session_manager
         self._operational_cwd = operational_cwd
         self._prompt_resources = prompt_resources
+        self._extensions = extensions
         self._overflow_recovery_attempted = False
         self._pending_agent_end: AgentEvent | None = None
+        self._pending_agent_end_signal: AbortSignal | None = None
+        self._last_run_signal: AbortSignal | None = None
         self._projecting_agent_end = False
         self._agent = agent
         self._system_prompt = agent.state.systemPrompt
@@ -445,7 +458,10 @@ class AgentSession:
                 elif agent_run_started:
                     try:
                         await self._dispatch_pending_agent_end(will_retry=False)
-                        await self._dispatch(AgentSettled())
+                        await self._dispatch(
+                            AgentSettled(),
+                            agent_signal=self._last_run_signal,
+                        )
                     except BaseException as error:
                         settlement_failure = error
                         cancellation.__cause__ = error
@@ -461,12 +477,18 @@ class AgentSession:
             else:
                 await self._run_automatic_compaction()
                 if not self._prompt_terminal_projection_truncated:
-                    await self._dispatch(AgentSettled())
+                    await self._dispatch(
+                        AgentSettled(),
+                        agent_signal=self._last_run_signal,
+                    )
         except asyncio.CancelledError as cancellation:
             if self._pending_agent_end is not None:
                 try:
                     await self._dispatch_pending_agent_end(will_retry=False)
-                    await self._dispatch(AgentSettled())
+                    await self._dispatch(
+                        AgentSettled(),
+                        agent_signal=self._last_run_signal,
+                    )
                 except BaseException as error:
                     settlement_failure = error
                     cancellation.__cause__ = error
@@ -581,6 +603,14 @@ class AgentSession:
             except BaseException as error:
                 settlement_failure = error
 
+        try:
+            shutdown_failures = await self._extensions.shutdown(
+                self._extension_context(None)
+            )
+        except BaseException as error:
+            shutdown_failures = [error]
+        disposal_failures.extend(shutdown_failures)
+
         unsubscribe = self._agent_unsubscribe
         if unsubscribe is not None:
             try:
@@ -597,6 +627,8 @@ class AgentSession:
             )
         self._listeners.clear()
         self._pending_agent_end = None
+        self._pending_agent_end_signal = None
+        self._extensions.release()
         self._disposed = True
         if settlement_failure is not None:
             raise settlement_failure
@@ -1105,7 +1137,10 @@ class AgentSession:
             if self._pending_agent_end is not None:
                 raise RuntimeError("AgentSession has an unprojected AgentEnd")
             self._pending_agent_end = event
+            self._pending_agent_end_signal = signal
+            self._last_run_signal = signal
             return
+        self._last_run_signal = signal
         await self._dispatch(
             _project_event(event),
             agent_signal=signal,
@@ -1122,9 +1157,11 @@ class AgentSession:
         try:
             await self._dispatch(
                 _project_event(event, will_retry=will_retry),
+                agent_signal=self._pending_agent_end_signal,
             )
         finally:
             self._projecting_agent_end = False
+            self._pending_agent_end_signal = None
 
     async def _dispatch(
         self,
@@ -1137,25 +1174,43 @@ class AgentSession:
         failures: list[BaseException] = []
         owner_cancellation: asyncio.CancelledError | None = None
         try:
-            for record in tuple(self._listeners):
-                try:
-                    settled = record.listener(event)
-                    if inspect.isawaitable(settled):
-                        await settled
-                    elif settled is not None:
-                        raise TypeError(
-                            "AgentSession listener must return None or an awaitable"
-                        )
-                except asyncio.CancelledError as error:
-                    owner = asyncio.current_task()
-                    if owner is not None and owner.cancelling():
-                        owner.uncancel()
-                        if agent_signal is None or not agent_signal.aborted:
-                            owner_cancellation = error
-                    else:
+            try:
+                await self._extensions.dispatch(
+                    event,
+                    self._extension_context(agent_signal),
+                )
+            except asyncio.CancelledError as error:
+                owner = asyncio.current_task()
+                if owner is not None and owner.cancelling():
+                    owner.uncancel()
+                    if agent_signal is None or not agent_signal.aborted:
+                        owner_cancellation = error
+                else:
+                    raise LifecycleError(
+                        "hook",
+                        "Python Extension handler failed",
+                        causes=(error,),
+                    ) from error
+            else:
+                for record in tuple(self._listeners):
+                    try:
+                        settled = record.listener(event)
+                        if inspect.isawaitable(settled):
+                            await settled
+                        elif settled is not None:
+                            raise TypeError(
+                                "AgentSession listener must return None or an awaitable"
+                            )
+                    except asyncio.CancelledError as error:
+                        owner = asyncio.current_task()
+                        if owner is not None and owner.cancelling():
+                            owner.uncancel()
+                            if agent_signal is None or not agent_signal.aborted:
+                                owner_cancellation = error
+                        else:
+                            failures.append(error)
+                    except BaseException as error:
                         failures.append(error)
-                except BaseException as error:
-                    failures.append(error)
         finally:
             _ACTIVE_SESSION_DISPATCH.reset(token)
         if owner_cancellation is not None:
@@ -1169,6 +1224,17 @@ class AgentSession:
                 "AgentSession listener failed",
                 causes=tuple(failures),
             ) from failures[0]
+
+    def _extension_context(
+        self, signal: AbortSignal | None
+    ) -> ExtensionContext:
+        return snapshot_extension_context(
+            cwd=self._operational_cwd,
+            session_id=self.sessionId,
+            model=self._model,
+            messages=self._session_manager.buildSessionContext().messages,
+            signal=signal,
+        )
 
 
 def _project_event(
@@ -1312,47 +1378,75 @@ async def createAgentSession(
         raise ModelsError("auth", "DeepSeek authentication is required")
 
     prompt_resources = load_prompt_resources(operational_cwd, selected.projectTrusted)
+    extensions = await load_extensions(operational_cwd, selected.projectTrusted)
 
     manager = (
         supplied_manager
         if supplied_manager is not None
         else SessionManager.create(operational_cwd)
     )
-
-    async def stream_fn(
-        active_model: Model,
-        context: object,
-        stream_options: SimpleStreamOptions | None,
-        signal: AbortSignal,
-    ) -> AsyncIterator[AssistantMessageEvent]:
-        del signal
-        async for event in models.streamSimple(
-            active_model, cast(Any, context), stream_options
-        ):
-            yield event
-
-    system_prompt = build_system_prompt(operational_cwd, prompt_resources)
-    agent = Agent(
-        AgentOptions(
-            initialState=AgentState(
-                model=model,
-                systemPrompt=system_prompt,
-                tools=product_session_tools(operational_cwd),
-                messages=manager.buildSessionContext().messages,
-            ),
-            streamFn=stream_fn,
-            toolExecution="parallel",
-        )
-    )
-    session = AgentSession(
+    start_context = snapshot_extension_context(
+        cwd=operational_cwd,
+        session_id=manager.getSessionId(),
         model=model,
-        models=models,
-        session_manager=manager,
-        operational_cwd=operational_cwd,
-        agent=agent,
-        prompt_resources=prompt_resources,
-        _token=_SESSION_TOKEN,
+        messages=manager.buildSessionContext().messages,
+        signal=None,
     )
+    await extensions.start(start_context)
+    try:
+        async def stream_fn(
+            active_model: Model,
+            context: object,
+            stream_options: SimpleStreamOptions | None,
+            signal: AbortSignal,
+        ) -> AsyncIterator[AssistantMessageEvent]:
+            del signal
+            async for event in models.streamSimple(
+                active_model, cast(Any, context), stream_options
+            ):
+                yield event
+
+        system_prompt = build_system_prompt(
+            operational_cwd, prompt_resources, extensions.tool_summaries()
+        )
+        agent = Agent(
+            AgentOptions(
+                initialState=AgentState(
+                    model=model,
+                    systemPrompt=system_prompt,
+                    tools=(
+                        *product_session_tools(operational_cwd),
+                        *extensions.tools,
+                    ),
+                    messages=manager.buildSessionContext().messages,
+                ),
+                streamFn=stream_fn,
+                toolExecution="parallel",
+            )
+        )
+        session = AgentSession(
+            model=model,
+            models=models,
+            session_manager=manager,
+            operational_cwd=operational_cwd,
+            agent=agent,
+            prompt_resources=prompt_resources,
+            extensions=extensions,
+            _token=_SESSION_TOKEN,
+        )
+    except BaseException as error:
+        shutdown_errors = await extensions.shutdown(start_context)
+        if isinstance(error, asyncio.CancelledError):
+            if shutdown_errors:
+                error.__cause__ = shutdown_errors[0]
+            raise
+        if shutdown_errors and isinstance(error, LifecycleError):
+            raise LifecycleError(
+                error.code,
+                str(error),
+                causes=(*error.causes, *shutdown_errors),
+            ) from error
+        raise
     try:
         await asyncio.sleep(0)
     except asyncio.CancelledError:

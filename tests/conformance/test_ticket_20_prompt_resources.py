@@ -647,8 +647,8 @@ def test_ticket_20_matrix_records_prompt_resource_obligations() -> None:
     assert set(required.values()) <= cases.keys()
     for obligation, corpus_case in required.items():
         assert rows[obligation]["corpusCase"] == corpus_case
-        assert rows[obligation]["executableCases"] == [
+        assert {
             "ticket-20-resources",
             "ticket-20-installed",
-        ]
+        } <= set(rows[obligation]["executableCases"])
         assert cases[corpus_case]["obligation"] == obligation

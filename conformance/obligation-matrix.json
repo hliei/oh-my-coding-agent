@@ -697,7 +697,7 @@
       "normalization": "ABD:non-overridable-built-in-tools; Extension collision rows remain ticket 21",
       "evidenceClass": "ABD:non-overridable-built-in-tools",
       "corpusCase": "reference.builtin-tool-registry",
-      "executableCases": ["ticket-16-read", "ticket-16-installed"]
+      "executableCases": ["ticket-16-read", "ticket-16-installed", "ticket-21-extensions", "ticket-21-installed"]
     },
     {
       "id": "omh-v0.literal-tool-paths-read",
@@ -961,7 +961,7 @@
       "normalization": "ABD:explicit-project-resource-trust; do not inherit saved/ancestor/UI trust",
       "evidenceClass": "ABD:explicit-project-resource-trust",
       "corpusCase": "reference.explicit-project-resource-trust",
-      "executableCases": ["ticket-20-resources", "ticket-20-installed"]
+      "executableCases": ["ticket-20-resources", "ticket-20-installed", "ticket-21-extensions", "ticket-21-installed"]
     },
     {
       "id": "omh-v0.omh-project-config-root-prompt-resources",
@@ -1010,6 +1010,90 @@
       "evidenceClass": "ABD:fixed-session-system-prompt",
       "corpusCase": "reference.fixed-session-system-prompt",
       "executableCases": ["ticket-20-resources", "ticket-20-installed"]
+    },
+    {
+      "id": "omh-v0.deterministic-extension-discovery",
+      "authority": ".scratch/omh-v0/issues/09-choose-extension-lifecycle.md#ABD:deterministic-extension-discovery",
+      "publicInterface": "oh_my_coding_agent.createAgentSession",
+      "scenario": "discover direct nonsymlink .omh/extensions/*.py files in Unicode name order and reject invalid selected entries",
+      "observations": {"A": "valid names admitted; invalid name/symlink/source reject construction", "L": "not_applicable", "T": "Extension Tools follow builtins in filename order", "E": "hidden, nested, and non-.py entries ignored", "C": "untrusted construction performs zero Extension probes"},
+      "comparator": "compare registered capabilities and event/effect order after forcing opposite filesystem enumeration orders; normalize .pi/.omh and TypeScript/Python carriers",
+      "normalization": "ABD:deterministic-extension-discovery",
+      "evidenceClass": "ABD:deterministic-extension-discovery",
+      "corpusCase": "reference.deterministic-extension-discovery",
+      "executableCases": ["ticket-21-extensions", "ticket-21-installed"]
+    },
+    {
+      "id": "omh-v0.python-extension-entrypoint",
+      "authority": ".scratch/omh-v0/issues/09-choose-extension-lifecycle.md#PA:python-extension-entrypoint",
+      "publicInterface": "oh_my_coding_agent.createAgentSession",
+      "scenario": "admit module-level callable extension(api) and reject missing, noncallable, alias, and syntax-invalid entrypoints",
+      "observations": {"A": "exact extension name admitted; other slots rejected", "L": "one positional factory call per construction", "T": "ValueError invalid carrier for structural entrypoint failures", "E": "no later module execution after first invalid source", "C": "manager history unchanged"},
+      "comparator": "pair a Reference default-export factory with omh extension() and compare call count, argument role, awaited ordering, and terminal result",
+      "normalization": "PA:python-extension-entrypoint",
+      "evidenceClass": "PA:python-extension-entrypoint",
+      "corpusCase": "reference.python-extension-entrypoint",
+      "executableCases": ["ticket-21-extensions", "ticket-21-installed"]
+    },
+    {
+      "id": "omh-v0.fixed-extension-registration",
+      "authority": ".scratch/omh-v0/issues/09-choose-extension-lifecycle.md#ABD:fixed-extension-registration",
+      "publicInterface": "oh_my_coding_agent.ExtensionAPI",
+      "scenario": "register handlers and Tools only during extension(api), freeze the API, and reject duplicate Extension Tool names",
+      "observations": {"A": "initialization-only on/registerTool admitted; late registration cannot mutate", "L": "not_applicable", "T": "published Tool set excludes late names; duplicate names reject construction", "E": "no refresh or diagnostics bundle", "C": "retained API cannot change a published Session"},
+      "comparator": "compare equivalent initial on/Tool registrations; contrast Reference refresh/first-wins with omh rejection and frozen continuity",
+      "normalization": "ABD:fixed-extension-registration",
+      "evidenceClass": "ABD:fixed-extension-registration",
+      "corpusCase": "reference.fixed-extension-registration",
+      "executableCases": ["ticket-21-extensions", "ticket-21-installed"]
+    },
+    {
+      "id": "omh-v0.snapshot-extension-context",
+      "authority": ".scratch/omh-v0/issues/09-choose-extension-lifecycle.md#ABD:snapshot-extension-context",
+      "publicInterface": "oh_my_coding_agent.ExtensionContext",
+      "scenario": "deliver a fresh immutable cwd/sessionId/model/messages/signal snapshot to every handler invocation",
+      "observations": {"A": "factory-produced read-only context admitted", "L": "session_start has signal None; agent_start has the Run signal", "T": "retained start snapshot does not observe later messages", "E": "no live Session actions", "C": "each invocation is a distinct immutable object"},
+      "comparator": "compare immediate retained-field reads; after state change contrast Reference live/invalidation with omh unchanged snapshots",
+      "normalization": "ABD:snapshot-extension-context",
+      "evidenceClass": "ABD:snapshot-extension-context",
+      "corpusCase": "reference.snapshot-extension-context",
+      "executableCases": ["ticket-21-extensions", "ticket-21-installed"]
+    },
+    {
+      "id": "omh-v0.fail-closed-extension-handlers",
+      "authority": ".scratch/omh-v0/issues/09-choose-extension-lifecycle.md#ABD:fail-closed-extension-handlers",
+      "publicInterface": "oh_my_coding_agent.AgentSession.prompt and dispose",
+      "scenario": "run handlers after durable reduction and before public listeners; stop on first failure; shut down reverse, all-attempted, retryable",
+      "observations": {"A": "session_start runs before publication; handler failure rejects later progression", "L": "discovery then registration order; public listeners do not run after failure", "T": "LifecycleError hook with redacted message; disposal aggregates shutdown failures", "E": "no later Model/Tool effects; no synthetic terminal repair", "C": "committed history preserved; later dispose retries only unresolved shutdown handlers"},
+      "comparator": "inject one failure at each handler position and compare suffix, terminal carrier, durable history, cleanup order, and next-Run continuity",
+      "normalization": "ABD:fail-closed-extension-handlers",
+      "evidenceClass": "ABD:fail-closed-extension-handlers",
+      "corpusCase": "reference.fail-closed-extension-handlers",
+      "executableCases": ["ticket-21-extensions", "ticket-21-installed"]
+    },
+    {
+      "id": "omh-v0.session-scoped-extension-modules",
+      "authority": ".scratch/omh-v0/issues/09-choose-extension-lifecycle.md#ABD:session-scoped-extension-modules",
+      "publicInterface": "oh_my_coding_agent.createAgentSession",
+      "scenario": "execute an independent private module generation per Session construction without project path injection or public module cache",
+      "observations": {"A": "each construction re-runs top-level and factory once", "L": "not_applicable", "T": "independent module globals; live Sessions ignore source edits", "E": "no pycache or public sys.modules identity; nested packages are not importable", "C": "recovery executes then-current sources"},
+      "comparator": "compare one-Session behavior directly and contrast cross-construction module/factory counts; Reference in-place reload is excluded",
+      "normalization": "ABD:session-scoped-extension-modules",
+      "evidenceClass": "ABD:session-scoped-extension-modules",
+      "corpusCase": "reference.session-scoped-extension-modules",
+      "executableCases": ["ticket-21-extensions", "ticket-21-installed"]
+    },
+    {
+      "id": "omh-v0.atomic-extension-initialization",
+      "authority": ".scratch/omh-v0/issues/09-choose-extension-lifecycle.md#ABD:atomic-extension-initialization",
+      "publicInterface": "oh_my_coding_agent.createAgentSession",
+      "scenario": "reject the complete Session on the first invalid source, factory, registration, start, or cancellation without publishing a partial result",
+      "observations": {"A": "first failure stops later modules", "L": "not_applicable", "T": "selected ValueError or redacted hook/cleanup LifecycleError", "E": "omh-owned registrations roll back; arbitrary in-process Extension effects remain", "C": "no partial Session, registry, fresh Image, or recovery mutation"},
+      "comparator": "compare Reference partial capabilities/diagnostics with omh no publication, Image immutability, cleanup order, and retained arbitrary effects",
+      "normalization": "ABD:atomic-extension-initialization",
+      "evidenceClass": "ABD:atomic-extension-initialization",
+      "corpusCase": "reference.atomic-extension-initialization",
+      "executableCases": ["ticket-21-extensions", "ticket-21-installed"]
     }
   ]
 }

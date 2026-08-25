@@ -302,6 +302,8 @@ class _ListenerFailure(BaseException):
 async def _emit(sink: AgentEventSink, event: AgentEvent) -> None:
     try:
         await _invoke_sink(sink, event)
+    except LifecycleError:
+        raise
     except _ListenerFailure as error:
         raise LifecycleError(
             "listener",

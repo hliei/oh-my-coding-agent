@@ -107,6 +107,8 @@ def test_session_manager_public_surface_is_closed() -> None:
         "CreateAgentSessionResult",
         "CustomEntry",
         "CustomMessageEntry",
+        "ExtensionAPI",
+        "ExtensionContext",
         "FileEntry",
         "LabelEntry",
         "ModelChangeEntry",

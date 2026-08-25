@@ -35,9 +35,14 @@ def _local_date() -> str:
     return f"{now.year:04d}-{now.month:02d}-{now.day:02d}"
 
 
-def build_system_prompt(cwd: str, snapshot: PromptResourceSnapshot) -> str:
+def build_system_prompt(
+    cwd: str,
+    snapshot: PromptResourceSnapshot,
+    extension_tools: tuple[tuple[str, str], ...] = (),
+) -> str:
     tools = "\n".join(
-        f"- {name}: {summary}" for name, summary in BUILTIN_TOOLS
+        f"- {name}: {summary}"
+        for name, summary in (*BUILTIN_TOOLS, *extension_tools)
     )
     prompt = (
         f"{_IDENTITY}\n"

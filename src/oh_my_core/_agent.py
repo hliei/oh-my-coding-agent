@@ -353,8 +353,13 @@ class Agent:
                 else:
                     failures.append(error)
             except BaseException as error:
+                if isinstance(error, LifecycleError) and error.code == "hook":
+                    raise
                 failures.append(error)
         if failures:
+            for failure in failures:
+                if isinstance(failure, LifecycleError) and failure.code == "hook":
+                    raise failure
             raise _ListenerFailure(tuple(failures))
 
     def _reduce(self, event: AgentEvent) -> None:
