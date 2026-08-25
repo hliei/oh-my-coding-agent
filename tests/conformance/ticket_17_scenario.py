@@ -385,18 +385,23 @@ async def _serialize(root: Path) -> dict[str, object]:
             )
         ).session
         events: list[AgentSessionEvent] = []
-        session.subscribe(events.append)
+        peer_finished = asyncio.Event()
+
+        def observe(event: AgentSessionEvent) -> None:
+            events.append(event)
+            if (
+                isinstance(event, AgentSessionEvent.ToolExecutionEnd)
+                and event.toolCallId in {"call-c", "call-d"}
+            ):
+                peer_finished.set()
+
+        session.subscribe(observe)
         prompt = asyncio.create_task(session.prompt("mutate"))
         await same_first.wait()
         await other_inside.wait()
         second_while_first_held = same_second.is_set()
         seed_while_held = (workspace / "same.txt").read_bytes() == b"seed"
-        while not any(
-            isinstance(event, AgentSessionEvent.ToolExecutionEnd)
-            and event.toolCallId in {"call-c", "call-d"}
-            for event in events
-        ):
-            await asyncio.sleep(0)
+        await peer_finished.wait()
         concurrent_peer = True
         release_same.set()
         await prompt
@@ -434,8 +439,8 @@ async def main() -> None:
             "reference.truthful-write-result": await _truthful(root / "truth"),
             "reference.literal-tool-paths-write": await _literal_paths(root / "paths"),
             "reference.actionable-write-outcomes": await _outcomes(root / "outcomes"),
-            "reference.write-mutation-serialization": await _serialize(
-                root / "serialize"
+            "reference.write-mutation-serialization": await asyncio.wait_for(
+                _serialize(root / "serialize"), timeout=10.0
             ),
         }
         print(json.dumps(actual, sort_keys=True, separators=(",", ":")))

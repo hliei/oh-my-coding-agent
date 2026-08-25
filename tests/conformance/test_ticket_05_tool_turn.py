@@ -22,6 +22,7 @@ from oh_my_llm import (
     AssistantMessage,
     AssistantMessageEvent,
     Context,
+    LifecycleError,
     Model,
     TextContent,
     ToolCall,
@@ -488,6 +489,25 @@ def test_raised_execute_is_a_redacted_recoverable_failure() -> None:
         fauxToolCall(id="call-1", name="echo", arguments={"count": 1}),
     )
     _assert_tool_failure(events, 'Tool "echo" execution failed')
+
+
+def test_public_cleanup_lifecycle_error_is_a_redacted_recoverable_failure() -> None:
+    async def execute(
+        tool_call_id: str,
+        params: dict[str, object],
+        signal: Any,
+        on_update: Any,
+    ) -> AgentToolResult:
+        del tool_call_id, params, signal, on_update
+        raise LifecycleError("cleanup", SECRET, causes=(RuntimeError(SECRET),))
+
+    result, events, _context = _run_tool_loop(
+        (_failure_tool(execute=execute),),
+        fauxToolCall(id="call-1", name="echo", arguments={"count": 1}),
+    )
+
+    _assert_tool_failure(events, 'Tool "echo" execution failed')
+    assert result[-1] == fauxAssistantMessage("done")
 
 
 def test_non_awaitable_execute_is_a_redacted_recoverable_failure() -> None:

@@ -374,20 +374,8 @@ async def _signal_row(root: Path) -> dict[str, object]:
 
 
 async def _cancel(root: Path) -> dict[str, object]:
-    import oh_my_coding_agent._bash as bash
-
     workspace = root / "project"
     workspace.mkdir(parents=True, exist_ok=True)
-    started = asyncio.Event()
-
-    async def hold(signal: Any, pid: int) -> None:
-        del pid
-        started.set()
-        await signal.wait()
-        raise asyncio.CancelledError
-
-    previous = bash._after_spawn
-    setattr(bash, "_after_spawn", hold)
     transport = _ScriptedTransport(
         _tool_calls_sse(
             (
@@ -397,8 +385,9 @@ async def _cancel(root: Path) -> dict[str, object]:
                     "command": (
                         f"{PYTHON} -c "
                         + json.dumps(
-                            "import os, time, pathlib; "
-                            "pathlib.Path('child.pid').write_text(str(os.getpid())); "
+                            "import os, sys, time; "
+                            "sys.stdout.write(str(os.getpid()) + '\\n'); "
+                            "sys.stdout.flush(); "
                             "time.sleep(30)"
                         )
                     )
@@ -408,7 +397,8 @@ async def _cancel(root: Path) -> dict[str, object]:
         _STOP_SSE,
     )
     original = _install_transport(transport)
-    try:
+
+    async def exercise() -> dict[str, object]:
         session = (
             await createAgentSession(
                 CreateAgentSessionOptions(
@@ -420,37 +410,49 @@ async def _cancel(root: Path) -> dict[str, object]:
             )
         ).session
         events: list[AgentSessionEvent] = []
-        session.subscribe(events.append)
+        ready_pid: asyncio.Future[int] = asyncio.get_running_loop().create_future()
+
+        def observe(event: AgentSessionEvent) -> None:
+            events.append(event)
+            if not isinstance(event, AgentSessionEvent.ToolExecutionUpdate):
+                return
+            if not event.partialResult.content or ready_pid.done():
+                return
+            text = event.partialResult.content[0].text.strip()
+            if text.isdigit():
+                ready_pid.set_result(int(text))
+
+        session.subscribe(observe)
         prompt = asyncio.create_task(session.prompt("run"))
-        await started.wait()
-        for _ in range(50):
-            if (workspace / "child.pid").exists():
-                break
-            await asyncio.sleep(0.02)
-        await session.abort()
-        await prompt
-        end = _tool_end(events)
-        tree_dead = True
-        pid_file = workspace / "child.pid"
-        if pid_file.exists():
+        try:
+            pid = await ready_pid
+            await session.abort()
+            await prompt
+            end = _tool_end(events)
             try:
-                os.kill(int(pid_file.read_text()), 0)
+                os.kill(pid, 0)
                 tree_dead = False
             except OSError:
                 tree_dead = True
-        await session.dispose()
-        return {
-            "A": "started command",
-            "L": ["tool_execution_end"],
-            "T": {
-                "cancelledText": end.result.content[0].text,
-                "isError": end.isError,
-            },
-            "E": {"treeDead": tree_dead},
-            "C": "reusable_after_cancel",
-        }
+            return {
+                "A": "started command",
+                "L": ["tool_execution_end"],
+                "T": {
+                    "cancelledText": end.result.content[0].text,
+                    "isError": end.isError,
+                },
+                "E": {"treeDead": tree_dead},
+                "C": "reusable_after_cancel",
+            }
+        finally:
+            if not prompt.done():
+                prompt.cancel()
+            await asyncio.gather(prompt, return_exceptions=True)
+            await session.dispose()
+
+    try:
+        return await asyncio.wait_for(exercise(), timeout=10.0)
     finally:
-        setattr(bash, "_after_spawn", previous)
         setattr(httpx, "AsyncClient", original)
 
 

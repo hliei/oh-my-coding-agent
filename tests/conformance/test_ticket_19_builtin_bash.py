@@ -5,7 +5,9 @@ import errno
 import json
 import os
 from pathlib import Path
+import shutil
 import sys
+import tempfile
 from typing import Any, cast
 
 import httpx
@@ -258,31 +260,106 @@ def test_bash_returns_empty_output_and_merged_streams(
 def test_bash_emits_cumulative_throttled_updates(
     tmp_path: Path, monkeypatch: pytest.MonkeyPatch
 ) -> None:
+    import oh_my_coding_agent._bash as bash
+
+    release_two = tmp_path / "release-two"
+    release_three = tmp_path / "release-three"
+    os.mkfifo(release_two)
+    os.mkfifo(release_three)
+    release_handles = (
+        os.open(release_two, os.O_RDWR | os.O_NONBLOCK),
+        os.open(release_three, os.O_RDWR | os.O_NONBLOCK),
+    )
+    clock = [1.0]
+    monkeypatch.setattr(bash, "_throttle_time", lambda _loop: clock[0])
     command = (
         f"{PYTHON} -c "
         + json.dumps(
-            "import sys, time; "
+            "import sys; "
             "sys.stdout.write('one\\n'); sys.stdout.flush(); "
-            "time.sleep(0.22); "
+            f"open({os.fspath(release_two)!r}, 'rb').read(1); "
             "sys.stdout.write('two\\n'); sys.stdout.flush(); "
-            "time.sleep(0.22); "
+            f"open({os.fspath(release_three)!r}, 'rb').read(1); "
             "sys.stdout.write('three\\n'); sys.stdout.flush()"
         )
     )
-    _, events, _ = asyncio.run(_prompt_bash(tmp_path, monkeypatch, {"command": command}))
+
+    async def exercise() -> list[AgentSessionEvent]:
+        monkeypatch.setenv("DEEPSEEK_API_KEY", "configured")
+        transport = _ScriptedTransport(
+            _tool_call_sse("call-bash", "bash", {"command": command}),
+            _STOP_SSE,
+        )
+        _install_transport(monkeypatch, transport)
+        workspace = tmp_path / "project"
+        workspace.mkdir()
+        session = (
+            await createAgentSession(
+                CreateAgentSessionOptions(
+                    cwd=os.fspath(workspace),
+                    sessionManager=SessionManager.inMemory(
+                        os.fspath(workspace), NewSessionOptions(id="bash-throttle")
+                    ),
+                )
+            )
+        ).session
+        events: list[AgentSessionEvent] = []
+        release_second = asyncio.Event()
+        release_third = asyncio.Event()
+
+        def observe(event: AgentSessionEvent) -> None:
+            events.append(event)
+            if not isinstance(event, AgentSessionEvent.ToolExecutionUpdate):
+                return
+            if not event.partialResult.content:
+                return
+            text = event.partialResult.content[0].text
+            if text == "one\n":
+                clock[0] += 0.11
+                release_second.set()
+            elif text == "one\ntwo\n":
+                clock[0] += 0.11
+                release_third.set()
+
+        async def release(handle: int, ready: asyncio.Event) -> None:
+            await ready.wait()
+            assert os.write(handle, b"x") == 1
+
+        session.subscribe(observe)
+        prompt = asyncio.create_task(session.prompt("run bash"))
+        writers = (
+            asyncio.create_task(release(release_handles[0], release_second)),
+            asyncio.create_task(release(release_handles[1], release_third)),
+        )
+        try:
+            await asyncio.gather(prompt, *writers)
+        finally:
+            for task in (prompt, *writers):
+                if not task.done():
+                    task.cancel()
+            await asyncio.gather(prompt, *writers, return_exceptions=True)
+            await session.dispose()
+        return events
+
+    async def bounded() -> list[AgentSessionEvent]:
+        return await asyncio.wait_for(exercise(), timeout=10.0)
+
+    try:
+        events = asyncio.run(bounded())
+    finally:
+        for handle in release_handles:
+            os.close(handle)
     end = _tool_end(events)
     updates = _updates(events)
     assert updates[0].partialResult.content == ()
     output_updates = updates[1:]
-    assert len(output_updates) >= 3
+    assert len(output_updates) == 3
     texts = [event.partialResult.content[0].text for event in output_updates]
     assert texts[0] == "one\n"
     assert "one\n" in texts[-1] and "three" in texts[-1]
     assert all("Command " not in text for text in texts)
     assert all(event.partialResult.details is None for event in output_updates)
     assert all(event.partialResult.terminate is None for event in output_updates)
-    stamps = [event.partialResult for event in output_updates]
-    del stamps
     later = [
         event
         for previous, event in zip(output_updates, output_updates[1:])
@@ -326,7 +403,7 @@ def test_bash_truncates_tail_and_spills_owner_only_raw_bytes(
 
     huge = (
         f"{PYTHON} -c "
-        + json.dumps("import sys; sys.stdout.write('a' * 61440)")
+        + json.dumps("import sys; sys.stdout.write('a' * 52480)")
     )
     _, byte_events, _ = asyncio.run(
         _prompt_bash(tmp_path, monkeypatch, {"command": huge})
@@ -335,14 +412,14 @@ def test_bash_truncates_tail_and_spills_owner_only_raw_bytes(
     byte_details = dict(cast(Any, byte_end.result.details))
     byte_path = Path(cast(str, byte_details["fullOutputPath"]))
     notice = (
-        f"[Showing last 50.0KB of line 1 (line is 60.0KB). Full output: {byte_path}]"
+        f"[Showing last 50.0KB of line 1 (line is 51.3KB). Full output: {byte_path}]"
     )
     assert byte_end.result.content[0].text.endswith(notice)
     assert byte_details["truncation"]["truncatedBy"] == "bytes"
     assert byte_details["truncation"]["lastLinePartial"] is True
     assert byte_details["truncation"]["outputBytes"] == 51200
     assert stat_owner_only(byte_path)
-    assert byte_path.read_bytes() == b"a" * 61440
+    assert byte_path.read_bytes() == b"a" * 52480
 
 
 def stat_owner_only(path: Path) -> bool:
@@ -477,6 +554,177 @@ def test_bash_pre_spawn_outcomes(
     assert dict(cast(Any, spawn.result.details))["code"] == "spawn_denied"
 
 
+def test_bash_unexpected_workspace_stat_failure_is_a_tool_failure(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    monkeypatch.setenv("DEEPSEEK_API_KEY", "configured")
+    transport = _ScriptedTransport(
+        _tool_call_sse("call-bash", "bash", {"command": "pwd"}),
+        _STOP_SSE,
+    )
+    _install_transport(monkeypatch, transport)
+    workspace = tmp_path / "project"
+    workspace.mkdir()
+
+    async def prompt() -> list[AgentSessionEvent]:
+        session = (
+            await createAgentSession(
+                CreateAgentSessionOptions(
+                    cwd=os.fspath(workspace),
+                    sessionManager=SessionManager.inMemory(
+                        os.fspath(workspace), NewSessionOptions(id="bash-stat-failure")
+                    ),
+                )
+            )
+        ).session
+        original_stat = os.stat
+
+        def fail_workspace_stat(path: Any, *args: Any, **kwargs: Any) -> os.stat_result:
+            if (
+                isinstance(path, (str, bytes, os.PathLike))
+                and os.path.abspath(os.fsdecode(path)) == os.fspath(workspace)
+            ):
+                raise OSError(errno.EIO, "injected")
+            return original_stat(path, *args, **kwargs)
+
+        monkeypatch.setattr(os, "stat", fail_workspace_stat)
+        events: list[AgentSessionEvent] = []
+        session.subscribe(events.append)
+        await session.prompt("run bash")
+        await session.dispose()
+        return events
+
+    failed = _tool_end(asyncio.run(prompt()))
+    assert failed.isError is True
+    assert failed.result.content == (TextContent(text='Tool "bash" execution failed'),)
+    assert dict(cast(Any, failed.result.details)) == {}
+
+
+def test_bash_unexpected_shell_stat_failure_is_a_tool_failure(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    original_stat = os.stat
+
+    def fail_shell_stat(path: Any, *args: Any, **kwargs: Any) -> os.stat_result:
+        if isinstance(path, (str, bytes, os.PathLike)) and os.fsdecode(path) == "/bin/bash":
+            raise OSError(errno.EIO, "injected")
+        return original_stat(path, *args, **kwargs)
+
+    monkeypatch.setattr(os, "stat", fail_shell_stat)
+    monkeypatch.setattr(shutil, "which", lambda _name: None)
+    _, events, _ = asyncio.run(
+        _prompt_bash(tmp_path, monkeypatch, {"command": "pwd"})
+    )
+    failed = _tool_end(events)
+    assert failed.isError is True
+    assert failed.result.content == (TextContent(text='Tool "bash" execution failed'),)
+    assert dict(cast(Any, failed.result.details)) == {}
+
+
+def test_bash_workspace_disappearing_at_spawn_is_workspace_unavailable(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    workspace = tmp_path / "project"
+    workspace.mkdir()
+
+    async def missing_workspace(*_args: Any, **_kwargs: Any) -> Any:
+        workspace.rmdir()
+        raise FileNotFoundError(errno.ENOENT, "injected")
+
+    monkeypatch.setattr(asyncio, "create_subprocess_exec", missing_workspace)
+    _, events, _ = asyncio.run(
+        _prompt_bash(
+            tmp_path,
+            monkeypatch,
+            {"command": "pwd"},
+            workspace=workspace,
+        )
+    )
+    end = _tool_end(events)
+    assert end.isError is False
+    assert end.result.content == (
+        TextContent(
+            text=f"Bash Workspace {json.dumps(os.fspath(workspace))} is unavailable"
+        ),
+    )
+    assert dict(cast(Any, end.result.details)) == {
+        "code": "workspace_unavailable",
+        "phase": "workspace",
+        "effect": "none",
+        "workspace": os.fspath(workspace),
+    }
+
+
+def test_bash_workspace_becoming_unenterable_at_spawn_is_workspace_unavailable(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    workspace = tmp_path / "project"
+    workspace.mkdir()
+
+    async def denied_workspace(*_args: Any, **_kwargs: Any) -> Any:
+        workspace.chmod(0)
+        raise PermissionError(errno.EACCES, "injected")
+
+    monkeypatch.setattr(asyncio, "create_subprocess_exec", denied_workspace)
+    try:
+        _, events, _ = asyncio.run(
+            _prompt_bash(
+                tmp_path,
+                monkeypatch,
+                {"command": "pwd"},
+                workspace=workspace,
+            )
+        )
+    finally:
+        workspace.chmod(0o700)
+    end = _tool_end(events)
+    assert end.isError is False
+    assert dict(cast(Any, end.result.details)) == {
+        "code": "workspace_unavailable",
+        "phase": "workspace",
+        "effect": "none",
+        "workspace": os.fspath(workspace),
+    }
+
+
+def test_bash_shell_becoming_unexecutable_at_spawn_is_shell_unavailable(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    binaries = tmp_path / "bin"
+    binaries.mkdir()
+    shell = binaries / "bash"
+    shell.write_text("#!/bin/sh\n", encoding="utf-8")
+    shell.chmod(0o700)
+    original_stat = os.stat
+
+    def hide_system_bash(path: Any, *args: Any, **kwargs: Any) -> os.stat_result:
+        if isinstance(path, (str, bytes, os.PathLike)) and os.fsdecode(path) == "/bin/bash":
+            raise FileNotFoundError(errno.ENOENT, "injected")
+        return original_stat(path, *args, **kwargs)
+
+    async def denied_shell(*_args: Any, **_kwargs: Any) -> Any:
+        shell.chmod(0)
+        raise PermissionError(errno.EACCES, "injected")
+
+    monkeypatch.setattr(os, "stat", hide_system_bash)
+    monkeypatch.setattr(asyncio, "create_subprocess_exec", denied_shell)
+    monkeypatch.setenv("PATH", os.fspath(binaries))
+    try:
+        _, events, _ = asyncio.run(
+            _prompt_bash(tmp_path / "run", monkeypatch, {"command": "pwd"})
+        )
+    finally:
+        shell.chmod(0o700)
+    end = _tool_end(events)
+    assert end.isError is False
+    assert end.result.content == (TextContent(text="Bash shell is unavailable"),)
+    assert dict(cast(Any, end.result.details)) == {
+        "code": "shell_unavailable",
+        "phase": "shell",
+        "effect": "none",
+    }
+
+
 def test_bash_output_infrastructure_outcomes(
     tmp_path: Path, monkeypatch: pytest.MonkeyPatch
 ) -> None:
@@ -535,29 +783,62 @@ def test_bash_output_infrastructure_outcomes(
     assert failed.result.content[0].text == 'Tool "bash" execution failed'
 
 
+def test_bash_spill_mode_failure_closes_and_removes_the_unusable_artifact(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    spill_dir = tmp_path / "spill"
+    spill_dir.mkdir()
+    monkeypatch.setattr(tempfile, "tempdir", os.fspath(spill_dir))
+    opened_handles: list[int] = []
+
+    def denied(handle: int, mode: int) -> None:
+        assert mode == 0o600
+        opened_handles.append(handle)
+        raise OSError(errno.EACCES, "denied")
+
+    monkeypatch.setattr(os, "fchmod", denied)
+    command = (
+        f"{PYTHON} -c " + json.dumps("import sys; sys.stdout.write('a' * 61440)")
+    )
+    try:
+        _, events, _ = asyncio.run(
+            _prompt_bash(tmp_path, monkeypatch, {"command": command})
+        )
+        end = _tool_end(events)
+        assert end.isError is False
+        assert dict(cast(Any, end.result.details)) == {
+            "code": "output_unavailable",
+            "phase": "spill_create",
+            "effect": "command_may_have_effects",
+            "output": "partial",
+        }
+        assert len(opened_handles) == 1
+        with pytest.raises(OSError) as closed:
+            os.fstat(opened_handles[0])
+        assert closed.value.errno == errno.EBADF
+        assert tuple(spill_dir.iterdir()) == ()
+    finally:
+        for handle in opened_handles:
+            try:
+                os.close(handle)
+            except OSError:
+                pass
+        for path in spill_dir.iterdir():
+            path.unlink()
+
+
 def test_bash_cancellation_kills_and_does_not_publish_success(
     tmp_path: Path, monkeypatch: pytest.MonkeyPatch
 ) -> None:
-    import oh_my_coding_agent._bash as bash
-
     workspace = tmp_path / "project"
     workspace.mkdir()
-    marker = workspace / "child.pid"
-    started = asyncio.Event()
-
-    async def hold(signal: Any, pid: int) -> None:
-        del pid
-        started.set()
-        await signal.wait()
-        raise asyncio.CancelledError
-
-    monkeypatch.setattr(bash, "_after_spawn", hold)
     monkeypatch.setenv("DEEPSEEK_API_KEY", "configured")
     command = (
         f"{PYTHON} -c "
         + json.dumps(
-            "import os, time, pathlib; "
-            "pathlib.Path('child.pid').write_text(str(os.getpid())); "
+            "import os, sys, time; "
+            "sys.stdout.write(str(os.getpid()) + '\\n'); "
+            "sys.stdout.flush(); "
             "time.sleep(30)"
         )
     )
@@ -567,7 +848,7 @@ def test_bash_cancellation_kills_and_does_not_publish_success(
     )
     _install_transport(monkeypatch, transport)
 
-    async def scenario() -> Any:
+    async def scenario() -> tuple[Any, int]:
         session = (
             await createAgentSession(
                 CreateAgentSessionOptions(
@@ -579,25 +860,39 @@ def test_bash_cancellation_kills_and_does_not_publish_success(
             )
         ).session
         events: list[AgentSessionEvent] = []
-        session.subscribe(events.append)
-        prompt = asyncio.create_task(session.prompt("run"))
-        await started.wait()
-        for _ in range(50):
-            if marker.exists():
-                break
-            await asyncio.sleep(0.02)
-        await session.abort()
-        await prompt
-        end = _tool_end(events)
-        await session.dispose()
-        return end
+        ready_pid: asyncio.Future[int] = asyncio.get_running_loop().create_future()
 
-    end = asyncio.run(scenario())
+        def observe(event: AgentSessionEvent) -> None:
+            events.append(event)
+            if not isinstance(event, AgentSessionEvent.ToolExecutionUpdate):
+                return
+            if not event.partialResult.content or ready_pid.done():
+                return
+            text = event.partialResult.content[0].text.strip()
+            if text.isdigit():
+                ready_pid.set_result(int(text))
+
+        session.subscribe(observe)
+        prompt = asyncio.create_task(session.prompt("run"))
+        try:
+            pid = await ready_pid
+            await session.abort()
+            await prompt
+            return _tool_end(events), pid
+        finally:
+            if not prompt.done():
+                prompt.cancel()
+            await asyncio.gather(prompt, return_exceptions=True)
+            await session.dispose()
+
+    async def bounded() -> tuple[Any, int]:
+        return await asyncio.wait_for(scenario(), timeout=10.0)
+
+    end, pid = asyncio.run(bounded())
     assert end.isError is True
     assert end.result.content[0].text == 'Tool "bash" execution was cancelled'
-    assert marker.exists()
     with pytest.raises(OSError):
-        os.kill(int(marker.read_text()), 0)
+        os.kill(pid, 0)
 
 
 def test_bash_close_failure_is_cleanup_lifecycle_error(

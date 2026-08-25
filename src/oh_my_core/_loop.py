@@ -46,7 +46,7 @@ from oh_my_llm._streams import (
     _create_event_stream,
 )
 
-from ._tools import AgentTool, AgentToolResult
+from ._tools import _AgentToolOwnerCleanupError, AgentTool, AgentToolResult
 
 
 AgentMessage: TypeAlias = Message
@@ -1019,9 +1019,13 @@ async def _execute_tool_attempt(
     try:
         try:
             returned = tool.execute(attempt.call.id, params, signal, on_update)
+        except _AgentToolOwnerCleanupError as error:
+            raise LifecycleError(
+                "cleanup",
+                "Agent loop cleanup failed",
+                causes=(error.cause,),
+            ) from error.cause
         except Exception as error:
-            if isinstance(error, LifecycleError) and error.code == "cleanup":
-                raise
             if signal.aborted:
                 raise LifecycleError(
                     "cleanup",
@@ -1044,9 +1048,13 @@ async def _execute_tool_attempt(
         try:
             try:
                 final: object = await returned
+            except _AgentToolOwnerCleanupError as error:
+                raise LifecycleError(
+                    "cleanup",
+                    "Agent loop cleanup failed",
+                    causes=(error.cause,),
+                ) from error.cause
             except Exception as error:
-                if isinstance(error, LifecycleError) and error.code == "cleanup":
-                    raise
                 if signal.aborted:
                     raise LifecycleError(
                         "cleanup",

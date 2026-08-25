@@ -8,6 +8,14 @@ from oh_my_llm import JSONValue, TextContent, Tool
 from oh_my_llm._values import _PublicValueRecord, _bool, _sequence, _snapshot_json, _string
 
 
+class _AgentToolOwnerCleanupError(Exception):
+    __slots__ = ("cause",)
+
+    def __init__(self, cause: BaseException) -> None:
+        super().__init__("Agent Tool owner cleanup failed")
+        self.cause = cause
+
+
 @final
 @dataclass(eq=False, frozen=True, slots=True, kw_only=True)
 class AgentToolResult(_PublicValueRecord):

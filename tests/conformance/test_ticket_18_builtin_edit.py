@@ -939,18 +939,23 @@ def test_same_target_edit_and_write_serialize_while_other_work_stays_concurrent(
             )
         ).session
         events: list[AgentSessionEvent] = []
-        session.subscribe(events.append)
+        peer_finished = asyncio.Event()
+
+        def observe(event: AgentSessionEvent) -> None:
+            events.append(event)
+            if (
+                isinstance(event, AgentSessionEvent.ToolExecutionEnd)
+                and event.toolCallId in {"call-c", "call-d"}
+            ):
+                peer_finished.set()
+
+        session.subscribe(observe)
         prompt = asyncio.create_task(session.prompt("mutate"))
         await same_first.wait()
         await other_inside.wait()
         assert same_second.is_set() is False
         assert (workspace / "same.txt").read_bytes() == b"seed"
-        while not any(
-            isinstance(event, AgentSessionEvent.ToolExecutionEnd)
-            and event.toolCallId in {"call-c", "call-d"}
-            for event in events
-        ):
-            await asyncio.sleep(0)
+        await peer_finished.wait()
         assert (workspace / "same.txt").read_bytes() == b"seed"
         release_same.set()
         await prompt
@@ -967,7 +972,10 @@ def test_same_target_edit_and_write_serialize_while_other_work_stays_concurrent(
         assert (workspace / "other.txt").read_bytes() == b"other"
         await session.dispose()
 
-    asyncio.run(scenario())
+    async def bounded() -> None:
+        await asyncio.wait_for(scenario(), timeout=10.0)
+
+    asyncio.run(bounded())
 
 
 def test_edit_cancellation_before_overwrite_writes_nothing(
@@ -1201,4 +1209,3 @@ def test_ticket_18_matrix_records_edit_obligations() -> None:
             "ticket-18-installed",
         ]
         assert cases[corpus_case]["obligation"] == obligation
-

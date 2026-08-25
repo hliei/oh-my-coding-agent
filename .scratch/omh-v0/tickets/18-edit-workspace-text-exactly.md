@@ -19,4 +19,3 @@
 ## Comments
 
 - Implemented operational `edit` at the Product Session seam: closed path+edits[] admission, same-file mutation queue shared with `write`, strict-UTF-8 regular-file read with BOM-detached literal matching, overlapping-aware uniqueness, reverse-offset application, pinned `diff@8.0.4` display/unified details precomputed before overwrite, and closed identity/read/match/write Outcomes. Cancellation and injected precompute failure publish no success and do not roll back a started overwrite.
-

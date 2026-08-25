@@ -14,7 +14,8 @@ import tempfile
 from typing import Any, TypedDict, cast
 
 from oh_my_core import AgentToolResult
-from oh_my_llm import AbortSignal, JSONValue, LifecycleError, TextContent
+from oh_my_core._tools import _AgentToolOwnerCleanupError
+from oh_my_llm import AbortSignal, JSONValue, TextContent
 
 
 _MAX_OUTPUT_LINES = 2000
@@ -76,8 +77,13 @@ def _format_size(size: int) -> str:
     if size < _KIB:
         return f"{size}B"
     if size < _MIB:
-        return f"{size / _KIB:.1f}KB"
-    return f"{size / _MIB:.1f}MB"
+        unit = _KIB
+        suffix = "KB"
+    else:
+        unit = _MIB
+        suffix = "MB"
+    tenths = (size * 10 + unit // 2) // unit
+    return f"{tenths // 10}.{tenths % 10}{suffix}"
 
 
 def _ecmascript_number_text(value: int | float) -> str:
@@ -222,7 +228,9 @@ def _bash_config(shell: str) -> _ShellConfig:
 def _usable_shell(path: str) -> bool:
     try:
         status = os.stat(path)
-    except OSError:
+    except OSError as error:
+        if error.errno not in (errno.ENOENT, errno.ENOTDIR, errno.EACCES, errno.EPERM):
+            raise
         return False
     return stat.S_ISREG(status.st_mode) and os.access(path, os.X_OK)
 
@@ -304,7 +312,9 @@ def _admission_outcome(
 def _workspace_unavailable(workspace: str) -> AgentToolResult | None:
     try:
         status = os.stat(workspace)
-    except OSError:
+    except OSError as error:
+        if error.errno not in (errno.ENOENT, errno.ENOTDIR, errno.EACCES, errno.EPERM):
+            raise
         return _admission_outcome(
             "workspace_unavailable",
             "workspace",
@@ -340,7 +350,28 @@ def _spill_path() -> str:
 
 def _open_spill(path: str) -> int:
     handle = os.open(path, os.O_WRONLY | os.O_CREAT | os.O_EXCL, 0o600)
-    os.fchmod(handle, 0o600)
+    try:
+        os.fchmod(handle, 0o600)
+    except BaseException as primary:
+        cleanup_errors: list[OSError] = []
+        try:
+            os.close(handle)
+        except OSError as error:
+            cleanup_errors.append(error)
+        try:
+            os.unlink(path)
+        except FileNotFoundError:
+            pass
+        except OSError as error:
+            cleanup_errors.append(error)
+        if cleanup_errors:
+            cause: BaseException = (
+                cleanup_errors[0]
+                if len(cleanup_errors) == 1
+                else ExceptionGroup("Bash spill cleanup failed", cleanup_errors)
+            )
+            raise _AgentToolOwnerCleanupError(cause) from primary
+        raise
     return handle
 
 
@@ -423,11 +454,23 @@ async def _spawn_process(
     try:
         process = await asyncio.create_subprocess_exec(config.shell, *argv, **kwargs)
     except FileNotFoundError as error:
-        raise _OutputFault("shell", OSError(errno.ENOENT, os.strerror(errno.ENOENT))) from error
+        phase = (
+            "workspace"
+            if _workspace_unavailable(workspace) is not None
+            else "shell"
+        )
+        raise _OutputFault(
+            phase, OSError(errno.ENOENT, os.strerror(errno.ENOENT))
+        ) from error
     except PermissionError as error:
         denied = OSError(errno.EACCES, os.strerror(errno.EACCES))
         denied.errno = errno.EACCES
-        raise _OutputFault("spawn", denied) from error
+        phase = (
+            "workspace"
+            if _workspace_unavailable(workspace) is not None
+            else "shell" if not _usable_shell(config.shell) else "spawn"
+        )
+        raise _OutputFault(phase, denied) from error
     except ValueError as error:
         raise _OutputFault("command", OSError(errno.EINVAL, str(error))) from error
     except OSError as error:
@@ -645,7 +688,7 @@ class _UpdateThrottle:
         if not self._open or self._signal.aborted:
             return
         self._dirty = True
-        delay = _BASH_UPDATE_THROTTLE_S - (self._loop.time() - self._last)
+        delay = _BASH_UPDATE_THROTTLE_S - (_throttle_time(self._loop) - self._last)
         if delay <= 0:
             self._cancel()
             self._emit()
@@ -668,7 +711,7 @@ class _UpdateThrottle:
         if not self._open or self._signal.aborted or not self._dirty:
             return
         self._dirty = False
-        self._last = self._loop.time()
+        self._last = _throttle_time(self._loop)
         try:
             snapshot = self._accumulator.snapshot(persist_if_truncated=True)
         except _OutputFault as fault:
@@ -689,6 +732,10 @@ class _UpdateThrottle:
                 terminate=None,
             )
         )
+
+
+def _throttle_time(loop: asyncio.AbstractEventLoop) -> float:
+    return loop.time()
 
 
 def _truncation_notice(snapshot: _OutputSnapshot, last_line_bytes: int) -> str:
@@ -845,6 +892,13 @@ async def execute_bash(
             return _admission_outcome(
                 "invalid_command", "command", "Bash command is invalid"
             )
+        if fault.phase == "workspace":
+            return _admission_outcome(
+                "workspace_unavailable",
+                "workspace",
+                f"Bash Workspace {_quote(workspace)} is unavailable",
+                {"workspace": workspace},
+            )
         if fault.phase == "shell":
             return _admission_outcome(
                 "shell_unavailable", "shell", "Bash shell is unavailable"
@@ -875,11 +929,7 @@ async def execute_bash(
                 await process.stderr.read()
             await process.wait()
         except OSError as error:
-            raise LifecycleError(
-                "cleanup",
-                "Agent loop cleanup failed",
-                causes=(error,),
-            ) from error
+            raise _AgentToolOwnerCleanupError(error) from error
         raise
 
 
@@ -1016,11 +1066,7 @@ async def _collect_bash_result(
         except _OutputFault as fault:
             cleanup_error = fault.error if cleanup_error is None else cleanup_error
         if cleanup_error is not None:
-            raise LifecycleError(
-                "cleanup",
-                "Agent loop cleanup failed",
-                causes=(cleanup_error,),
-            ) from cleanup_error
+            raise _AgentToolOwnerCleanupError(cleanup_error) from cleanup_error
         if interrupted or signal.aborted:
             raise asyncio.CancelledError
         if unclassified is not None:
@@ -1040,26 +1086,14 @@ async def _collect_bash_result(
     except _OutputFault as fault:
         accumulator.abandon_temp_file()
         if cleanup_error is not None:
-            raise LifecycleError(
-                "cleanup",
-                "Agent loop cleanup failed",
-                causes=(cleanup_error,),
-            ) from cleanup_error
+            raise _AgentToolOwnerCleanupError(cleanup_error) from cleanup_error
         if _recognized_output_error(fault.error):
             return _infra_from_fault(
                 accumulator.snapshot(persist_if_truncated=False), fault
             )
-        raise LifecycleError(
-            "cleanup",
-            "Agent loop cleanup failed",
-            causes=(fault.error,),
-        ) from fault.error
+        raise _AgentToolOwnerCleanupError(fault.error) from fault.error
     if cleanup_error is not None:
-        raise LifecycleError(
-            "cleanup",
-            "Agent loop cleanup failed",
-            causes=(cleanup_error,),
-        ) from cleanup_error
+        raise _AgentToolOwnerCleanupError(cleanup_error) from cleanup_error
     if signal.aborted:
         if not throttle.exposed_spill:
             accumulator.abandon_temp_file()

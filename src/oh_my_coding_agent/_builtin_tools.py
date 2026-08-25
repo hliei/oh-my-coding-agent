@@ -17,7 +17,8 @@ from oh_my_coding_agent._edit_diff import (
     generate_unified_patch,
 )
 from oh_my_core import AgentTool, AgentToolResult
-from oh_my_llm import AbortSignal, JSONValue, LifecycleError, TextContent
+from oh_my_core._tools import _AgentToolOwnerCleanupError
+from oh_my_llm import AbortSignal, JSONValue, TextContent
 
 
 _SAFE_INTEGER = 2**53 - 1
@@ -197,8 +198,13 @@ def _format_size(size: int) -> str:
     if size < _KIB:
         return f"{size}B"
     if size < _MIB:
-        return f"{size / _KIB:.1f}KB"
-    return f"{size / _MIB:.1f}MB"
+        unit = _KIB
+        suffix = "KB"
+    else:
+        unit = _MIB
+        suffix = "MB"
+    tenths = (size * 10 + unit // 2) // unit
+    return f"{tenths // 10}.{tenths % 10}{suffix}"
 
 
 def _stat_path(path: str) -> os.stat_result:
@@ -457,11 +463,7 @@ async def execute_read(
             try:
                 _close_handle(handle)
             except OSError as error:
-                raise LifecycleError(
-                    "cleanup",
-                    "Agent loop cleanup failed",
-                    causes=(error,),
-                ) from error
+                raise _AgentToolOwnerCleanupError(error) from error
     _raise_if_cancelled(signal)
     if io_error is not None:
         return _classify_open_error(io_error, path)
@@ -508,7 +510,7 @@ def _makedirs(path: str) -> None:
 
 
 def _open_write(path: str) -> int:
-    return os.open(path, os.O_WRONLY | os.O_CREAT | os.O_TRUNC)
+    return os.open(path, os.O_WRONLY | os.O_CREAT | os.O_TRUNC, 0o666)
 
 
 def _write_outcome(
@@ -681,11 +683,7 @@ async def execute_write(
                 try:
                     _close_handle(handle)
                 except OSError as error:
-                    raise LifecycleError(
-                        "cleanup",
-                        "Agent loop cleanup failed",
-                        causes=(error,),
-                    ) from error
+                    raise _AgentToolOwnerCleanupError(error) from error
         _raise_if_cancelled(signal)
         if io_error is not None:
             return _classify_write_error(io_error, path, "write")
@@ -945,11 +943,7 @@ async def execute_edit(
                 try:
                     _close_handle(handle)
                 except OSError as error:
-                    raise LifecycleError(
-                        "cleanup",
-                        "Agent loop cleanup failed",
-                        causes=(error,),
-                    ) from error
+                    raise _AgentToolOwnerCleanupError(error) from error
         _raise_if_cancelled(signal)
         if io_error is not None:
             return _classify_edit_error(io_error, path, "read")
@@ -1000,11 +994,7 @@ async def execute_edit(
                 try:
                     _close_handle(write_handle)
                 except OSError as error:
-                    raise LifecycleError(
-                        "cleanup",
-                        "Agent loop cleanup failed",
-                        causes=(error,),
-                    ) from error
+                    raise _AgentToolOwnerCleanupError(error) from error
         _raise_if_cancelled(signal)
         if write_error is not None:
             return _classify_edit_error(

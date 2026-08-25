@@ -481,7 +481,7 @@ def test_read_truncates_complete_lines_and_never_spills(
     row = "a" * 80
     byte_file.write_text("\n".join([row] * 640), encoding="utf-8")
     huge_file = workspace / "huge-line.txt"
-    huge_file.write_bytes(b"b" * 51_201)
+    huge_file.write_bytes(b"b" * 52_480)
     before = {path: path.stat().st_mtime_ns for path in workspace.iterdir()}
 
     def read(path: str) -> Any:
@@ -517,7 +517,7 @@ def test_read_truncates_complete_lines_and_never_spills(
     assert huge_result.content == (
         TextContent(
             text=(
-                "[Line 1 is 50.0KB, exceeds 50.0KB limit. Use bash for an "
+                "[Line 1 is 51.3KB, exceeds 50.0KB limit. Use bash for an "
                 "explicit bounded byte-range read.]"
             )
         ),
