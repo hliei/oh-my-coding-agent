@@ -784,6 +784,78 @@
       "comparator": "compare same-key serialization and cross-key/read concurrency directly against the fixed Reference file-mutation queue",
       "normalization": "ignore scheduling jitter; compare ownership overlap and final bytes",
       "referenceCitations": ["packages/coding-agent/src/core/tools/file-mutation-queue.ts#L16-L31", "packages/coding-agent/src/core/tools/write.ts#L194-L225"]
+    },
+    {
+      "id": "reference.strict-edit-arguments",
+      "captureCaseId": "capture.strict-edit-arguments",
+      "obligation": "omh-v0.strict-edit-arguments",
+      "referenceRevision": "0e6909f050eeb15e8f6c05185511f3788357ddb3",
+      "canonicalInput": "edit with an empty edits array, legacy top-level oldText/newText, a JSON-string edits array, and empty oldText against an existing file",
+      "observations": {"A": "private prepareArguments repairs JSON-string edits and folds legacy fields", "L": ["tool_execution_end"], "T": "repaired execute or thrown invalid input", "E": "may mutate after repair", "C": "file may change"},
+      "omhExpectation": {"A": "declared path+edits[] only", "C": "target_unchanged", "E": {"mutated": false}, "L": ["tool_execution_end"], "T": {"emptyEditsIsError": true, "emptyOldTextIsError": true, "jsonStringEditsIsError": true, "legacyTopLevelIsError": true}},
+      "comparator": "direct declared-shape inputs compare normally; legacy/string/empty forms contrast Reference repair with omh schema failure",
+      "normalization": "ABD:strict-edit-arguments and PA:json-schema-mapping",
+      "referenceCitations": ["packages/coding-agent/src/core/tools/edit.ts#L33-L53", "packages/coding-agent/src/core/tools/edit.ts#L94-L124"]
+    },
+    {
+      "id": "reference.literal-edit-text",
+      "captureCaseId": "capture.literal-edit-text",
+      "obligation": "omh-v0.literal-edit-text",
+      "referenceRevision": "0e6909f050eeb15e8f6c05185511f3788357ddb3",
+      "canonicalInput": "unique LF replacement, BOM restore, CRLF and Unicode/quote fuzzy mismatches, overlapping aa in aaa, reverse multi-edit, and no-change",
+      "observations": {"A": "replacement-decode, CRLF normalization, and fuzzy match", "L": ["tool_execution_end"], "T": "normalized match or split-based uniqueness", "E": "newline style restored; overlapping starts may be missed", "C": "file rewritten"},
+      "omhExpectation": {"A": "literal unique non-overlapping edits admitted", "C": "bom_restored_and_rejections_unwritten", "E": {"bomPreserved": true, "crlfRejected": true, "fuzzyUnicodeRejected": true, "noChangeWritten": false, "simpleBytes": true}, "L": ["tool_execution_end"], "T": {"firstChangedLine": 2, "isError": false, "occurrences": 2, "simpleDiff": " 1 alpha\n-2 bravo\n+2 BRAND\n 3 charlie", "simplePatch": "--- note.txt\n+++ note.txt\n@@ -1,3 +1,3 @@\n alpha\n-bravo\n+BRAND\n charlie\n", "success": "Successfully replaced 1 block(s) in note.txt."}},
+      "comparator": "shared LF unique matches compare final bytes and pinned diff/patch; fuzzy/overlap rows contrast Reference normalization with omh Outcomes",
+      "normalization": "ABD:literal-edit-text",
+      "referenceCitations": ["packages/coding-agent/src/core/tools/edit.ts#L323-L359", "packages/coding-agent/src/core/tools/edit-diff.ts#L10-L53", "packages/coding-agent/src/core/tools/edit-diff.ts#L295-L365", "packages/coding-agent/src/core/tools/edit-diff.ts#L368-L503"]
+    },
+    {
+      "id": "reference.precomputed-edit-result",
+      "captureCaseId": "capture.precomputed-edit-result",
+      "obligation": "omh-v0.precomputed-edit-result",
+      "referenceRevision": "0e6909f050eeb15e8f6c05185511f3788357ddb3",
+      "canonicalInput": "inject result construction failure before overwrite, cancel before overwrite, and drain a started overwrite",
+      "observations": {"A": "write then compute diff/patch", "L": ["tool_execution_end"], "T": "computation failure may follow a completed write", "E": "file may already be replaced", "C": "later continuity ambiguous"},
+      "omhExpectation": {"A": "admitted unique replacement", "C": "session_reusable", "E": {"heldUnchanged": true, "precomputeUnchanged": true, "startedOverwriteMayComplete": true}, "L": ["tool_execution_end"], "T": {"cancelledIsError": true, "precomputeIsError": true, "successPublished": false}},
+      "comparator": "ordinary success compares file/diff/result; injected precompute/cancel contrast Reference write-then-diff with omh no-write precompute failure",
+      "normalization": "ABD:precomputed-edit-result and ABD:managed-run-cancellation",
+      "referenceCitations": ["packages/coding-agent/src/core/tools/edit.ts#L346-L360"]
+    },
+    {
+      "id": "reference.actionable-edit-outcomes",
+      "captureCaseId": "capture.actionable-edit-outcomes",
+      "obligation": "omh-v0.actionable-edit-outcomes",
+      "referenceRevision": "0e6909f050eeb15e8f6c05185511f3788357ddb3",
+      "canonicalInput": "edit missing, directory, symlink loop, unreadable, read-only, invalid UTF-8, decoded NUL, injected ENOSPC, and EIO",
+      "observations": {"A": "expected filesystem and matching errors throw", "L": ["tool_execution_end"], "T": {"isError": true, "genericFailure": true}, "E": "write may have started", "C": "agent continues with execution error"},
+      "omhExpectation": {"A": "expected negatives admitted", "C": "session_reusable", "E": {"identityWrote": false}, "L": ["tool_execution_end"], "T": {"deniedCode": "not_writable", "directoryCode": "not_regular", "invalidCode": "invalid_path", "missingCode": "not_found", "missingIsError": false, "storageCode": "storage_full", "storagePhase": "write", "textCode": "not_text", "unexpectedIoIsError": true}},
+      "comparator": "map Reference thrown expected negatives to omh ordinary Outcomes; keep EIO as Tool Failure",
+      "normalization": "ABD:actionable-built-in-outcomes",
+      "referenceCitations": ["packages/coding-agent/src/core/tools/edit.ts#L308-L361"]
+    },
+    {
+      "id": "reference.literal-tool-paths-edit",
+      "captureCaseId": "capture.literal-tool-paths-edit",
+      "obligation": "omh-v0.literal-tool-paths-edit",
+      "referenceRevision": "0e6909f050eeb15e8f6c05185511f3788357ddb3",
+      "canonicalInput": "edit a Workspace-relative file, an absolute path outside Workspace, a .. path, a literal tilde path, and a symlink",
+      "observations": {"A": "tilde/file-URL/@ expansion", "L": ["tool_execution_end"], "T": "resolved or expanded target", "E": "I/O may follow expanded spelling", "C": "cwd unchanged"},
+      "omhExpectation": {"A": "literal nonempty NUL-free paths admitted", "C": "workspace_unchanged_as_identity", "E": {"homeExpanded": false, "sandboxRejected": false}, "L": ["tool_execution_end"], "T": {"absoluteOutsideWorkspace": "via-dot-dot", "dotDot": "via-dot-dot", "literalTilde": "literal-tilde", "symlinkPreserved": true, "symlinkTarget": "through-link"}},
+      "comparator": "compare exact lexical target bytes; contrast Reference expansion with omh exact-name success",
+      "normalization": "ABD:literal-tool-paths",
+      "referenceCitations": ["packages/coding-agent/src/utils/paths.ts#L48-L83", "packages/coding-agent/src/core/tools/path-utils.ts#L8-L81", "packages/coding-agent/src/core/tools/edit.ts#L308-L361"]
+    },
+    {
+      "id": "reference.edit-mutation-serialization",
+      "captureCaseId": "capture.edit-mutation-serialization",
+      "obligation": "omh-v0.edit-mutation-serialization",
+      "referenceRevision": "0e6909f050eeb15e8f6c05185511f3788357ddb3",
+      "canonicalInput": "parallel batch of one edit and one write to the same existing file, one write to a different file, and one read",
+      "observations": {"A": "parallel built-ins plus same-file queue", "L": ["tool_execution_end"], "T": "source-ordered Results", "E": "same-key edit/write serialize; other keys and reads remain concurrent", "C": "queue is process-local"},
+      "omhExpectation": {"A": "parallel batch admitted", "C": "same_key_serialized_other_keys_concurrent", "E": {"otherFinal": "other", "peerCompletedWhileHeld": true, "sameFinal": "second", "seedWhileHeld": true}, "L": ["tool_execution_end"], "T": {"errors": {"call-a": false, "call-b": false, "call-c": false, "call-d": false}, "secondWaited": true}},
+      "comparator": "compare same-key serialization and cross-key/read concurrency directly against the fixed Reference file-mutation queue",
+      "normalization": "ignore scheduling jitter; compare ownership overlap and final bytes",
+      "referenceCitations": ["packages/coding-agent/src/core/tools/file-mutation-queue.ts#L16-L31", "packages/coding-agent/src/core/tools/edit.ts#L308-L361", "packages/coding-agent/src/core/tools/write.ts#L194-L225"]
     }
   ]
 }

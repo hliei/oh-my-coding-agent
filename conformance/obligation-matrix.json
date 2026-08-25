@@ -794,6 +794,78 @@
       "evidenceClass": "exact-parity",
       "corpusCase": "reference.write-mutation-serialization",
       "executableCases": ["ticket-17-write", "ticket-17-installed"]
+    },
+    {
+      "id": "omh-v0.strict-edit-arguments",
+      "authority": ".scratch/omh-v0/issues/10-choose-coding-tools-and-workspace-contract.md#ABD:strict-edit-arguments",
+      "publicInterface": "oh_my_coding_agent.AgentSession.prompt edit Tool",
+      "scenario": "reject empty edits, legacy top-level oldText/newText, a JSON-string edits array, and empty oldText before execute",
+      "observations": {"A": "only path plus a nonempty closed edits array is admitted", "L": "schema Tool Failure before execute", "T": "redacted validation failure", "E": "target bytes unchanged", "C": "later valid edit remains available"},
+      "comparator": "direct declared-shape inputs compare normally; legacy/string/empty forms contrast Reference repair with omh pre-execution schema failure",
+      "normalization": "ABD:strict-edit-arguments and PA:json-schema-mapping",
+      "evidenceClass": "ABD:strict-edit-arguments",
+      "corpusCase": "reference.strict-edit-arguments",
+      "executableCases": ["ticket-18-edit", "ticket-18-installed"]
+    },
+    {
+      "id": "omh-v0.literal-edit-text",
+      "authority": ".scratch/omh-v0/issues/10-choose-coding-tools-and-workspace-contract.md#ABD:literal-edit-text",
+      "publicInterface": "oh_my_coding_agent.AgentSession.prompt edit Tool",
+      "scenario": "apply unique LF replacements with Reference-identical diff/patch, restore BOM, reject CRLF/Unicode/quote fuzzy matches, overlapping aa-in-aaa, and no-change",
+      "observations": {"A": "literal unique non-overlapping edits admitted", "L": "ordinary Tool Outcome with no updates", "T": "success text plus comparator-exact details, or match Outcomes", "E": "byte-preserving untouched substrings; rejections write nothing", "C": "BOM restored; later edit/read sees the admitted snapshot"},
+      "comparator": "shared LF unique matches compare final bytes and pinned generateDiffString/generateUnifiedPatch bytes; fuzzy/newline/overlap rows contrast Reference normalization with omh exact match/Outcome",
+      "normalization": "ABD:literal-edit-text; omh-only CRLF/Unicode cases use the same comparator without normalization",
+      "evidenceClass": "ABD:literal-edit-text",
+      "corpusCase": "reference.literal-edit-text",
+      "executableCases": ["ticket-18-edit", "ticket-18-installed"]
+    },
+    {
+      "id": "omh-v0.precomputed-edit-result",
+      "authority": ".scratch/omh-v0/issues/10-choose-coding-tools-and-workspace-contract.md#ABD:precomputed-edit-result",
+      "publicInterface": "oh_my_coding_agent.AgentSession.prompt edit Tool",
+      "scenario": "inject a result-construction failure before overwrite, cancel before overwrite, and drain a started overwrite",
+      "observations": {"A": "admitted unique replacement", "L": "Tool Failure for injected computation and cancellation", "T": "no success publication", "E": "precompute/cancel-before-write leave the file unchanged; a started overwrite may complete", "C": "queue released; Session remains reusable"},
+      "comparator": "ordinary success compares file/diff/result; injected precompute/cancel contrast Reference write-then-diff with omh no-write precompute failure",
+      "normalization": "ABD:precomputed-edit-result and ABD:managed-run-cancellation",
+      "evidenceClass": "ABD:precomputed-edit-result",
+      "corpusCase": "reference.precomputed-edit-result",
+      "executableCases": ["ticket-18-edit", "ticket-18-installed"]
+    },
+    {
+      "id": "omh-v0.actionable-edit-outcomes",
+      "authority": ".scratch/omh-v0/issues/10-choose-coding-tools-and-workspace-contract.md#ABD:actionable-built-in-outcomes",
+      "publicInterface": "oh_my_coding_agent.AgentSession.prompt edit Tool",
+      "scenario": "edit missing, directory, symlink-loop, unreadable, read-only, non-text, NUL, injected storage-full, and unexpected I/O targets",
+      "observations": {"A": "expected negatives admitted as Results", "L": "Tool end with isError false for Outcomes and true for unexpected I/O", "T": "closed codes/phase/effect and match indexes without errno leakage", "E": "identity/read/match rejects write nothing", "C": "Session remains reusable"},
+      "comparator": "map Reference thrown filesystem/match errors to omh ordinary Outcomes; keep EIO as Tool Failure",
+      "normalization": "ABD:actionable-built-in-outcomes",
+      "evidenceClass": "ABD:actionable-built-in-outcomes",
+      "corpusCase": "reference.actionable-edit-outcomes",
+      "executableCases": ["ticket-18-edit", "ticket-18-installed"]
+    },
+    {
+      "id": "omh-v0.literal-tool-paths-edit",
+      "authority": ".scratch/omh-v0/issues/10-choose-coding-tools-and-workspace-contract.md#ABD:literal-tool-paths",
+      "publicInterface": "oh_my_coding_agent.AgentSession.prompt edit Tool",
+      "scenario": "edit relative Workspace paths, absolute and .. paths outside Workspace, a literal tilde name, and a symlink target",
+      "observations": {"A": "nonempty NUL-free literal paths admitted", "L": "ordinary Tool Outcome", "T": "unquoted original path on success", "E": "host overwrite at the lexically resolved name without sandbox rejection", "C": "Workspace identity unchanged; symlink spelling preserved"},
+      "comparator": "compare exact lexical target bytes and public original path; contrast Reference tilde/file-URL/@ expansion with omh exact-name addressing",
+      "normalization": "ABD:literal-tool-paths; normalize only platform separators",
+      "evidenceClass": "ABD:literal-tool-paths",
+      "corpusCase": "reference.literal-tool-paths-edit",
+      "executableCases": ["ticket-18-edit", "ticket-18-installed"]
+    },
+    {
+      "id": "omh-v0.edit-mutation-serialization",
+      "authority": ".scratch/omh-v0/issues/10-choose-coding-tools-and-workspace-contract.md#same-file-mutation-queue",
+      "publicInterface": "oh_my_coding_agent.AgentSession.prompt edit Tool",
+      "scenario": "run a parallel batch of one edit and one write to the same existing target, one write to a different file, and one read",
+      "observations": {"A": "parallel built-in batch admitted", "L": "same-key edit/write do not overlap inside execute; unrelated write and read may complete while the first same-key mutation is held", "T": "all four Tool Outcomes succeed", "E": "final same-target bytes are the later complete write; the other file is written concurrently", "C": "queue identity remains process-local"},
+      "comparator": "compare same-key serialization and cross-key/read concurrency against the fixed Reference file-mutation queue",
+      "normalization": "ignore scheduling jitter; compare ownership overlap, final bytes, and peer completion while the first same-key mutation is held",
+      "evidenceClass": "exact-parity",
+      "corpusCase": "reference.edit-mutation-serialization",
+      "executableCases": ["ticket-18-edit", "ticket-18-installed"]
     }
   ]
 }
