@@ -11,6 +11,7 @@ from typing import Any, cast
 
 import httpx
 
+import oh_my_coding_agent._tools.output as bash_output
 from oh_my_coding_agent import (
     AgentSessionEvent,
     CreateAgentSessionOptions,
@@ -269,7 +270,7 @@ async def _spill(root: Path) -> dict[str, object]:
 
 
 async def _outcomes(root: Path) -> dict[str, object]:
-    import oh_my_coding_agent._bash as bash
+    import oh_my_coding_agent._tools.bash as bash
 
     nonzero, _, _ = await _one_bash(root / "nz", {"command": "exit 7"})
     timed, _, workspace = await _one_bash(
@@ -314,8 +315,8 @@ async def _outcomes(root: Path) -> dict[str, object]:
         error.errno = errno.ENOSPC
         raise error
 
-    previous_open = bash._open_spill
-    setattr(bash, "_open_spill", full)
+    previous_open = bash_output._open_spill
+    setattr(bash_output, "_open_spill", full)
     storage, _, _ = await _one_bash(
         root / "full",
         {
@@ -330,7 +331,7 @@ async def _outcomes(root: Path) -> dict[str, object]:
         error.errno = errno.EIO
         raise error
 
-    setattr(bash, "_open_spill", boom)
+    setattr(bash_output, "_open_spill", boom)
     unexpected, _, _ = await _one_bash(
         root / "eio",
         {
@@ -339,7 +340,7 @@ async def _outcomes(root: Path) -> dict[str, object]:
             )
         },
     )
-    setattr(bash, "_open_spill", previous_open)
+    setattr(bash_output, "_open_spill", previous_open)
     del missing_shell
     return {
         "A": "expected negatives admitted",

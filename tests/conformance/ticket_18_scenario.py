@@ -10,6 +10,7 @@ from typing import Any, cast
 
 import httpx
 
+import oh_my_coding_agent._tools.mutation_queue as mutation_queue
 from oh_my_coding_agent import (
     AgentSessionEvent,
     CreateAgentSessionOptions,
@@ -250,7 +251,7 @@ async def _literal(root: Path) -> dict[str, object]:
 
 
 async def _precomputed(root: Path) -> dict[str, object]:
-    import oh_my_coding_agent._builtin_tools as builtin_tools
+    import oh_my_coding_agent._tools.edit as builtin_tools
 
     workspace = root / "project"
     workspace.mkdir(parents=True, exist_ok=True)
@@ -288,8 +289,8 @@ async def _precomputed(root: Path) -> dict[str, object]:
         await signal.wait()
         raise asyncio.CancelledError
 
-    previous_hold = builtin_tools._after_queue_hold
-    setattr(builtin_tools, "_after_queue_hold", hold)
+    previous_hold = mutation_queue.after_queue_hold
+    setattr(mutation_queue, "after_queue_hold", hold)
     try:
         session = (
             await createAgentSession(
@@ -310,7 +311,7 @@ async def _precomputed(root: Path) -> dict[str, object]:
         cancelled = _tool_end(events)
         await session.dispose()
     finally:
-        setattr(builtin_tools, "_after_queue_hold", previous_hold)
+        setattr(mutation_queue, "after_queue_hold", previous_hold)
         setattr(httpx, "AsyncClient", original)
 
     (workspace / "partial.txt").write_bytes(b"old")
@@ -389,7 +390,7 @@ async def _precomputed(root: Path) -> dict[str, object]:
 
 
 async def _outcomes(root: Path) -> dict[str, object]:
-    import oh_my_coding_agent._builtin_tools as builtin_tools
+    import oh_my_coding_agent._tools.edit as builtin_tools
 
     workspace = root / "project"
     workspace.mkdir(parents=True, exist_ok=True)
@@ -511,7 +512,7 @@ async def _literal_paths(root: Path) -> dict[str, object]:
 
 
 async def _serialize(root: Path) -> dict[str, object]:
-    import oh_my_coding_agent._builtin_tools as builtin_tools
+    import oh_my_coding_agent._tools.edit as builtin_tools
 
     workspace = root / "project"
     workspace.mkdir(parents=True, exist_ok=True)
@@ -522,7 +523,7 @@ async def _serialize(root: Path) -> dict[str, object]:
     other_inside = asyncio.Event()
     release_same = asyncio.Event()
     same_holders = 0
-    original_hold = builtin_tools._after_queue_hold
+    original_hold = mutation_queue.after_queue_hold
 
     async def gated(signal: Any, key: str) -> None:
         nonlocal same_holders
@@ -537,7 +538,7 @@ async def _serialize(root: Path) -> dict[str, object]:
             other_inside.set()
         await original_hold(signal, key)
 
-    setattr(builtin_tools, "_after_queue_hold", gated)
+    setattr(mutation_queue, "after_queue_hold", gated)
     transport = _ScriptedTransport(
         _tool_calls_sse(
             (
@@ -606,7 +607,7 @@ async def _serialize(root: Path) -> dict[str, object]:
             "C": "same_key_serialized_other_keys_concurrent",
         }
     finally:
-        setattr(builtin_tools, "_after_queue_hold", original_hold)
+        setattr(mutation_queue, "after_queue_hold", original_hold)
         setattr(httpx, "AsyncClient", original_client)
 
 

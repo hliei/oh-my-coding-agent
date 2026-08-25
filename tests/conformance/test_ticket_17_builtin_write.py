@@ -10,6 +10,7 @@ from typing import Any, cast
 import httpx
 import pytest
 
+import oh_my_coding_agent._tools.mutation_queue as mutation_queue
 from oh_my_coding_agent import (
     AgentSessionEvent,
     CreateAgentSessionOptions,
@@ -489,7 +490,7 @@ def test_write_returns_actionable_outcomes_with_truthful_effects(
     )
     assert readonly.read_bytes() == b"keep"
 
-    import oh_my_coding_agent._builtin_tools as builtin_tools
+    import oh_my_coding_agent._tools.write as builtin_tools
 
     def full(_handle: int, _data: bytes) -> int:
         raise OSError(errno.ENOSPC, "injected")
@@ -531,7 +532,7 @@ def test_write_returns_actionable_outcomes_with_truthful_effects(
 def test_same_target_writes_serialize_while_other_work_stays_concurrent(
     tmp_path: Path, monkeypatch: pytest.MonkeyPatch
 ) -> None:
-    import oh_my_coding_agent._builtin_tools as builtin_tools
+    import oh_my_coding_agent._tools.write as builtin_tools
 
     workspace = tmp_path / "project"
     workspace.mkdir()
@@ -542,7 +543,7 @@ def test_same_target_writes_serialize_while_other_work_stays_concurrent(
     other_inside = asyncio.Event()
     release_same = asyncio.Event()
     same_holders = 0
-    original = builtin_tools._after_queue_hold
+    original = mutation_queue.after_queue_hold
 
     async def gated(signal: Any, key: str) -> None:
         nonlocal same_holders
@@ -557,7 +558,7 @@ def test_same_target_writes_serialize_while_other_work_stays_concurrent(
             other_inside.set()
         await original(signal, key)
 
-    monkeypatch.setattr(builtin_tools, "_after_queue_hold", gated)
+    monkeypatch.setattr(mutation_queue, "after_queue_hold", gated)
 
     async def scenario() -> None:
         monkeypatch.setenv("DEEPSEEK_API_KEY", "configured")
@@ -624,7 +625,7 @@ def test_same_target_writes_serialize_while_other_work_stays_concurrent(
 def test_write_cancellation_before_effect_creates_nothing(
     tmp_path: Path, monkeypatch: pytest.MonkeyPatch
 ) -> None:
-    import oh_my_coding_agent._builtin_tools as builtin_tools
+    import oh_my_coding_agent._tools.write as builtin_tools
 
     workspace = tmp_path / "project"
     workspace.mkdir()
@@ -644,7 +645,7 @@ def test_write_cancellation_before_effect_creates_nothing(
         await signal.wait()
         raise asyncio.CancelledError
 
-    monkeypatch.setattr(builtin_tools, "_after_queue_hold", hold)
+    monkeypatch.setattr(mutation_queue, "after_queue_hold", hold)
 
     async def scenario() -> None:
         session = (
@@ -678,7 +679,7 @@ def test_write_cancellation_before_effect_creates_nothing(
 def test_write_cancellation_drains_started_phases_without_rollback_or_success(
     tmp_path: Path, monkeypatch: pytest.MonkeyPatch
 ) -> None:
-    import oh_my_coding_agent._builtin_tools as builtin_tools
+    import oh_my_coding_agent._tools.write as builtin_tools
 
     workspace = tmp_path / "project"
     workspace.mkdir()
@@ -786,7 +787,7 @@ def test_write_schema_rejection_and_unexpected_io_remain_tool_failures(
     assert missing_error is True
     assert missing_text.startswith('Validation failed for tool "write":')
 
-    import oh_my_coding_agent._builtin_tools as builtin_tools
+    import oh_my_coding_agent._tools.write as builtin_tools
 
     def boom(path: str) -> int:
         del path
@@ -801,7 +802,7 @@ def test_write_schema_rejection_and_unexpected_io_remain_tool_failures(
 def test_write_cleanup_failure_is_a_lifecycle_cleanup_error(
     tmp_path: Path, monkeypatch: pytest.MonkeyPatch
 ) -> None:
-    import oh_my_coding_agent._builtin_tools as builtin_tools
+    import oh_my_coding_agent._tools.write as builtin_tools
 
     workspace = tmp_path / "project"
     workspace.mkdir()

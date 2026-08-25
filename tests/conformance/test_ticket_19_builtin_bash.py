@@ -13,6 +13,7 @@ from typing import Any, cast
 import httpx
 import pytest
 
+import oh_my_coding_agent._tools.output as bash_output
 from oh_my_coding_agent import (
     AgentSessionEvent,
     CreateAgentSessionOptions,
@@ -260,7 +261,7 @@ def test_bash_returns_empty_output_and_merged_streams(
 def test_bash_emits_cumulative_throttled_updates(
     tmp_path: Path, monkeypatch: pytest.MonkeyPatch
 ) -> None:
-    import oh_my_coding_agent._bash as bash
+    import oh_my_coding_agent._tools.bash as bash
 
     release_two = tmp_path / "release-two"
     release_three = tmp_path / "release-three"
@@ -271,7 +272,7 @@ def test_bash_emits_cumulative_throttled_updates(
         os.open(release_three, os.O_RDWR | os.O_NONBLOCK),
     )
     clock = [1.0]
-    monkeypatch.setattr(bash, "_throttle_time", lambda _loop: clock[0])
+    monkeypatch.setattr(bash_output, "_throttle_time", lambda _loop: clock[0])
     command = (
         f"{PYTHON} -c "
         + json.dumps(
@@ -524,7 +525,7 @@ def test_bash_pre_spawn_outcomes(
         f"Bash Workspace {json.dumps(os.fspath(workspace))} is unavailable"
     )
 
-    import oh_my_coding_agent._bash as bash
+    import oh_my_coding_agent._tools.bash as bash
 
     monkeypatch.setattr(bash, "resolve_shell", lambda: None)
     _, shell_events, _ = asyncio.run(
@@ -728,14 +729,14 @@ def test_bash_shell_becoming_unexecutable_at_spawn_is_shell_unavailable(
 def test_bash_output_infrastructure_outcomes(
     tmp_path: Path, monkeypatch: pytest.MonkeyPatch
 ) -> None:
-    import oh_my_coding_agent._bash as bash
+    import oh_my_coding_agent._tools.bash as bash
 
     def full(_path: str) -> int:
         error = OSError(errno.ENOSPC, "full")
         error.errno = errno.ENOSPC
         raise error
 
-    monkeypatch.setattr(bash, "_open_spill", full)
+    monkeypatch.setattr(bash_output, "_open_spill", full)
     command = (
         f"{PYTHON} -c " + json.dumps("import sys; sys.stdout.write('a' * 61440)")
     )
@@ -759,7 +760,7 @@ def test_bash_output_infrastructure_outcomes(
         error.errno = errno.EACCES
         raise error
 
-    monkeypatch.setattr(bash, "_open_spill", refused)
+    monkeypatch.setattr(bash_output, "_open_spill", refused)
     _, denied_events, _ = asyncio.run(
         _prompt_bash(tmp_path, monkeypatch, {"command": command})
     )
@@ -774,7 +775,7 @@ def test_bash_output_infrastructure_outcomes(
         error.errno = errno.EIO
         raise error
 
-    monkeypatch.setattr(bash, "_open_spill", boom)
+    monkeypatch.setattr(bash_output, "_open_spill", boom)
     _, fail_events, _ = asyncio.run(
         _prompt_bash(tmp_path, monkeypatch, {"command": command})
     )
@@ -898,13 +899,13 @@ def test_bash_cancellation_kills_and_does_not_publish_success(
 def test_bash_close_failure_is_cleanup_lifecycle_error(
     tmp_path: Path, monkeypatch: pytest.MonkeyPatch
 ) -> None:
-    import oh_my_coding_agent._bash as bash
+    import oh_my_coding_agent._tools.bash as bash
 
     def boom_close(handle: int) -> None:
         del handle
         raise OSError(errno.EIO, "close failed")
 
-    monkeypatch.setattr(bash, "_close_spill", boom_close)
+    monkeypatch.setattr(bash_output, "_close_spill", boom_close)
     command = (
         f"{PYTHON} -c " + json.dumps("import sys; sys.stdout.write('a' * 61440)")
     )

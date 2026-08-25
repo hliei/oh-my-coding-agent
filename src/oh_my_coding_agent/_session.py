@@ -40,7 +40,7 @@ from oh_my_llm.providers.deepseek import (
     deepseekProvider,
 )
 
-from ._builtin_tools import builtin_tool_prompt_section, product_session_tools
+from ._tools import builtin_tool_prompt_section, product_session_tools
 from ._compaction import (
     CONTEXT_WINDOW,
     PREFIX_SUMMARY_MAX_TOKENS,

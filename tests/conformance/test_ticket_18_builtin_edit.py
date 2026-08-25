@@ -10,6 +10,7 @@ from typing import Any, cast
 import httpx
 import pytest
 
+import oh_my_coding_agent._tools.mutation_queue as mutation_queue
 from oh_my_coding_agent import (
     AgentSessionEvent,
     CreateAgentSessionOptions,
@@ -765,7 +766,7 @@ def test_edit_returns_actionable_file_outcomes(
         },
     )
 
-    import oh_my_coding_agent._builtin_tools as builtin_tools
+    import oh_my_coding_agent._tools.edit as builtin_tools
 
     payload = workspace / "full.txt"
     payload.write_bytes(b"keep")
@@ -877,7 +878,7 @@ def test_edit_elides_context_and_preserves_no_final_newline_in_reference_diff(
 def test_same_target_edit_and_write_serialize_while_other_work_stays_concurrent(
     tmp_path: Path, monkeypatch: pytest.MonkeyPatch
 ) -> None:
-    import oh_my_coding_agent._builtin_tools as builtin_tools
+    import oh_my_coding_agent._tools.edit as builtin_tools
 
     workspace = tmp_path / "project"
     workspace.mkdir()
@@ -888,7 +889,7 @@ def test_same_target_edit_and_write_serialize_while_other_work_stays_concurrent(
     other_inside = asyncio.Event()
     release_same = asyncio.Event()
     same_holders = 0
-    original = builtin_tools._after_queue_hold
+    original = mutation_queue.after_queue_hold
 
     async def gated(signal: Any, key: str) -> None:
         nonlocal same_holders
@@ -903,7 +904,7 @@ def test_same_target_edit_and_write_serialize_while_other_work_stays_concurrent(
             other_inside.set()
         await original(signal, key)
 
-    monkeypatch.setattr(builtin_tools, "_after_queue_hold", gated)
+    monkeypatch.setattr(mutation_queue, "after_queue_hold", gated)
 
     async def scenario() -> None:
         monkeypatch.setenv("DEEPSEEK_API_KEY", "configured")
@@ -981,7 +982,7 @@ def test_same_target_edit_and_write_serialize_while_other_work_stays_concurrent(
 def test_edit_cancellation_before_overwrite_writes_nothing(
     tmp_path: Path, monkeypatch: pytest.MonkeyPatch
 ) -> None:
-    import oh_my_coding_agent._builtin_tools as builtin_tools
+    import oh_my_coding_agent._tools.edit as builtin_tools
 
     workspace = tmp_path / "project"
     workspace.mkdir()
@@ -1005,7 +1006,7 @@ def test_edit_cancellation_before_overwrite_writes_nothing(
         await signal.wait()
         raise asyncio.CancelledError
 
-    monkeypatch.setattr(builtin_tools, "_after_queue_hold", hold)
+    monkeypatch.setattr(mutation_queue, "after_queue_hold", hold)
 
     async def scenario() -> None:
         session = (
@@ -1039,7 +1040,7 @@ def test_edit_cancellation_before_overwrite_writes_nothing(
 def test_precomputed_edit_failure_and_started_overwrite_do_not_promise_rollback(
     tmp_path: Path, monkeypatch: pytest.MonkeyPatch
 ) -> None:
-    import oh_my_coding_agent._builtin_tools as builtin_tools
+    import oh_my_coding_agent._tools.edit as builtin_tools
 
     workspace = tmp_path / "project"
     workspace.mkdir()
@@ -1124,7 +1125,7 @@ def test_precomputed_edit_failure_and_started_overwrite_do_not_promise_rollback(
 def test_edit_unexpected_io_and_cleanup_remain_failures(
     tmp_path: Path, monkeypatch: pytest.MonkeyPatch
 ) -> None:
-    import oh_my_coding_agent._builtin_tools as builtin_tools
+    import oh_my_coding_agent._tools.edit as builtin_tools
 
     workspace = tmp_path / "project"
     workspace.mkdir()

@@ -286,7 +286,7 @@ async def _pagination(root: Path) -> dict[str, object]:
 
 
 async def _outcomes(root: Path) -> dict[str, object]:
-    import oh_my_coding_agent._builtin_tools as builtin_tools
+    import oh_my_coding_agent._tools.read as builtin_tools
 
     workspace = root / "project"
     workspace.mkdir(parents=True, exist_ok=True)

@@ -623,7 +623,7 @@ def test_read_schema_rejection_and_unexpected_io_remain_tool_failures(
     assert zero_error is True
     assert zero_text.startswith('Validation failed for tool "read":')
 
-    import oh_my_coding_agent._builtin_tools as builtin_tools
+    import oh_my_coding_agent._tools.read as builtin_tools
 
     def boom(path: str, *args: object, **kwargs: object) -> Any:
         del path, args, kwargs
@@ -646,7 +646,7 @@ def test_read_schema_rejection_and_unexpected_io_remain_tool_failures(
 def test_read_cleanup_failure_is_a_lifecycle_cleanup_error(
     tmp_path: Path, monkeypatch: pytest.MonkeyPatch
 ) -> None:
-    import oh_my_coding_agent._builtin_tools as builtin_tools
+    import oh_my_coding_agent._tools.read as builtin_tools
 
     workspace = tmp_path / "project"
     workspace.mkdir()
@@ -686,7 +686,7 @@ def test_read_cleanup_failure_is_a_lifecycle_cleanup_error(
 def test_read_cancellation_discards_bytes_and_publishes_no_outcome(
     tmp_path: Path, monkeypatch: pytest.MonkeyPatch
 ) -> None:
-    import oh_my_coding_agent._builtin_tools as builtin_tools
+    import oh_my_coding_agent._tools.read as builtin_tools
 
     workspace = tmp_path / "project"
     workspace.mkdir()
