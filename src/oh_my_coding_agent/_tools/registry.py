@@ -8,19 +8,16 @@ from .read import create_read_tool
 from .write import create_write_tool
 
 
-BUILTIN_TOOL_SUMMARIES: tuple[str, str, str, str] = (
-    "Read file contents",
-    "Execute bash commands (ls, grep, find, etc.)",
+BUILTIN_TOOLS: tuple[tuple[str, str], ...] = (
+    ("read", "Read file contents"),
+    ("bash", "Execute bash commands (ls, grep, find, etc.)"),
     (
+        "edit",
         "Make precise file edits with exact text replacement, including multiple "
-        "disjoint edits in one call"
+        "disjoint edits in one call",
     ),
-    "Create or overwrite files",
+    ("write", "Create or overwrite files"),
 )
-
-
-def builtin_tool_prompt_section() -> str:
-    return "\n".join(BUILTIN_TOOL_SUMMARIES)
 
 
 def product_session_tools(workspace: str) -> tuple[AgentTool, ...]:

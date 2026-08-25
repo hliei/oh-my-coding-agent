@@ -940,6 +940,66 @@
       "comparator": "compare process-tree settlement and cancelled Tool Failure; do not publish timeout or exit success",
       "normalization": "ABD:managed-run-cancellation",
       "referenceCitations": ["packages/coding-agent/src/core/tools/bash.ts#L111-L145", "packages/agent/src/agent.ts#L258-L293"]
+    },
+    {
+      "id": "reference.explicit-project-resource-trust",
+      "captureCaseId": "capture.explicit-project-resource-trust",
+      "obligation": "omh-v0.explicit-project-resource-trust",
+      "referenceRevision": "0e6909f050eeb15e8f6c05185511f3788357ddb3",
+      "canonicalInput": "construct Sessions with omitted, false, and true project trust against an invalid .omh file",
+      "observations": {"A": "untrusted default still probes and may load project resources", "L": [], "T": "session published", "E": "trust may be inherited", "C": "later recovery can reuse saved trust"},
+      "omhExpectation": {"A": "omission_and_false_admit_empty_snapshot", "C": "manager_unchanged_after_trusted_rejection", "E": {"zeroUntrustedProbes": true}, "L": [], "T": {"builtinTools": ["read", "bash", "edit", "write"], "skillsListed": false}},
+      "comparator": "map Reference yes/no trust to the omh boolean and compare resource admission plus continuity",
+      "normalization": "ABD:explicit-project-resource-trust",
+      "referenceCitations": ["packages/coding-agent/src/core/project-trust.ts#L24-L26", "packages/coding-agent/src/core/project-trust.ts#L46-L95", "packages/coding-agent/src/core/resource-loader.ts#L330-L350"]
+    },
+    {
+      "id": "reference.omh-project-config-root-prompt-resources",
+      "captureCaseId": "capture.omh-project-config-root-prompt-resources",
+      "obligation": "omh-v0.omh-project-config-root-prompt-resources",
+      "referenceRevision": "0e6909f050eeb15e8f6c05185511f3788357ddb3",
+      "canonicalInput": "place conflicting Skills under .pi, .omh, and .agents/skills",
+      "observations": {"A": "project .pi Skills admitted", "L": [], "T": "pi skill descriptors present", "E": [".pi/skills"], "C": "not_applicable"},
+      "omhExpectation": {"A": "only_direct_omh_resources_admitted", "C": "untrusted_ignores_both_namespaces", "E": {".pi": false, ".agents": false}, "L": [], "T": {"omhSkillPresent": true, "piSkillPresent": false, "agentsSkillPresent": false, "unicodeOrder": true}},
+      "comparator": "dual-namespace fixture: Reference reads .pi, omh reads .omh",
+      "normalization": "ABD:omh-project-config-root",
+      "referenceCitations": ["packages/coding-agent/package.json#L6-L10", "packages/coding-agent/src/config.ts#L487-L491"]
+    },
+    {
+      "id": "reference.fixed-session-prompt-resources",
+      "captureCaseId": "capture.fixed-session-prompt-resources",
+      "obligation": "omh-v0.fixed-session-prompt-resources",
+      "referenceRevision": "0e6909f050eeb15e8f6c05185511f3788357ddb3",
+      "canonicalInput": "load valid Skills/Templates, mutate files after publication, and reopen the Session",
+      "observations": {"A": "invalid Skills may warn and continue", "L": [], "T": "skill expansion rereads the file", "E": "loaded templates, reread skills", "C": "later edits visible to /skill:"},
+      "omhExpectation": {"A": "invalid_selected_resource_rejects_construction", "C": "recovery_rebuilds_snapshot_history_preserved", "E": {"resourceBytesPersisted": false}, "L": [], "T": {"midSessionExpansionFrozen": true, "recoveryExpansionRefreshed": true, "symlinkRejected": true}},
+      "comparator": "valid resources compare after namespace/path normalization; invalid and post-publication rows contrast Reference skip/reread with omh rejection or fixed bytes",
+      "normalization": "ABD:fixed-session-prompt-resources",
+      "referenceCitations": ["packages/coding-agent/src/core/skills.ts#L277-L307", "packages/coding-agent/src/core/prompt-templates.ts#L103-L131", "packages/coding-agent/src/core/agent-session.ts#L1260-L1283"]
+    },
+    {
+      "id": "reference.strict-prompt-resource-invocation",
+      "captureCaseId": "capture.strict-prompt-resource-invocation",
+      "obligation": "omh-v0.strict-prompt-resource-invocation",
+      "referenceRevision": "0e6909f050eeb15e8f6c05185511f3788357ddb3",
+      "canonicalInput": "prompt with missing /skill:name, invalid /skill:Name, missing /template, and literal slash text",
+      "observations": {"A": "unknown commands pass through as literal User text", "L": ["agent_start"], "T": "literal slash User Message", "E": ["model"], "C": "run proceeds"},
+      "omhExpectation": {"A": "missing_or_invalid_command_rejected", "C": "session_reusable", "E": {"modelCallsOnRejection": 0}, "L": [], "T": {"disabledSkillExpanded": true, "invalidSkill": "Invalid Skill invocation", "literalSlashPreserved": true, "missingSkill": "Skill \"missing\" was not found", "missingTemplate": "Prompt Template \"gone\" was not found"}},
+      "comparator": "valid expansions compare directly; missing/malformed rows contrast Reference literal progression with omh rejection",
+      "normalization": "ABD:strict-prompt-resource-invocation",
+      "referenceCitations": ["packages/coding-agent/src/core/agent-session.ts#L1260-L1283", "packages/coding-agent/src/core/prompt-templates.ts#L264-L283"]
+    },
+    {
+      "id": "reference.fixed-session-system-prompt",
+      "captureCaseId": "capture.fixed-session-system-prompt",
+      "obligation": "omh-v0.fixed-session-system-prompt",
+      "referenceRevision": "0e6909f050eeb15e8f6c05185511f3788357ddb3",
+      "canonicalInput": "construct a trusted Session with one Skill and inspect systemPrompt plus two Model requests",
+      "observations": {"A": "customPrompt/guidelines/append/contextFiles may replace or extend the prompt", "L": [], "T": "pi identity and docs paths present", "E": "prompt may change across turns", "C": "not_applicable"},
+      "omhExpectation": {"A": "six_sections_in_order", "C": "recovery_rebuilds_from_current_resources", "E": {"midSessionRebuild": false}, "L": [], "T": {"identity": "omh", "namedCheckPresent": true, "modelRequestEqualsPublicPrompt": true}},
+      "comparator": "compare the six semantic section roles and order after product-identity and owned-path normalization",
+      "normalization": "ABD:fixed-session-system-prompt",
+      "referenceCitations": ["packages/coding-agent/src/core/system-prompt.ts#L8-L25", "packages/coding-agent/src/core/system-prompt.ts#L48-L80", "packages/coding-agent/src/core/system-prompt.ts#L95-L170"]
     }
   ]
 }

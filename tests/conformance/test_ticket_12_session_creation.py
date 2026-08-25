@@ -295,11 +295,26 @@ def test_create_agent_session_is_lazy_identity_preserving_and_disposable(
     assert session.sessionFile is None
     assert session.sessionName is None
     assert session.messages == ()
-    assert session.systemPrompt == (
-        "Read file contents\n"
-        "Execute bash commands (ls, grep, find, etc.)\n"
-        "Make precise file edits with exact text replacement, including multiple disjoint edits in one call\n"
-        "Create or overwrite files"
+    prompt = session.systemPrompt
+    assert prompt.startswith(
+        "You are an expert coding assistant operating inside omh, a coding agent "
+        "harness. You help users by reading files, executing commands, editing "
+        "code, and writing new files.\n\nAvailable tools:\n- read: Read file contents\n"
+    )
+    assert "- bash: Execute bash commands (ls, grep, find, etc.)" in prompt
+    assert (
+        "- edit: Make precise file edits with exact text replacement, including "
+        "multiple disjoint edits in one call"
+    ) in prompt
+    assert "- write: Create or overwrite files" in prompt
+    assert "Guidelines:" in prompt
+    assert (
+        "After the final mutation, claim that the modification succeeded only "
+        "after observing the applicable named check's successful Tool Result."
+    ) in prompt
+    assert prompt.endswith(
+        "Current working directory: "
+        + os.fspath(tmp_path / "different-operational-cwd")
     )
     assert session.isStreaming is False
     assert session.isIdle is True

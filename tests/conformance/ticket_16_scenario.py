@@ -163,7 +163,12 @@ async def _registry(root: Path) -> dict[str, object]:
                 )
             )
         ).session
-        summaries = session.systemPrompt.split("\n")
+        prompt = session.systemPrompt
+        summaries = [
+            summary
+            for summary in _PROMPT_SUMMARIES
+            if f": {summary}" in prompt
+        ]
         await session.prompt("inspect")
         body = json.loads(transport.requests[0].content)
         names = [tool["function"]["name"] for tool in body["tools"]]

@@ -40,7 +40,13 @@ from oh_my_llm.providers.deepseek import (
     deepseekProvider,
 )
 
-from ._tools import builtin_tool_prompt_section, product_session_tools
+from ._prompt_resources import (
+    PromptResourceSnapshot,
+    expand_prompt,
+    load_prompt_resources,
+)
+from ._system_prompt import build_system_prompt
+from ._tools import product_session_tools
 from ._compaction import (
     CONTEXT_WINDOW,
     PREFIX_SUMMARY_MAX_TOKENS,
@@ -76,6 +82,7 @@ class CreateAgentSessionOptions:
     cwd: str | None = None
     model: Model | None = None
     sessionManager: SessionManager | None = None
+    projectTrusted: bool = False
 
 
 @final
@@ -283,6 +290,7 @@ class AgentSession:
         "_prompt_active",
         "_prompt_cancel_requested",
         "_prompt_settlement",
+        "_prompt_resources",
         "_prompt_terminal_projection_truncated",
         "_session_manager",
         "_system_prompt",
@@ -296,6 +304,7 @@ class AgentSession:
         session_manager: SessionManager,
         operational_cwd: str,
         agent: Agent,
+        prompt_resources: PromptResourceSnapshot,
         _token: object,
     ) -> None:
         if _token is not _SESSION_TOKEN:
@@ -304,6 +313,7 @@ class AgentSession:
         self._models = models
         self._session_manager = session_manager
         self._operational_cwd = operational_cwd
+        self._prompt_resources = prompt_resources
         self._overflow_recovery_attempted = False
         self._pending_agent_end: AgentEvent | None = None
         self._projecting_agent_end = False
@@ -400,6 +410,8 @@ class AgentSession:
         self._ensure_open()
         if self._prompt_active or self.isCompacting:
             raise LifecycleError("busy", "AgentSession is busy")
+        expand = True if options is None else options.expandPromptTemplates
+        text = expand_prompt(text, self._prompt_resources, enabled=expand)
         self._prompt_active = True
         self._prompt_cancel_requested = False
         self._prompt_terminal_projection_truncated = False
@@ -1273,6 +1285,8 @@ async def createAgentSession(
     supplied_manager = selected.sessionManager
     if supplied_manager is not None and type(supplied_manager) is not SessionManager:
         raise TypeError("CreateAgentSessionOptions.sessionManager: must be a SessionManager")
+    if type(selected.projectTrusted) is not bool:
+        raise TypeError("CreateAgentSessionOptions.projectTrusted: must be a bool")
 
     if selected.cwd is not None:
         operational_cwd = _resolve_path(
@@ -1297,6 +1311,8 @@ async def createAgentSession(
     if await models.getAuth(model) is None:
         raise ModelsError("auth", "DeepSeek authentication is required")
 
+    prompt_resources = load_prompt_resources(operational_cwd, selected.projectTrusted)
+
     manager = (
         supplied_manager
         if supplied_manager is not None
@@ -1315,7 +1331,7 @@ async def createAgentSession(
         ):
             yield event
 
-    system_prompt = builtin_tool_prompt_section()
+    system_prompt = build_system_prompt(operational_cwd, prompt_resources)
     agent = Agent(
         AgentOptions(
             initialState=AgentState(
@@ -1334,6 +1350,7 @@ async def createAgentSession(
         session_manager=manager,
         operational_cwd=operational_cwd,
         agent=agent,
+        prompt_resources=prompt_resources,
         _token=_SESSION_TOKEN,
     )
     try:

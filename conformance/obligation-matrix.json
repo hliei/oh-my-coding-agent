@@ -950,6 +950,66 @@
       "evidenceClass": "ABD:managed-run-cancellation",
       "corpusCase": "reference.bash-cancellation-cleanup",
       "executableCases": ["ticket-19-bash", "ticket-19-installed"]
+    },
+    {
+      "id": "omh-v0.explicit-project-resource-trust",
+      "authority": ".scratch/omh-v0/issues/09-choose-extension-lifecycle.md#ABD:explicit-project-resource-trust",
+      "publicInterface": "oh_my_coding_agent.createAgentSession",
+      "scenario": "construct with omitted, false, and true projectTrusted against an invalid .omh carrier",
+      "observations": {"A": "omission and false admit an empty snapshot; true rejects; non-bool is TypeError", "L": "not_applicable", "T": "untrusted Session has built-in Tools and no Skill descriptors", "E": "false performs zero project-resource probes", "C": "supplied manager history is unchanged after trusted rejection"},
+      "comparator": "compare admission and later continuity after mapping Reference yes/no trust to the omh boolean",
+      "normalization": "ABD:explicit-project-resource-trust; do not inherit saved/ancestor/UI trust",
+      "evidenceClass": "ABD:explicit-project-resource-trust",
+      "corpusCase": "reference.explicit-project-resource-trust",
+      "executableCases": ["ticket-20-resources", "ticket-20-installed"]
+    },
+    {
+      "id": "omh-v0.omh-project-config-root-prompt-resources",
+      "authority": ".scratch/omh-v0/issues/02-choose-v0-parity-policy.md#ABD:omh-project-config-root",
+      "publicInterface": "oh_my_coding_agent.createAgentSession",
+      "scenario": "place conflicting Skills under .omh and .pi plus .agents/skills and admit only the omh project set",
+      "observations": {"A": "trusted construction admits only direct .omh Skills and Templates", "L": "not_applicable", "T": "system prompt lists only .omh Skill descriptors", "E": "no .pi or .agents reads", "C": "untrusted construction still ignores both namespaces"},
+      "comparator": "in a dual-namespace fixture, Reference reads .pi and omh reads .omh",
+      "normalization": "ABD:omh-project-config-root",
+      "evidenceClass": "ABD:omh-project-config-root",
+      "corpusCase": "reference.omh-project-config-root-prompt-resources",
+      "executableCases": ["ticket-20-resources", "ticket-20-installed"]
+    },
+    {
+      "id": "omh-v0.fixed-session-prompt-resources",
+      "authority": ".scratch/omh-v0/issues/08-choose-agent-session-surface.md#ABD:fixed-session-prompt-resources",
+      "publicInterface": "oh_my_coding_agent.createAgentSession and AgentSession.prompt",
+      "scenario": "validate one complete Skill/Template set, snapshot it, ignore mid-Session edits, and rebuild on recovery",
+      "observations": {"A": "invalid selected resources reject construction; valid resources publish one snapshot", "L": "not_applicable", "T": "expansion and Skill descriptors share the construction snapshot", "E": "resource bytes are not persisted", "C": "opening history rebuilds from current admitted files while historical Messages remain"},
+      "comparator": "valid resources compare after .pi/.omh and wrapper-path normalization; invalid/symlink/edit rows contrast Reference skip/reread with omh rejection or fixed bytes",
+      "normalization": "ABD:fixed-session-prompt-resources",
+      "evidenceClass": "ABD:fixed-session-prompt-resources",
+      "corpusCase": "reference.fixed-session-prompt-resources",
+      "executableCases": ["ticket-20-resources", "ticket-20-installed"]
+    },
+    {
+      "id": "omh-v0.strict-prompt-resource-invocation",
+      "authority": ".scratch/omh-v0/issues/08-choose-agent-session-surface.md#ABD:strict-prompt-resource-invocation",
+      "publicInterface": "oh_my_coding_agent.AgentSession.prompt",
+      "scenario": "admit exact /skill:name and /name commands, reject missing/invalid Skill or missing Template, and leave other slash text literal",
+      "observations": {"A": "command-shaped missing/invalid inputs rejected before append; other slash text admitted literally", "L": "rejection has no events", "T": "exact ValueError text or expanded User Message", "E": "zero Model/Tool effects on rejection", "C": "Session remains reusable"},
+      "comparator": "valid expansions compare after owned resource normalization; missing/malformed rows contrast Reference literal progression with omh rejection",
+      "normalization": "ABD:strict-prompt-resource-invocation",
+      "evidenceClass": "ABD:strict-prompt-resource-invocation",
+      "corpusCase": "reference.strict-prompt-resource-invocation",
+      "executableCases": ["ticket-20-resources", "ticket-20-installed"]
+    },
+    {
+      "id": "omh-v0.fixed-session-system-prompt",
+      "authority": ".scratch/omh-v0/issues/08-choose-agent-session-surface.md#ABD:fixed-session-system-prompt",
+      "publicInterface": "oh_my_coding_agent.AgentSession.systemPrompt and prompt",
+      "scenario": "build the six-section omh system prompt once, keep Model requests identical, and rebuild only on recovery",
+      "observations": {"A": "construction emits identity, Tool summaries, guidelines including named-check, Skill descriptors, date, and cwd", "L": "not_applicable", "T": "AgentSession.systemPrompt equals every Model system message", "E": "no mid-Session rebuild", "C": "recovery rebuilds from currently admitted resources"},
+      "comparator": "compare the six semantic section roles and order after product-identity and owned-path normalization",
+      "normalization": "ABD:fixed-session-system-prompt; named-check success claims remain ABD:require-named-check-for-success",
+      "evidenceClass": "ABD:fixed-session-system-prompt",
+      "corpusCase": "reference.fixed-session-system-prompt",
+      "executableCases": ["ticket-20-resources", "ticket-20-installed"]
     }
   ]
 }

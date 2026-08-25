@@ -308,7 +308,13 @@ def test_product_session_registers_fixed_builtins_and_excludes_the_rest(
             )
         )
     ).session
-    assert session.systemPrompt == "\n".join(_PROMPT_SUMMARIES)
+    assert "- read: Read file contents" in session.systemPrompt
+    assert "- bash: Execute bash commands (ls, grep, find, etc.)" in session.systemPrompt
+    assert (
+        "- edit: Make precise file edits with exact text replacement, including "
+        "multiple disjoint edits in one call"
+    ) in session.systemPrompt
+    assert "- write: Create or overwrite files" in session.systemPrompt
     assert not hasattr(CreateAgentSessionOptions, "tools")
     asyncio.run(session.prompt("inspect tools"))
     asyncio.run(session.dispose())
@@ -329,7 +335,12 @@ def test_product_session_registers_fixed_builtins_and_excludes_the_rest(
         for message in body["messages"]
         if message["role"] == "system"
     ]
-    assert system_messages == ["\n".join(_PROMPT_SUMMARIES)]
+    assert system_messages == [session.systemPrompt]
+    for summary in _PROMPT_SUMMARIES:
+        assert any(
+            message.endswith(": " + summary) or f": {summary}" in message
+            for message in system_messages
+        )
 
 
 async def _prompt_read(
