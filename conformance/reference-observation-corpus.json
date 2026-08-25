@@ -1084,6 +1084,66 @@
       "comparator": "compare Reference partial capabilities/diagnostics with omh no publication and retained arbitrary effects",
       "normalization": "ABD:atomic-extension-initialization",
       "referenceCitations": ["packages/coding-agent/src/core/extensions/loader.ts#L432-L457", "packages/coding-agent/src/core/extensions/loader.ts#L481-L518"]
+    },
+    {
+      "id": "reference.programmatic-product-journey",
+      "captureCaseId": "capture.programmatic-product-journey",
+      "obligation": "omh-v0.programmatic-product-journey",
+      "referenceRevision": "0e6909f050eeb15e8f6c05185511f3788357ddb3",
+      "canonicalInput": "in an existing repository, read INSTRUCTIONS.md and app.py, change greeting(), run python -m unittest -q after the edit, and report the outcome",
+      "observations": {"reference":"not_applicable","reason":"composed-journey-coverage"},
+      "omhExpectation": {"A":{"model":"deepseek-v4-flash","projectTrusted":false,"workspace":"existing_repository"},"L":["tool_execution_start:read","tool_execution_end:read:ok","tool_execution_start:read","tool_execution_end:read:ok","tool_execution_start:edit","tool_execution_end:edit:ok","tool_execution_start:bash","tool_execution_end:bash:ok","agent_end","agent_settled"],"T":{"check":"python -m unittest -q","finalReport":"Changed greeting() to return hello, omh. Ran `python -m unittest -q`; it passed.","stopReason":"stop"},"E":{"checkAfterFinalMutation":true,"fileChanged":true,"networkRequests":0,"providerRequests":5},"C":{"persistent":true,"treeEntries":12}},
+      "comparator": "compare the bounded repository outcome, Tool order, terminal report, and persistent continuity while applying the named-check ABD only to the success-claim gate",
+      "normalization": "product identity, Python Tool/value carriers, and ABD:require-named-check-for-success",
+      "referenceCitations": ["packages/coding-agent/src/core/agent-session.ts#L1120-L1126", "packages/coding-agent/src/core/tools/index.ts#L168-L175", "packages/agent/src/agent-loop.ts#L192-L224"]
+    },
+    {
+      "id": "reference.require-named-check-for-success",
+      "captureCaseId": "capture.require-named-check-for-success",
+      "obligation": "omh-v0.require-named-check-for-success",
+      "referenceRevision": "0e6909f050eeb15e8f6c05185511f3788357ddb3",
+      "canonicalInput": "after one edit, vary no check, unavailable CHECK, failed CHECK, unrelated successful command, and a recoverable invalid Tool attempt followed by correction and successful CHECK",
+      "observations": {"A":"all_fixtures_admitted","L":"edit_may_be_followed_directly_by_done","T":"ordinary_completion","E":"named_check_not_required","C":"session_continues"},
+      "omhExpectation": {"A":"named_check_required_after_final_mutation","L":{"noCheck":["edit"],"unavailableCheck":["edit","bash"],"failedCheck":["edit","bash"],"recoveredToolFailure":["edit:failure","edit:ok","bash:ok"],"unrelatedSuccessfulCommand":["edit","bash"]},"T":{"noCheck":"unverified","unavailableCheck":"unverified","failedCheck":"failed","recoveredToolFailure":"verified","unrelatedSuccessfulCommand":"unverified"},"E":{"failedCheckExit":1,"noCheckCommands":0,"recoverableFailureWasProviderFailure":false,"recoveredCheckExit":0,"unavailableCheckExit":127,"unrelatedCommandExit":0},"C":{"allRunsSettled":true,"recoveredInSameRun":true}},
+      "comparator": "match command identity, position after final mutation, Tool Result status, and final claim; normal completion and unrelated or failed commands never substitute",
+      "normalization": "ABD:require-named-check-for-success",
+      "referenceCitations": ["packages/coding-agent/src/core/system-prompt.ts#L88-L147", "packages/agent/src/agent-loop.ts#L192-L224", "packages/agent/test/agent-loop.test.ts#L491-L522"]
+    },
+    {
+      "id": "reference.programmatic-failure-boundaries",
+      "captureCaseId": "capture.programmatic-failure-boundaries",
+      "obligation": "omh-v0.programmatic-failure-boundaries",
+      "referenceRevision": "0e6909f050eeb15e8f6c05185511f3788357ddb3",
+      "canonicalInput": "fail one Provider request, block and cancel a second while rejecting overlap, then reuse the same Product Session",
+      "observations": {"reference":"not_applicable","reason":"composed-journey-coverage"},
+      "omhExpectation": {"A":{"busy":"busy","cancel":"admitted","providerFailure":"admitted","reuse":"admitted"},"L":["agent_settled","agent_settled","agent_settled"],"T":{"cancel":"aborted","providerFailure":"error","reuse":"stop"},"E":{"busyExtraRequests":0,"cancelledRequests":1,"providerRequests":3},"C":{"historyStopReasons":["error","aborted","stop"],"idle":true}},
+      "comparator": "compare terminal classifications, request effects, overlap admission, and same-instance reuse",
+      "normalization": "Python LifecycleError carrier and owned cancellation mechanics only",
+      "referenceCitations": ["packages/coding-agent/src/core/agent-session.ts#L1120-L1126", "packages/agent/src/agent.ts#L334-L345", "packages/agent/src/agent-loop.ts#L192-L224"]
+    },
+    {
+      "id": "reference.programmatic-session-topology",
+      "captureCaseId": "capture.programmatic-session-topology",
+      "obligation": "omh-v0.programmatic-session-topology",
+      "referenceRevision": "0e6909f050eeb15e8f6c05185511f3788357ddb3",
+      "canonicalInput": "branch and fork one persisted tree, compact manually and by threshold/overflow, reopen compacted history, run in memory, and invoke one trusted project Skill",
+      "observations": {"reference":"not_applicable","reason":"composed-journey-coverage"},
+      "omhExpectation": {"A":{"automaticCompaction":"admitted","branch":"admitted","explicitCompaction":"admitted","fork":"admitted","inMemory":"admitted","skill":"trusted_only"},"L":{"automatic":[true,false],"automaticReasons":["threshold","overflow"],"explicit":["compaction_start","compaction_end"]},"T":{"branchChildren":2,"compactionContextsRebuilt":true,"compactionTreesRetained":true,"forkSourceEntriesPreserved":true,"recoveredCompactedContext":true,"skillInfluencedPrompt":true},"E":{"automaticRequestCount":3,"inMemoryDiscovered":false,"inMemoryFile":null,"inMemoryFilesystemEffects":false,"overflowContinuationCount":1,"sourcePrefixPreserved":true,"sourceUnchangedAfterFork":true,"thresholdRequestCount":2},"C":{"arbitraryPersistenceAdapter":false,"divergentLeaves":true,"forkIndependentlyAppended":true,"inMemoryEntries":4,"untrustedCoreHasNoSkill":true}},
+      "comparator": "compare public tree/context projections, source and fork bytes, compaction retry bound, persistence effects, and trusted versus untrusted Skill behavior",
+      "normalization": "Session carrier paths, Python value records, Project Resource Trust, and accepted compaction carrier mechanics",
+      "referenceCitations": ["packages/coding-agent/src/core/session-manager.ts#L353-L435", "packages/coding-agent/src/core/compaction/compaction.ts#L587-L659", "packages/coding-agent/src/core/agent-session.ts#L1260-L1283"]
+    },
+    {
+      "id": "reference.programmatic-recovery-continuity",
+      "captureCaseId": "capture.programmatic-recovery-continuity",
+      "obligation": "omh-v0.programmatic-recovery-continuity",
+      "referenceRevision": "0e6909f050eeb15e8f6c05185511f3788357ddb3",
+      "canonicalInput": "persist an incomplete User tail, add one malformed JSONL line, reopen by path/id, and continue with changed instruction bytes and credential",
+      "observations": {"reference":"not_applicable","reason":"composed-journey-coverage"},
+      "omhExpectation": {"A":{"openedById":"recovery-source","openedByPath":true,"projectTrusted":false},"L":["tool_execution_start:read","tool_execution_end:read:ok"],"T":{"activeRoles":["user","assistant","user","user","assistant","toolResult","assistant"],"finalStopReason":"stop","treeEntries":9},"E":{"authenticationRebound":true,"instructionsRefreshed":true,"providerRequests":2,"replayedInterruptedEffects":false},"C":{"completionDisposed":true,"malformedLineRetained":true,"parseablePrefixPreserved":true}},
+      "comparator": "compare parsed-prefix entries, absent replay, fresh resource/auth binding, active-path continuation, and unchanged malformed bytes",
+      "normalization": "Python JSONL carrier and product identity paths only",
+      "referenceCitations": ["packages/coding-agent/src/core/session-manager.ts#L946-L979", "packages/coding-agent/src/core/agent-session.ts#L1120-L1126", "packages/coding-agent/src/core/agent-session.ts#L1260-L1283"]
     }
   ]
 }

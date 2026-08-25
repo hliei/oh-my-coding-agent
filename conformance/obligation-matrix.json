@@ -1094,6 +1094,70 @@
       "evidenceClass": "ABD:atomic-extension-initialization",
       "corpusCase": "reference.atomic-extension-initialization",
       "executableCases": ["ticket-21-extensions", "ticket-21-installed"]
+    },
+    {
+      "id": "omh-v0.programmatic-product-journey",
+      "authority": ".scratch/omh-v0/issues/01-choose-v0-product-journey.md#core-code-change-journey",
+      "publicInterface": "installed oh_my_coding_agent.createAgentSession, AgentSession, and SessionManager",
+      "scenario": "inspect instructions and target in an existing repository, edit once, run the named unittest check after the edit, and truthfully report change, check, and pass",
+      "observations": {"A": "nominal deepseek-v4-flash persistent untrusted Product Session admitted", "L": "ordered read, read, edit, bash, AgentEnd, and AgentSettled", "T": "ordinary report names the change and successful check", "E": "one bounded file mutation, post-mutation check, five local Provider requests, zero external network", "C": "complete append-only persistent tree remains public"},
+      "comparator": "compare the bounded repository outcome, Tool order, terminal report, and persistent continuity while applying the named-check ABD only to the success-claim gate",
+      "normalization": "product identity, Python Tool/value carriers, and ABD:require-named-check-for-success",
+      "evidenceClass": "local-release",
+      "referenceApplicability": {"status": "not_applicable", "reason": "composed-journey-coverage"},
+      "corpusCase": "reference.programmatic-product-journey",
+      "executableCases": ["ticket-22-journey", "ticket-22-installed"]
+    },
+    {
+      "id": "omh-v0.require-named-check-for-success",
+      "authority": ".scratch/omh-v0/issues/02-choose-v0-parity-policy.md#ABD:require-named-check-for-success",
+      "publicInterface": "installed oh_my_coding_agent.AgentSession.prompt",
+      "scenario": "contrast no check, unavailable check, failed check, and one validation Tool Failure corrected before a successful named check in the same Run",
+      "observations": {"A": "all five named-check fixtures admitted", "L": "no-check has no bash; negative and unrelated checks follow edit; correction stays in one Run", "T": "only the successful applicable post-mutation check produces verified", "E": "unavailable 127, failed 1, recovered and unrelated 0, and no Provider failure", "C": "all Runs settle and the corrected Run verifies without replacement"},
+      "comparator": "match command identity, position after final mutation, Tool Result status, and final claim; normal completion and unrelated or failed commands never substitute",
+      "normalization": "ABD:require-named-check-for-success",
+      "evidenceClass": "ABD:require-named-check-for-success",
+      "corpusCase": "reference.require-named-check-for-success",
+      "executableCases": ["ticket-22-journey", "ticket-22-installed"]
+    },
+    {
+      "id": "omh-v0.programmatic-failure-boundaries",
+      "authority": ".scratch/omh-v0/issues/01-choose-v0-product-journey.md#required-non-golden-paths",
+      "publicInterface": "installed oh_my_coding_agent.AgentSession.prompt and abort",
+      "scenario": "settle deterministic Provider failure, reject a busy prompt, cleanly cancel the active request, and reuse the same Session",
+      "observations": {"A": "failure, cancellation, and reuse Runs admitted while overlap is busy-rejected", "L": "one AgentSettled per admitted Run", "T": "error, aborted, and stop remain distinct", "E": "busy adds no request and cancellation closes exactly one request", "C": "the same Session returns idle and reusable"},
+      "comparator": "compare terminal classifications, request effects, overlap admission, and same-instance reuse",
+      "normalization": "Python LifecycleError carrier and owned cancellation mechanics only",
+      "evidenceClass": "local-release",
+      "referenceApplicability": {"status": "not_applicable", "reason": "composed-journey-coverage"},
+      "corpusCase": "reference.programmatic-failure-boundaries",
+      "executableCases": ["ticket-22-journey", "ticket-22-installed"]
+    },
+    {
+      "id": "omh-v0.programmatic-session-topology",
+      "authority": ".scratch/omh-v0/issues/01-choose-v0-product-journey.md#branch-fork-and-compaction-journeys and #ephemeral-session-journey and #companion-resource-scenarios",
+      "publicInterface": "installed oh_my_coding_agent.AgentSession and SessionManager",
+      "scenario": "diverge one in-file branch and one independent fork, compact explicitly and by threshold/overflow, recover compacted context, run one in-memory Session, and invoke one trusted project Skill",
+      "observations": {"A": "branch, fork, explicit/threshold/overflow compaction, in-memory mode, and trusted Skill admitted", "L": "manual compaction brackets once, threshold does not retry, and overflow marks one retry", "T": "source tree, fork entries, live/recovered compacted contexts, and Skill influence remain visible", "E": "source is append-only and unchanged by fork continuation; in-memory has no file, discovery, filesystem, or Adapter effect; automatic request counts are bounded", "C": "divergent leaves, independent fork append, in-memory history, and untrusted no-Skill core remain"},
+      "comparator": "compare public tree/context projections, source and fork bytes, compaction retry bound, persistence effects, and trusted versus untrusted Skill behavior",
+      "normalization": "Session carrier paths, Python value records, Project Resource Trust, and accepted compaction carrier mechanics",
+      "evidenceClass": "local-release",
+      "referenceApplicability": {"status": "not_applicable", "reason": "composed-journey-coverage"},
+      "corpusCase": "reference.programmatic-session-topology",
+      "executableCases": ["ticket-22-journey", "ticket-22-installed"]
+    },
+    {
+      "id": "omh-v0.programmatic-recovery-continuity",
+      "authority": ".scratch/omh-v0/issues/01-choose-v0-product-journey.md#best-effort-recovery-incomplete-runs-and-concurrency and .scratch/omh-v0/issues/08-choose-agent-session-surface.md#jsonl-persistence-and-recovery",
+      "publicInterface": "installed oh_my_coding_agent.SessionManager.list and open, and AgentSession.prompt",
+      "scenario": "open a persistent Session by path and id after a malformed physical line and incomplete User tail, then continue with current instructions and authentication",
+      "observations": {"A": "path/id recovery and fresh untrusted construction admitted", "L": "only the fresh correction read Tool runs", "T": "active history retains the incomplete prefix and ends normally", "E": "current instruction bytes and credential are rebound with no interrupted-effect replay", "C": "completion/disposal, malformed bytes, and every parseable prefix entry remain"},
+      "comparator": "compare parsed-prefix entries, absent replay, fresh resource/auth binding, active-path continuation, and unchanged malformed bytes",
+      "normalization": "Python JSONL carrier and product identity paths only",
+      "evidenceClass": "local-release",
+      "referenceApplicability": {"status": "not_applicable", "reason": "composed-journey-coverage"},
+      "corpusCase": "reference.programmatic-recovery-continuity",
+      "executableCases": ["ticket-22-journey", "ticket-22-installed"]
     }
   ]
 }
