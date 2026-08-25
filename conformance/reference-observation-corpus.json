@@ -856,6 +856,90 @@
       "comparator": "compare same-key serialization and cross-key/read concurrency directly against the fixed Reference file-mutation queue",
       "normalization": "ignore scheduling jitter; compare ownership overlap and final bytes",
       "referenceCitations": ["packages/coding-agent/src/core/tools/file-mutation-queue.ts#L16-L31", "packages/coding-agent/src/core/tools/edit.ts#L308-L361", "packages/coding-agent/src/core/tools/write.ts#L194-L225"]
+    },
+    {
+      "id": "reference.bash-command-surface",
+      "captureCaseId": "capture.bash-command-surface",
+      "obligation": "omh-v0.bash-command-surface",
+      "referenceRevision": "0e6909f050eeb15e8f6c05185511f3788357ddb3",
+      "canonicalInput": "bash with empty command, echo in Workspace, extra cwd field, and timeout 0",
+      "observations": {"A": "command admitted; extra fields ignored or repaired", "L": ["tool_execution_end"], "T": "empty or stdout text", "E": "subprocess in cwd", "C": "cwd unchanged"},
+      "omhExpectation": {"A": "command plus optional timeout admitted", "C": "workspace_unchanged", "E": {"wroteMarker": true}, "L": ["tool_execution_update", "tool_execution_end"], "T": {"empty": "(no output)", "extraCwdIsError": true, "zeroTimeoutIsError": true}},
+      "comparator": "compare admitted shape, Workspace cwd, empty/success text, and schema rejection of process overrides",
+      "normalization": "PA:json-schema-mapping for timeout zero; ignore PID",
+      "referenceCitations": ["packages/coding-agent/src/core/tools/bash.ts#L24-L43", "packages/coding-agent/src/core/tools/bash.ts#L291-L313"]
+    },
+    {
+      "id": "reference.unmodified-host-shell-environment",
+      "captureCaseId": "capture.unmodified-host-shell-environment",
+      "obligation": "omh-v0.unmodified-host-shell-environment",
+      "referenceRevision": "0e6909f050eeb15e8f6c05185511f3788357ddb3",
+      "canonicalInput": "print inherited PATH and a fixture environment variable from bash",
+      "observations": {"A": "command admitted", "L": ["tool_execution_end"], "T": "PATH may include managed-binary prepend", "E": "child inherits process.env plus prepend", "C": "fresh snapshot next spawn"},
+      "omhExpectation": {"A": "command admitted", "C": "fresh_host_snapshot", "E": {"productPathInjected": false}, "L": ["tool_execution_end"], "T": {"fixtureMatched": true, "pathMatched": true}},
+      "comparator": "compare inherited variables; normalize only the accepted Reference managed-binary PATH prepend",
+      "normalization": "ABD:unmodified-host-shell-environment",
+      "referenceCitations": ["packages/coding-agent/src/utils/shell.ts#L122-L134"]
+    },
+    {
+      "id": "reference.bash-output-updates",
+      "captureCaseId": "capture.bash-output-updates",
+      "obligation": "omh-v0.bash-output-updates",
+      "referenceRevision": "0e6909f050eeb15e8f6c05185511f3788357ddb3",
+      "canonicalInput": "write stdout then stderr with a malformed UTF-8 byte, and emit spaced stdout chunks",
+      "observations": {"A": "command admitted", "L": ["tool_execution_update", "tool_execution_end"], "T": "merged replacement-decoded text", "E": "real pipes", "C": "terminal matches tail"},
+      "omhExpectation": {"A": "command admitted", "C": "terminal_matches_tail", "E": {"realPipes": true}, "L": ["tool_execution_update", "tool_execution_end"], "T": {"emptyFirstUpdate": true, "replacementPresent": true, "stdoutOrderPreserved": true}},
+      "comparator": "preserve per-pipe order; do not assert total cross-pipe order; compare empty-first update and cumulative text",
+      "normalization": "ignore exact inter-chunk timing other than 100ms coalescing and first-dirty immediacy",
+      "referenceCitations": ["packages/coding-agent/src/core/tools/bash.ts#L82-L148", "packages/coding-agent/src/core/tools/bash.ts#L313-L374", "packages/coding-agent/src/core/tools/output-accumulator.ts#L35-L91"]
+    },
+    {
+      "id": "reference.private-bash-output-spill",
+      "captureCaseId": "capture.private-bash-output-spill",
+      "obligation": "omh-v0.private-bash-output-spill",
+      "referenceRevision": "0e6909f050eeb15e8f6c05185511f3788357ddb3",
+      "canonicalInput": "emit 2001 short lines and one 60KiB line through bash",
+      "observations": {"A": "truncated command admitted", "L": ["tool_execution_end"], "T": "tail plus full-output path", "E": "umask-dependent temp log", "C": "path retained"},
+      "omhExpectation": {"A": "truncated command admitted", "C": "spill_retained_after_dispose", "E": {"ownerOnly": true, "rawBytesComplete": true}, "L": ["tool_execution_end"], "T": {"bytePartial": true, "lineTruncatedBy": "lines"}},
+      "comparator": "compare decoded tail, truncation facts, and raw spill bytes; treat filename as relational and mode as the accepted permission difference",
+      "normalization": "ABD:private-bash-output-spill",
+      "referenceCitations": ["packages/coding-agent/src/core/tools/truncate.ts#L153-L230", "packages/coding-agent/src/core/tools/output-accumulator.ts#L16-L137"]
+    },
+    {
+      "id": "reference.actionable-bash-outcomes",
+      "captureCaseId": "capture.actionable-bash-outcomes",
+      "obligation": "omh-v0.actionable-bash-outcomes",
+      "referenceRevision": "0e6909f050eeb15e8f6c05185511f3788357ddb3",
+      "canonicalInput": "nonzero exit, timeout, embedded NUL, missing Workspace, missing shell, denied spawn, full spill, and EIO spill",
+      "observations": {"A": "status and spawn errors throw", "L": ["tool_execution_end"], "T": "thrown output/status text", "E": "timeout kills the tree", "C": "agent continues with execution error"},
+      "omhExpectation": {"A": "expected negatives admitted", "C": "session_reusable", "E": {"timeoutKilledTree": true}, "L": ["tool_execution_end"], "T": {"invalidCode": "invalid_command", "nonzeroCode": "nonzero_exit", "spawnCode": "spawn_denied", "storageCode": "output_storage_full", "timeoutCode": "timed_out", "unexpectedIoIsError": true}},
+      "comparator": "map Reference thrown status/timeout/spawn errors to omh ordinary Outcomes; keep EIO as Tool Failure",
+      "normalization": "ABD:actionable-built-in-outcomes",
+      "referenceCitations": ["packages/coding-agent/src/core/tools/bash.ts#L82-L145", "packages/coding-agent/src/core/tools/bash.ts#L376-L408", "packages/coding-agent/src/utils/shell.ts#L60-L120"]
+    },
+    {
+      "id": "reference.truthful-bash-signal-termination",
+      "captureCaseId": "capture.truthful-bash-signal-termination",
+      "obligation": "omh-v0.truthful-bash-signal-termination",
+      "referenceRevision": "0e6909f050eeb15e8f6c05185511f3788357ddb3",
+      "canonicalInput": "SIGTERM the owned shell after admission",
+      "observations": {"A": "command admitted", "L": ["tool_execution_end"], "T": "apparent success with null exitCode", "E": "process signaled", "C": "agent continues"},
+      "omhExpectation": {"A": "command admitted", "C": "reusable", "E": {"signaled": true}, "L": ["tool_execution_end"], "T": {"code": "signal_exit", "isError": false, "signal": 15}},
+      "comparator": "compare retained effects then apply the Reference-success versus omh-signal-Outcome classification difference",
+      "normalization": "ABD:truthful-bash-signal-termination",
+      "referenceCitations": ["packages/coding-agent/src/core/tools/bash.ts#L137-L145", "packages/coding-agent/src/core/tools/bash.ts#L404-L408"]
+    },
+    {
+      "id": "reference.bash-cancellation-cleanup",
+      "captureCaseId": "capture.bash-cancellation-cleanup",
+      "obligation": "omh-v0.bash-cancellation-cleanup",
+      "referenceRevision": "0e6909f050eeb15e8f6c05185511f3788357ddb3",
+      "canonicalInput": "abort an active sleep command and inject spill close failure on a truncated call",
+      "observations": {"A": "started command", "L": ["tool_execution_end"], "T": "aborted throw", "E": "best-effort kill", "C": "session continues"},
+      "omhExpectation": {"A": "started command", "C": "reusable_after_cancel", "E": {"treeDead": true}, "L": ["tool_execution_end"], "T": {"cancelledText": "Tool \"bash\" execution was cancelled", "isError": true}},
+      "comparator": "compare process-tree settlement and cancelled Tool Failure; do not publish timeout or exit success",
+      "normalization": "ABD:managed-run-cancellation",
+      "referenceCitations": ["packages/coding-agent/src/core/tools/bash.ts#L111-L145", "packages/agent/src/agent.ts#L258-L293"]
     }
   ]
 }

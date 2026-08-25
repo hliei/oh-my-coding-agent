@@ -9,6 +9,7 @@ import os
 import stat
 from typing import Any, cast
 
+from oh_my_coding_agent._bash import execute_bash
 from oh_my_coding_agent._edit_diff import (
     EditMatchError,
     apply_literal_edits,
@@ -1012,16 +1013,6 @@ async def execute_edit(
         return result
 
 
-async def _unoperational_builtin(
-    tool_call_id: str,
-    params: dict[str, object],
-    signal: AbortSignal,
-    on_update: Any,
-) -> AgentToolResult:
-    del tool_call_id, params, signal, on_update
-    raise RuntimeError("built-in execute is not operational")
-
-
 def _reserved_tool(
     *,
     name: str,
@@ -1065,6 +1056,14 @@ def product_session_tools(workspace: str) -> tuple[AgentTool, ...]:
     ) -> AgentToolResult:
         return await execute_edit(workspace, tool_call_id, params, signal, on_update)
 
+    async def bash_execute(
+        tool_call_id: str,
+        params: dict[str, object],
+        signal: AbortSignal,
+        on_update: Any,
+    ) -> AgentToolResult:
+        return await execute_bash(workspace, tool_call_id, params, signal, on_update)
+
     return (
         _reserved_tool(
             name="read",
@@ -1076,7 +1075,7 @@ def product_session_tools(workspace: str) -> tuple[AgentTool, ...]:
             name="bash",
             description=BASH_DESCRIPTION,
             parameters=BASH_PARAMETERS,
-            execute=_unoperational_builtin,
+            execute=bash_execute,
         ),
         _reserved_tool(
             name="edit",

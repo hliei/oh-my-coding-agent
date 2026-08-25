@@ -866,6 +866,90 @@
       "evidenceClass": "exact-parity",
       "corpusCase": "reference.edit-mutation-serialization",
       "executableCases": ["ticket-18-edit", "ticket-18-installed"]
+    },
+    {
+      "id": "omh-v0.bash-command-surface",
+      "authority": ".scratch/omh-v0/issues/10-choose-coding-tools-and-workspace-contract.md#bash-arguments",
+      "publicInterface": "oh_my_coding_agent.AgentSession.prompt bash Tool",
+      "scenario": "admit command plus optional bounded timeout, reject cwd/env/shell overrides, start in Workspace, and return empty or exact untruncated output",
+      "observations": {"A": "command plus optional timeout admitted; unknown process fields rejected", "L": "initial empty update then ordinary Tool Outcome", "T": "exact output or (no output)", "E": "host subprocess starts in Workspace", "C": "Workspace identity unchanged"},
+      "comparator": "compare admitted argument shape, Workspace cwd, empty/success text, and schema rejection of per-call process overrides",
+      "normalization": "PA:json-schema-mapping for timeout bounds; ignore PID and scheduling jitter",
+      "evidenceClass": "exact-parity",
+      "corpusCase": "reference.bash-command-surface",
+      "executableCases": ["ticket-19-bash", "ticket-19-installed"]
+    },
+    {
+      "id": "omh-v0.unmodified-host-shell-environment",
+      "authority": ".scratch/omh-v0/issues/10-choose-coding-tools-and-workspace-contract.md#ABD:unmodified-host-shell-environment",
+      "publicInterface": "oh_my_coding_agent.AgentSession.prompt bash Tool",
+      "scenario": "spawn one command that prints inherited PATH and a fixture variable without product PATH injection",
+      "observations": {"A": "command admitted", "L": "ordinary Outcome", "T": "child-visible PATH and fixture equal the current host snapshot", "E": "no .env/profile/product rewrite", "C": "later spawn sees a fresh snapshot"},
+      "comparator": "compare inherited variables directly; normalize only the accepted Reference managed-binary PATH prepend when present",
+      "normalization": "ABD:unmodified-host-shell-environment",
+      "evidenceClass": "ABD:unmodified-host-shell-environment",
+      "corpusCase": "reference.unmodified-host-shell-environment",
+      "executableCases": ["ticket-19-bash", "ticket-19-installed"]
+    },
+    {
+      "id": "omh-v0.bash-output-updates",
+      "authority": ".scratch/omh-v0/issues/10-choose-coding-tools-and-workspace-contract.md#bash-updates-and-merge",
+      "publicInterface": "oh_my_coding_agent.AgentSession.prompt bash Tool",
+      "scenario": "merge stdout/stderr in arrival order, replacement-decode UTF-8, and emit empty then coalesced cumulative updates",
+      "observations": {"A": "command admitted", "L": "empty update, immediate first dirty snapshot, coalesced later snapshots, final dirty before terminal", "T": "merged decoded text without notices on updates", "E": "real pipes only", "C": "terminal Result matches the final tail"},
+      "comparator": "preserve per-pipe order; do not assert a total cross-pipe order; compare update emptiness, cumulative text, and 100ms coalescing",
+      "normalization": "ignore exact inter-chunk timing other than the 100ms coalescing bound and first-dirty immediacy",
+      "evidenceClass": "exact-parity",
+      "corpusCase": "reference.bash-output-updates",
+      "executableCases": ["ticket-19-bash", "ticket-19-installed"]
+    },
+    {
+      "id": "omh-v0.private-bash-output-spill",
+      "authority": ".scratch/omh-v0/issues/10-choose-coding-tools-and-workspace-contract.md#ABD:private-bash-output-spill",
+      "publicInterface": "oh_my_coding_agent.AgentSession.prompt bash Tool",
+      "scenario": "cross the 2000-line and 50KiB tail caps, persist exclusive owner-only omh-bash-*.log bytes, and report truncation facts",
+      "observations": {"A": "untruncated and truncated commands admitted", "L": "truncated updates carry path; untruncated creates no file", "T": "exact tail notices plus truncation/fullOutputPath details", "E": "complete merged raw spill with owner-only mode", "C": "path remains usable after Session disposal"},
+      "comparator": "compare decoded tail, truncation facts, raw spill bytes, and path usability; treat random filename as relational and mode as the accepted permission difference",
+      "normalization": "ABD:private-bash-output-spill",
+      "evidenceClass": "ABD:private-bash-output-spill",
+      "corpusCase": "reference.private-bash-output-spill",
+      "executableCases": ["ticket-19-bash", "ticket-19-installed"]
+    },
+    {
+      "id": "omh-v0.actionable-bash-outcomes",
+      "authority": ".scratch/omh-v0/issues/10-choose-coding-tools-and-workspace-contract.md#ABD:actionable-built-in-outcomes",
+      "publicInterface": "oh_my_coding_agent.AgentSession.prompt bash Tool",
+      "scenario": "return nonzero, timeout, invalid command, unavailable Workspace/shell, denied spawn, and recognized output/spill failures as Outcomes, with unexpected I/O as Tool Failure",
+      "observations": {"A": "expected negatives admitted as Results", "L": "Tool end with isError false for Outcomes and true for unexpected I/O", "T": "closed codes/phase/effect/status text without errno leakage", "E": "timeout kills the owned tree; infra failures remove unusable spill", "C": "Session remains reusable after Outcomes"},
+      "comparator": "map Reference thrown status/timeout/spawn errors to omh ordinary Outcomes; keep EIO as Tool Failure",
+      "normalization": "ABD:actionable-built-in-outcomes",
+      "evidenceClass": "ABD:actionable-built-in-outcomes",
+      "corpusCase": "reference.actionable-bash-outcomes",
+      "executableCases": ["ticket-19-bash", "ticket-19-installed"]
+    },
+    {
+      "id": "omh-v0.truthful-bash-signal-termination",
+      "authority": ".scratch/omh-v0/issues/10-choose-coding-tools-and-workspace-contract.md#ABD:truthful-bash-signal-termination",
+      "publicInterface": "oh_my_coding_agent.AgentSession.prompt bash Tool",
+      "scenario": "deliver an external SIGTERM to the owned shell and return a signal Outcome rather than success",
+      "observations": {"A": "command admitted", "L": "ordinary Tool Outcome", "T": "Command terminated by signal 15 with signal_exit details", "E": "command effects retained", "C": "later correction remains available"},
+      "comparator": "compare retained output/effects then apply the Reference-success versus omh-signal-Outcome classification difference",
+      "normalization": "ABD:truthful-bash-signal-termination",
+      "evidenceClass": "ABD:truthful-bash-signal-termination",
+      "corpusCase": "reference.truthful-bash-signal-termination",
+      "executableCases": ["ticket-19-bash", "ticket-19-installed"]
+    },
+    {
+      "id": "omh-v0.bash-cancellation-cleanup",
+      "authority": ".scratch/omh-v0/issues/10-choose-coding-tools-and-workspace-contract.md#ABD:managed-run-cancellation",
+      "publicInterface": "oh_my_coding_agent.AgentSession.prompt bash Tool",
+      "scenario": "abort an active bash process, drain the owned tree, suppress success, and raise cleanup when close fails after truncation",
+      "observations": {"A": "started command", "L": "cancelled Tool Failure; close failure is cleanup LifecycleError", "T": "Tool bash execution was cancelled", "E": "owned process tree is dead; unexposed spill removed", "C": "Session remains reusable after confirmed cancellation"},
+      "comparator": "compare process-tree settlement and cancelled Tool Failure against managed-run cancellation; do not publish timeout or exit success",
+      "normalization": "ABD:managed-run-cancellation",
+      "evidenceClass": "ABD:managed-run-cancellation",
+      "corpusCase": "reference.bash-cancellation-cleanup",
+      "executableCases": ["ticket-19-bash", "ticket-19-installed"]
     }
   ]
 }
