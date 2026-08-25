@@ -9,6 +9,9 @@ dependencies = [
   "PyYAML==6.0.3",
 ]
 
+[project.scripts]
+omh = "oh_my_coding_agent._cli:main"
+
 [build-system]
 requires = ["hatchling==1.32.0"]
 build-backend = "hatchling.build"

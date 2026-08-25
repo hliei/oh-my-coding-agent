@@ -1144,6 +1144,42 @@
       "comparator": "compare parsed-prefix entries, absent replay, fresh resource/auth binding, active-path continuation, and unchanged malformed bytes",
       "normalization": "Python JSONL carrier and product identity paths only",
       "referenceCitations": ["packages/coding-agent/src/core/session-manager.ts#L946-L979", "packages/coding-agent/src/core/agent-session.ts#L1120-L1126", "packages/coding-agent/src/core/agent-session.ts#L1260-L1283"]
+    },
+    {
+      "id": "reference.explicit-command-mode-admission",
+      "captureCaseId": "capture.explicit-command-mode-admission",
+      "obligation": "omh-v0.explicit-command-mode-admission",
+      "referenceRevision": "0e6909f050eeb15e8f6c05185511f3788357ddb3",
+      "canonicalInput": "exercise help/version, TTY/pipe admission, positional/piped/both/empty sources, extra argv, and unknown flags",
+      "observations": {"A": "auto-selects print for non-TTY and concatenates stdin/@file/messages", "L": "may progress into a Run", "T": "print or interactive depending on TTY", "E": "Session/resource effects may occur", "C": "not_applicable"},
+      "omhExpectation": {"A": {"help": 0, "version": 0, "unknown": 2, "missing": 2, "empty": 2, "both": 2, "extra": 2, "interactiveNonTty": 2, "helpWithPrint": 2}, "L": [], "T": {"helpStdout": "omh - coding agent\n\nUsage:\n  omh [options]\n  omh --print [options] [PROMPT]\n\nCommand Modes:\n  omh          Interactive REPL. Requires TTY stdin and stdout.\n  omh --print  One-shot. Performs one text Run and exits.\n\nOptions:\n  --print              Select one-shot Command Mode\n  --cwd PATH           Working directory\n  --continue, -c       Continue the current project's most recent Session\n  --session PATH_OR_ID Open a JSONL path, or search exact then prefix id\n  --session-id ID      Open an exact current-project Session, or create that id\n  --no-session         In-memory Session; may combine with --session-id\n  --trust-project      Trust project resources without prompting\n  --help               Show this help and exit\n  --version            Show version and exit\n\nPrompt:\n  One-shot accepts exactly one source: a positional PROMPT, or complete\n  strict-UTF-8 non-TTY stdin when PROMPT is omitted.\n\nTrust:\n  Interactive asks for a yes/no decision unless --trust-project is set.\n  One-shot never prompts: the flag is trusted and omission is untrusted.\n\nSessions:\n  With no selector, a persistent Session is created. An existing selected\n  Session is recovered; a fresh persistent or in-memory Session is new.\n\nStatus:\n  0   Command Mode completed\n  1   Model, construction, lifecycle, or I/O failure\n  2   Usage failure\n  130 SIGINT\n  129 SIGHUP\n  143 SIGTERM\n", "versionStdout": "omh 0.1.0\n", "unknownStderr": "usage: unknown option\n", "interactiveStderr": "usage: interactive mode requires a TTY; use --print\n"}, "E": {"helpStderrEmpty": true, "sessionFiles": 0}, "C": "no_session_or_resource_effects"},
+      "comparator": "compare omh pre-Session rejection and explicit one-shot admission with Reference auto-print/multi-source progression",
+      "normalization": "ABD:explicit-command-mode-admission",
+      "referenceCitations": ["packages/coding-agent/src/main.ts#L100-L115,#L539-L547,#L766-L783,#L811-L857", "packages/coding-agent/src/cli/initial-message.ts#L16-L42"]
+    },
+    {
+      "id": "reference.deterministic-one-shot-terminal-carrier",
+      "captureCaseId": "capture.deterministic-one-shot-terminal-carrier",
+      "obligation": "omh-v0.deterministic-one-shot-terminal-carrier",
+      "referenceRevision": "0e6909f050eeb15e8f6c05185511f3788357ddb3",
+      "canonicalInput": "one-shot ordinary, continue, ephemeral, model-error, and missing-auth settlements",
+      "observations": {"A": "print mode admitted", "L": "final Text blocks each with added LF", "T": "error/aborted as raw stderr status 1", "E": "HUP/TERM 129/143 after disposal", "C": "disposed"},
+      "omhExpectation": {"A": {"completed": 0, "continued": 0, "modelError": 1, "ephemeral": 0, "unauth": 1}, "L": {"firstIdentity": "new", "continuedIdentity": "recovered", "sameSession": true, "ephemeralIdentity": "new"}, "T": {"stdout": "hello", "continuedStdout": "again", "modelErrorStdout": "partial", "modelErrorDiagnostic": "model error", "unauthStderr": "error: DeepSeek authentication is required\n"}, "E": {"stdoutHasNoRunRecord": true, "stderrHasNoTool": true, "persistentFiles": true, "ephemeralAddedFiles": true, "unauthEffects": true}, "C": {"exitZeroIsCompletionOnly": true, "ephemeralId": "ephemeral-1"}},
+      "comparator": "compare terminal Text and classification while preserving omh no-added-LF, identity, and redacted status differences from Reference print-mode",
+      "normalization": "ABD:deterministic-one-shot-terminal-carrier",
+      "referenceCitations": ["packages/coding-agent/src/modes/print-mode.ts#L32-L65,#L103-L158", "packages/coding-agent/test/print-mode.test.ts#L93-L141"]
+    },
+    {
+      "id": "reference.redacted-command-diagnostics",
+      "captureCaseId": "capture.redacted-command-diagnostics",
+      "obligation": "omh-v0.redacted-command-diagnostics",
+      "referenceRevision": "0e6909f050eeb15e8f6c05185511f3788357ddb3",
+      "canonicalInput": "unknown flag, missing DeepSeek authentication, and a model stream error in one-shot",
+      "observations": {"A": "broad catch paths admitted", "L": "raw exception messages", "T": "arbitrary error text", "E": "may expose causes", "C": "not_applicable"},
+      "omhExpectation": {"A": {"unknown": 2, "unauth": 1, "modelError": 1}, "L": "identity_then_primary", "T": {"unknown": "usage: unknown option\n", "unauth": "error: DeepSeek authentication is required\n", "modelError": "model error"}, "E": {"traceback": false, "exceptionClass": false, "secret": false, "argvEcho": false}, "C": "stderr_not_redirected_to_stdout"},
+      "comparator": "inject the same failpoint and compare classification and omh template class rather than arbitrary Reference prose",
+      "normalization": "ABD:redacted-command-diagnostics",
+      "referenceCitations": ["packages/coding-agent/src/main.ts#L228-L260", "packages/coding-agent/src/modes/print-mode.ts#L148-L151"]
     }
   ]
 }

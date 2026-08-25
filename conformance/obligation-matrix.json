@@ -1158,6 +1158,42 @@
       "referenceApplicability": {"status": "not_applicable", "reason": "composed-journey-coverage"},
       "corpusCase": "reference.programmatic-recovery-continuity",
       "executableCases": ["ticket-22-journey", "ticket-22-installed"]
+    },
+    {
+      "id": "omh-v0.explicit-command-mode-admission",
+      "authority": ".scratch/omh-v0/issues/11-choose-repl-and-run-modes.md#ABD:explicit-command-mode-admission",
+      "publicInterface": "installed omh Command Mode",
+      "scenario": "admit explicit --print versus default interactive across TTY/pipe, source, and argv combinations without implicit mode switching",
+      "observations": {"A": "help/version admitted; unknown, missing, empty, dual, extra, non-TTY interactive, and combined help rejected", "L": "not_applicable", "T": "usage status 2 and golden help/version bytes", "E": "zero Session files or resource effects on rejection and pure actions", "C": "not_applicable"},
+      "comparator": "compare omh pre-Session rejection and explicit one-shot admission with Reference auto-print/multi-source progression",
+      "normalization": "ABD:explicit-command-mode-admission",
+      "evidenceClass": "ABD:explicit-command-mode-admission",
+      "corpusCase": "reference.explicit-command-mode-admission",
+      "executableCases": ["ticket-23-one-shot", "ticket-23-installed"]
+    },
+    {
+      "id": "omh-v0.deterministic-one-shot-terminal-carrier",
+      "authority": ".scratch/omh-v0/issues/11-choose-repl-and-run-modes.md#ABD:deterministic-one-shot-terminal-carrier",
+      "publicInterface": "installed omh --print Command Mode",
+      "scenario": "emit Session identity on stderr, buffer one Run to settlement, write only terminal Assistant Text to stdout, and exit with the selected status table",
+      "observations": {"A": "completed, continued, ephemeral, model-error, and missing-auth one-shot paths admitted or rejected as specified", "L": "new then recovered identity; ephemeral remains new", "T": "stdout is concatenated Text; model error and auth use stable diagnostics", "E": "no Tool/Run records; persistent files exist; ephemeral and unauth add none", "C": "exit 0 means Command Mode completion only"},
+      "comparator": "compare terminal Text and classification while preserving omh no-added-LF, identity, and redacted status differences from Reference print-mode",
+      "normalization": "ABD:deterministic-one-shot-terminal-carrier",
+      "evidenceClass": "ABD:deterministic-one-shot-terminal-carrier",
+      "corpusCase": "reference.deterministic-one-shot-terminal-carrier",
+      "executableCases": ["ticket-23-one-shot", "ticket-23-installed"]
+    },
+    {
+      "id": "omh-v0.redacted-command-diagnostics",
+      "authority": ".scratch/omh-v0/issues/11-choose-repl-and-run-modes.md#ABD:redacted-command-diagnostics",
+      "publicInterface": "installed omh Command Mode stderr",
+      "scenario": "emit closed usage, error, and model-error templates without causes, secrets, or argv echo",
+      "observations": {"A": "unknown option, missing authentication, and model error classified", "L": "identity then primary for published Sessions", "T": "usage:, error:, and model error templates", "E": "no traceback, exception class, secret, or unknown-argv echo", "C": "stderr is not redirected to stdout"},
+      "comparator": "inject the same failpoint and compare classification and omh template class rather than arbitrary Reference prose",
+      "normalization": "ABD:redacted-command-diagnostics",
+      "evidenceClass": "ABD:redacted-command-diagnostics",
+      "corpusCase": "reference.redacted-command-diagnostics",
+      "executableCases": ["ticket-23-one-shot", "ticket-23-installed"]
     }
   ]
 }
