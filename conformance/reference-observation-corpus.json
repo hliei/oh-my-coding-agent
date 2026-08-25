@@ -736,6 +736,54 @@
       "comparator": "map Reference thrown expected negatives to omh ordinary Outcomes; keep cancellation and EIO as Tool Failures",
       "normalization": "ABD:actionable-built-in-outcomes and ABD:managed-run-cancellation",
       "referenceCitations": ["packages/coding-agent/src/core/tools/read.ts#L216-L327"]
+    },
+    {
+      "id": "reference.truthful-write-result",
+      "captureCaseId": "capture.truthful-write-result",
+      "obligation": "omh-v0.truthful-write-result",
+      "referenceRevision": "0e6909f050eeb15e8f6c05185511f3788357ddb3",
+      "canonicalInput": "write empty content, Unicode scalars including combining and astral text, a tab-bearing path, nested parents, and an overwrite of a longer file",
+      "observations": {"A": "content.length UTF-16 units labeled as bytes", "L": ["tool_execution_end"], "T": "unquoted path interpolated into success text", "E": "host writeFile utf-8", "C": "file readable"},
+      "omhExpectation": {"A": "literal path and Unicode-scalar content admitted", "C": "workspace_files_match_reported_bytes", "E": {"controlBytes": true, "emptyBytes": true, "nestedBytes": true, "overwritten": true, "unicodeBytes": true}, "L": ["tool_execution_end"], "T": {"control": "Successfully wrote 2 bytes to \"weird\\tname.txt\"", "empty": "Successfully wrote 0 bytes to \"empty.txt\"", "isError": false, "overwrite": "Successfully wrote 3 bytes to \"old.txt\"", "parents": "Successfully wrote 6 bytes to \"a/b/c.txt\"", "unicode": "Successfully wrote 15 bytes to \"say \\\"hi\\\".txt\""}},
+      "comparator": "compare disk bytes to the reported UTF-8 count and quoted path; apply ABD:truthful-write-result for Reference UTF-16 length and unquoted path",
+      "normalization": "ABD:truthful-write-result",
+      "referenceCitations": ["packages/coding-agent/src/core/tools/write.ts#L14-L35", "packages/coding-agent/src/core/tools/write.ts#L181-L225"]
+    },
+    {
+      "id": "reference.literal-tool-paths-write",
+      "captureCaseId": "capture.literal-tool-paths-write",
+      "obligation": "omh-v0.literal-tool-paths-write",
+      "referenceRevision": "0e6909f050eeb15e8f6c05185511f3788357ddb3",
+      "canonicalInput": "write a Workspace-relative file, an absolute path outside Workspace, a .. path, a literal tilde path, and a symlink",
+      "observations": {"A": "tilde/file-URL/@ expansion", "L": ["tool_execution_end"], "T": "resolved or expanded target", "E": "I/O may follow expanded spelling", "C": "cwd unchanged"},
+      "omhExpectation": {"A": "literal nonempty NUL-free paths admitted", "C": "workspace_unchanged_as_identity", "E": {"homeExpanded": false, "sandboxRejected": false}, "L": ["tool_execution_end"], "T": {"absoluteOutsideWorkspace": "via-dot-dot", "dotDot": "via-dot-dot", "literalTilde": "literal-tilde", "symlinkPreserved": true, "symlinkTarget": "through-link"}},
+      "comparator": "compare exact lexical target bytes; contrast Reference expansion with omh exact-name success",
+      "normalization": "ABD:literal-tool-paths",
+      "referenceCitations": ["packages/coding-agent/src/utils/paths.ts#L48-L83", "packages/coding-agent/src/core/tools/path-utils.ts#L8-L81", "packages/coding-agent/src/core/tools/write.ts#L181-L225"]
+    },
+    {
+      "id": "reference.actionable-write-outcomes",
+      "captureCaseId": "capture.actionable-write-outcomes",
+      "obligation": "omh-v0.actionable-write-outcomes",
+      "referenceRevision": "0e6909f050eeb15e8f6c05185511f3788357ddb3",
+      "canonicalInput": "write a dangling symlink, a file-as-parent, a directory, a symlink loop, a read-only file, injected ENOSPC, cancel one started write, and inject EIO",
+      "observations": {"A": "expected filesystem errors throw", "L": ["tool_execution_end"], "T": {"isError": true, "genericFailure": true}, "E": "mkdir or write may have started", "C": "agent continues with execution error"},
+      "omhExpectation": {"A": "expected negatives admitted", "C": "session_reusable", "E": {"heldCreated": false}, "L": ["tool_execution_end"], "T": {"cancelledIsError": true, "deniedCode": "not_writable", "directoryCode": "target_is_directory", "directoryEffect": "target_may_be_partial", "invalidCode": "invalid_path", "missingCode": "not_found", "missingIsError": false, "parentCode": "parent_not_directory", "parentEffect": "none", "storageCode": "storage_full", "storagePhase": "write", "unexpectedIoIsError": true}},
+      "comparator": "map Reference thrown expected negatives to omh ordinary Outcomes; keep cancellation and EIO as Tool Failures",
+      "normalization": "ABD:actionable-built-in-outcomes and ABD:managed-run-cancellation",
+      "referenceCitations": ["packages/coding-agent/src/core/tools/write.ts#L194-L225"]
+    },
+    {
+      "id": "reference.write-mutation-serialization",
+      "captureCaseId": "capture.write-mutation-serialization",
+      "obligation": "omh-v0.write-mutation-serialization",
+      "referenceRevision": "0e6909f050eeb15e8f6c05185511f3788357ddb3",
+      "canonicalInput": "parallel batch of two writes to one existing file, one write to a different file, and one read",
+      "observations": {"A": "parallel built-ins plus same-file queue", "L": ["tool_execution_end"], "T": "source-ordered Results", "E": "same-key writes serialize; other keys and reads remain concurrent", "C": "queue is process-local"},
+      "omhExpectation": {"A": "parallel batch admitted", "C": "same_key_serialized_other_keys_concurrent", "E": {"otherFinal": "other", "peerCompletedWhileHeld": true, "sameFinal": "second", "seedWhileHeld": true}, "L": ["tool_execution_end"], "T": {"errors": {"call-a": false, "call-b": false, "call-c": false, "call-d": false}, "secondWaited": true}},
+      "comparator": "compare same-key serialization and cross-key/read concurrency directly against the fixed Reference file-mutation queue",
+      "normalization": "ignore scheduling jitter; compare ownership overlap and final bytes",
+      "referenceCitations": ["packages/coding-agent/src/core/tools/file-mutation-queue.ts#L16-L31", "packages/coding-agent/src/core/tools/write.ts#L194-L225"]
     }
   ]
 }

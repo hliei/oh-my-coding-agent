@@ -746,6 +746,54 @@
       "evidenceClass": "ABD:actionable-built-in-outcomes",
       "corpusCase": "reference.actionable-read-outcomes",
       "executableCases": ["ticket-16-read", "ticket-16-installed"]
+    },
+    {
+      "id": "omh-v0.truthful-write-result",
+      "authority": ".scratch/omh-v0/issues/10-choose-coding-tools-and-workspace-contract.md#ABD:truthful-write-result",
+      "publicInterface": "oh_my_coding_agent.AgentSession.prompt write Tool",
+      "scenario": "write empty, Unicode, nested, and overwrite content through one Product Session and compare disk bytes to the reported count",
+      "observations": {"A": "literal path and Unicode-scalar content admitted", "L": "ordinary Tool Outcome with no updates", "T": "Successfully wrote {utf8ByteCount} bytes to quoted original path", "E": "exact host bytes without added BOM, newline, or Unicode normalization", "C": "later readback matches the written bytes"},
+      "comparator": "compare actual disk bytes to the reported UTF-8 count and quoted path; contrast Reference UTF-16 length and unquoted path",
+      "normalization": "ABD:truthful-write-result",
+      "evidenceClass": "ABD:truthful-write-result",
+      "corpusCase": "reference.truthful-write-result",
+      "executableCases": ["ticket-17-write", "ticket-17-installed"]
+    },
+    {
+      "id": "omh-v0.literal-tool-paths-write",
+      "authority": ".scratch/omh-v0/issues/10-choose-coding-tools-and-workspace-contract.md#ABD:literal-tool-paths",
+      "publicInterface": "oh_my_coding_agent.AgentSession.prompt write Tool",
+      "scenario": "write relative Workspace paths, absolute and .. paths outside Workspace, a literal tilde name, and a symlink target",
+      "observations": {"A": "nonempty NUL-free literal paths admitted", "L": "ordinary Tool Outcome", "T": "exact original-path projection", "E": "host create-or-truncate at the lexically resolved name without sandbox rejection", "C": "Workspace identity unchanged; symlink spelling preserved"},
+      "comparator": "compare exact lexical target bytes and public original path; contrast Reference tilde/file-URL/@ expansion with omh exact-name addressing",
+      "normalization": "ABD:literal-tool-paths; normalize only platform separators",
+      "evidenceClass": "ABD:literal-tool-paths",
+      "corpusCase": "reference.literal-tool-paths-write",
+      "executableCases": ["ticket-17-write", "ticket-17-installed"]
+    },
+    {
+      "id": "omh-v0.actionable-write-outcomes",
+      "authority": ".scratch/omh-v0/issues/10-choose-coding-tools-and-workspace-contract.md#ABD:actionable-built-in-outcomes",
+      "publicInterface": "oh_my_coding_agent.AgentSession.prompt write Tool",
+      "scenario": "write a dangling symlink, a file-as-parent, a directory target, a symlink loop, a read-only file, injected storage-full, cancel one started write, and inject unexpected I/O",
+      "observations": {"A": "expected negatives admitted as Results", "L": "Tool end with isError false for Outcomes and true for cancellation/unexpected failure", "T": "closed codes/phase/effect without errno leakage", "E": "identity rejects have no owned effect; cancellation starts no later I/O", "C": "Session remains reusable after Outcomes and cancellation"},
+      "comparator": "map Reference thrown filesystem errors to omh ordinary Outcomes; keep cancellation and EIO as Tool Failures",
+      "normalization": "ABD:actionable-built-in-outcomes and ABD:managed-run-cancellation",
+      "evidenceClass": "ABD:actionable-built-in-outcomes",
+      "corpusCase": "reference.actionable-write-outcomes",
+      "executableCases": ["ticket-17-write", "ticket-17-installed"]
+    },
+    {
+      "id": "omh-v0.write-mutation-serialization",
+      "authority": ".scratch/omh-v0/issues/10-choose-coding-tools-and-workspace-contract.md#same-file-mutation-queue",
+      "publicInterface": "oh_my_coding_agent.AgentSession.prompt write Tool",
+      "scenario": "run a parallel batch of two writes to one existing target, one write to a different file, and one read",
+      "observations": {"A": "parallel built-in batch admitted", "L": "same-key writes do not overlap inside execute; unrelated write and read may complete while the first same-key write is held", "T": "all four Tool Outcomes succeed", "E": "final same-target bytes are one complete write; the other file is written concurrently", "C": "queue identity remains process-local for later edit/write sharing"},
+      "comparator": "compare same-key serialization and cross-key/read concurrency against the fixed Reference file-mutation queue",
+      "normalization": "ignore scheduling jitter; compare ownership overlap, final bytes, and peer completion while the first same-key write is held",
+      "evidenceClass": "exact-parity",
+      "corpusCase": "reference.write-mutation-serialization",
+      "executableCases": ["ticket-17-write", "ticket-17-installed"]
     }
   ]
 }

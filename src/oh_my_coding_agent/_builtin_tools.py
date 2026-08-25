@@ -1,7 +1,8 @@
 from __future__ import annotations
 
 import asyncio
-from collections.abc import Mapping
+from collections.abc import AsyncIterator, Mapping
+from contextlib import asynccontextmanager
 import errno
 import json
 import os
@@ -210,6 +211,76 @@ async def _yield_for_cancellation(signal: AbortSignal) -> None:
     _raise_if_cancelled(signal)
     await asyncio.sleep(0)
     _raise_if_cancelled(signal)
+
+
+async def _acquire_uninterruptibly(lock: asyncio.Lock) -> None:
+    waiter = asyncio.ensure_future(lock.acquire())
+    try:
+        await waiter
+    except asyncio.CancelledError:
+        current = asyncio.current_task()
+        if current is not None:
+            current.uncancel()
+        await waiter
+        raise
+
+
+class _FileMutationQueue:
+    def __init__(self) -> None:
+        self._meta = asyncio.Lock()
+        self._locks: dict[str, asyncio.Lock] = {}
+        self._refs: dict[str, int] = {}
+
+    def key_for(self, resolved: str) -> str:
+        try:
+            if os.path.exists(resolved):
+                return os.path.realpath(resolved)
+        except OSError:
+            pass
+        return os.path.abspath(resolved)
+
+    async def _lock_for(self, key: str) -> asyncio.Lock:
+        async with self._meta:
+            lock = self._locks.get(key)
+            if lock is None:
+                lock = asyncio.Lock()
+                self._locks[key] = lock
+            self._refs[key] = self._refs.get(key, 0) + 1
+            return lock
+
+    async def _drop(self, key: str) -> None:
+        async with self._meta:
+            remaining = self._refs[key] - 1
+            if remaining == 0:
+                del self._refs[key]
+                del self._locks[key]
+            else:
+                self._refs[key] = remaining
+
+    @asynccontextmanager
+    async def hold(self, key: str) -> AsyncIterator[None]:
+        lock = await self._lock_for(key)
+        acquired = False
+        try:
+            try:
+                await _acquire_uninterruptibly(lock)
+            except asyncio.CancelledError:
+                acquired = True
+                raise
+            acquired = True
+            yield
+        finally:
+            if acquired:
+                lock.release()
+            await self._drop(key)
+
+
+_MUTATION_QUEUE = _FileMutationQueue()
+
+
+async def _after_queue_hold(signal: AbortSignal, key: str) -> None:
+    del key
+    await _yield_for_cancellation(signal)
 
 
 def _classify_open_error(error: OSError, path: str) -> AgentToolResult:
@@ -425,6 +496,197 @@ async def execute_read(
     return result
 
 
+def _makedirs(path: str) -> None:
+    os.makedirs(path, exist_ok=True)
+
+
+def _open_write(path: str) -> int:
+    return os.open(path, os.O_WRONLY | os.O_CREAT | os.O_TRUNC)
+
+
+def _write_outcome(
+    code: str,
+    path: str,
+    text: str,
+    phase: str,
+    effect: str,
+) -> AgentToolResult:
+    return _text_result(
+        text,
+        {"code": code, "path": path, "phase": phase, "effect": effect},
+    )
+
+
+_WRITE_EFFECT = {
+    "identity": "none",
+    "parents": "parents_may_exist",
+    "write": "target_may_be_partial",
+}
+_WRITE_SUFFIX = {
+    "none": "",
+    "parents_may_exist": "; some parent directories may have been created",
+    "target_may_be_partial": "; the target may be partially or completely changed",
+}
+
+
+def _classify_write_error(
+    error: OSError, path: str, phase: str
+) -> AgentToolResult:
+    code = error.errno
+    effect = _WRITE_EFFECT[phase]
+    suffix = _WRITE_SUFFIX[effect]
+    if code == errno.ENOENT:
+        return _write_outcome(
+            "not_found",
+            path,
+            f"Write path {_quote(path)} was not found{suffix}",
+            phase,
+            effect,
+        )
+    if code in (
+        errno.ENAMETOOLONG,
+        errno.EINVAL,
+        errno.ELOOP,
+    ):
+        return _write_outcome(
+            "invalid_path",
+            path,
+            f"Write path {_quote(path)} is invalid{suffix}",
+            phase,
+            effect,
+        )
+    if code in (errno.ENOTDIR, errno.EEXIST):
+        return _write_outcome(
+            "parent_not_directory",
+            path,
+            f"Write parent of {_quote(path)} is not a directory{suffix}",
+            phase,
+            effect,
+        )
+    if code == errno.EISDIR:
+        return _write_outcome(
+            "target_is_directory",
+            path,
+            f"Write path {_quote(path)} is a directory{suffix}",
+            phase,
+            effect,
+        )
+    if code in (errno.EACCES, errno.EPERM, errno.EROFS):
+        return _write_outcome(
+            "not_writable",
+            path,
+            f"Write path {_quote(path)} is not writable{suffix}",
+            phase,
+            effect,
+        )
+    quota = getattr(errno, "EDQUOT", None)
+    if code == errno.ENOSPC or (quota is not None and code == quota):
+        return _write_outcome(
+            "storage_full",
+            path,
+            (
+                f"Write path {_quote(path)} could not be completed because "
+                f"storage is full{suffix}"
+            ),
+            phase,
+            effect,
+        )
+    raise error
+
+
+def _lstat_path(path: str) -> os.stat_result:
+    return os.lstat(path)
+
+
+def _write_identity_outcome(resolved: str, path: str) -> AgentToolResult | None:
+    try:
+        status = _lstat_path(resolved)
+    except FileNotFoundError:
+        return None
+    except OSError as error:
+        return _classify_write_error(error, path, "identity")
+    if not stat.S_ISLNK(status.st_mode):
+        return None
+    try:
+        _stat_path(resolved)
+    except OSError as error:
+        return _classify_write_error(error, path, "identity")
+    return None
+
+
+def _write_file_bytes(handle: int, data: bytes) -> int:
+    return os.write(handle, data)
+
+
+async def _create_parents(parent: str, signal: AbortSignal) -> None:
+    del signal
+    _makedirs(parent)
+
+
+async def _write_handle(
+    handle: int, encoded: bytes, signal: AbortSignal
+) -> None:
+    offset = 0
+    while offset < len(encoded):
+        _raise_if_cancelled(signal)
+        written = _write_file_bytes(handle, encoded[offset:])
+        if written == 0:
+            raise OSError("write made no progress")
+        offset += written
+
+
+async def execute_write(
+    workspace: str,
+    tool_call_id: str,
+    params: dict[str, object],
+    signal: AbortSignal,
+    on_update: Any,
+) -> AgentToolResult:
+    del tool_call_id, on_update
+    path = cast(str, params["path"])
+    content = cast(str, params["content"])
+    resolved = resolve_literal_tool_path(workspace, path)
+    encoded = content.encode("utf-8")
+    key = _MUTATION_QUEUE.key_for(resolved)
+    async with _MUTATION_QUEUE.hold(key):
+        await _after_queue_hold(signal, key)
+        identity = _write_identity_outcome(resolved, path)
+        _raise_if_cancelled(signal)
+        if identity is not None:
+            return identity
+        parent = os.path.dirname(resolved)
+        if parent:
+            try:
+                await _create_parents(parent, signal)
+            except OSError as error:
+                _raise_if_cancelled(signal)
+                return _classify_write_error(error, path, "parents")
+        await _yield_for_cancellation(signal)
+        handle = None
+        io_error: OSError | None = None
+        try:
+            handle = _open_write(resolved)
+            await _write_handle(handle, encoded, signal)
+        except OSError as error:
+            io_error = error
+        finally:
+            if handle is not None:
+                try:
+                    _close_handle(handle)
+                except OSError as error:
+                    raise LifecycleError(
+                        "cleanup",
+                        "Agent loop cleanup failed",
+                        causes=(error,),
+                    ) from error
+        _raise_if_cancelled(signal)
+        if io_error is not None:
+            return _classify_write_error(io_error, path, "write")
+        return _text_result(
+            f"Successfully wrote {len(encoded)} bytes to {_quote(path)}"
+        )
+
+
 async def _unoperational_builtin(
     tool_call_id: str,
     params: dict[str, object],
@@ -462,6 +724,14 @@ def product_session_tools(workspace: str) -> tuple[AgentTool, ...]:
     ) -> AgentToolResult:
         return await execute_read(workspace, tool_call_id, params, signal, on_update)
 
+    async def write_execute(
+        tool_call_id: str,
+        params: dict[str, object],
+        signal: AbortSignal,
+        on_update: Any,
+    ) -> AgentToolResult:
+        return await execute_write(workspace, tool_call_id, params, signal, on_update)
+
     return (
         _reserved_tool(
             name="read",
@@ -485,6 +755,6 @@ def product_session_tools(workspace: str) -> tuple[AgentTool, ...]:
             name="write",
             description=WRITE_DESCRIPTION,
             parameters=WRITE_PARAMETERS,
-            execute=_unoperational_builtin,
+            execute=write_execute,
         ),
     )
