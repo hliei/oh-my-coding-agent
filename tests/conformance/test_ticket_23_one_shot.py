@@ -478,7 +478,7 @@ def test_ticket_23_matrix_connects_command_mode_rows(tmp_path: Path) -> None:
         row = obligations[obligation_id]
         assert cases[case_id]["obligation"] == obligation_id
         assert row["corpusCase"] == case_id
-        assert "ticket-23-one-shot" in row["executableCases"]
+        assert "ticket-23-one-shot" in row["executableRunners"]
 
     assert admission_observations(
         tmp_path / "admit-home", tmp_path / "admit-workspace"

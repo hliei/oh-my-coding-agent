@@ -1,59 +1,73 @@
 from __future__ import annotations
 
-import asyncio
-from collections.abc import AsyncIterator, Mapping
-from contextlib import asynccontextmanager
-from dataclasses import replace
-import json
-import os
-from typing import Any, Literal, NoReturn, Protocol, TypeVar, cast
+import asyncio as _asyncio
+from collections.abc import AsyncIterator as _AsyncIterator, Mapping as _Mapping
+from contextlib import asynccontextmanager as _asynccontextmanager
+from dataclasses import replace as _replace
+import json as _json
+import os as _os
+from typing import (
+    Any as _Any,
+    Literal as _Literal,
+    NoReturn as _NoReturn,
+    Protocol as _Protocol,
+    TypeVar as _TypeVar,
+    cast as _cast,
+)
 
-import httpx
+import httpx as _httpx
 
-from .._errors import LifecycleError, ModelsError
-from .._canonical import _decodeJSONValue, encodeCanonical
-from .._models import Model, Provider, _create_model, _create_provider
+from .._errors import LifecycleError as _LifecycleError, ModelsError as _ModelsError
+from .._canonical import _decodeJSONValue, encodeCanonical as _encodeCanonical
+from .._models import (
+    Model as _Model,
+    Provider as _Provider,
+    _create_model,
+    _create_provider,
+)
 from .._streams import _active_abort_signal
 from .._values import (
-    AssistantMessage,
-    AssistantMessageDoneEvent,
-    AssistantMessageErrorEvent,
-    AssistantMessageEvent,
-    AssistantMessageStartEvent,
-    AssistantMessageTextDeltaEvent,
-    AssistantMessageTextEndEvent,
-    AssistantMessageTextStartEvent,
-    AssistantMessageToolCallDeltaEvent,
-    AssistantMessageToolCallEndEvent,
-    AssistantMessageToolCallStartEvent,
-    Context,
-    JSONValue,
-    SimpleStreamOptions,
-    TextContent,
-    Tool,
-    ToolCall,
-    ToolResultMessage,
-    Usage,
-    UsageCost,
-    UserMessage,
+    AssistantMessage as _AssistantMessage,
+    AssistantMessageDoneEvent as _AssistantMessageDoneEvent,
+    AssistantMessageErrorEvent as _AssistantMessageErrorEvent,
+    AssistantMessageEvent as _AssistantMessageEvent,
+    AssistantMessageStartEvent as _AssistantMessageStartEvent,
+    AssistantMessageTextDeltaEvent as _AssistantMessageTextDeltaEvent,
+    AssistantMessageTextEndEvent as _AssistantMessageTextEndEvent,
+    AssistantMessageTextStartEvent as _AssistantMessageTextStartEvent,
+    AssistantMessageToolCallDeltaEvent as _AssistantMessageToolCallDeltaEvent,
+    AssistantMessageToolCallEndEvent as _AssistantMessageToolCallEndEvent,
+    AssistantMessageToolCallStartEvent as _AssistantMessageToolCallStartEvent,
+    Context as _Context,
+    JSONValue as _JSONValue,
+    SimpleStreamOptions as _SimpleStreamOptions,
+    TextContent as _TextContent,
+    Tool as _Tool,
+    ToolCall as _ToolCall,
+    ToolResultMessage as _ToolResultMessage,
+    Usage as _Usage,
+    UsageCost as _UsageCost,
+    UserMessage as _UserMessage,
     _AssistantMessageEventValidator,
 )
 
-
 __all__ = ("deepseekProvider",)
+
+# The future-feature binding is not part of the selected child-module surface.
+globals().pop("annotations", None)
 
 
 _DEEPSEEK_URL = "https://api.deepseek.com/chat/completions"
 _DEEPSEEK_MODEL_ID = "deepseek-v4-flash"
 _CONTEXT_OVERFLOW_ERROR = "DeepSeek context window exceeded"
-_ZERO_COST = UsageCost(
+_ZERO_COST = _UsageCost(
     input=0.0,
     output=0.0,
     cacheRead=0.0,
     cacheWrite=0.0,
     total=0.0,
 )
-_ZERO_USAGE = Usage(
+_ZERO_USAGE = _Usage(
     input=0,
     output=0,
     cacheRead=0,
@@ -61,12 +75,12 @@ _ZERO_USAGE = Usage(
     totalTokens=0,
     cost=_ZERO_COST,
 )
-_FINISH_REASONS: dict[str, Literal["stop", "length", "toolUse"]] = {
+_FINISH_REASONS: dict[str, _Literal["stop", "length", "toolUse"]] = {
     "stop": "stop",
     "length": "length",
     "tool_calls": "toolUse",
 }
-_ClosableT = TypeVar("_ClosableT", bound="_AsyncClosable")
+_ClosableT = _TypeVar("_ClosableT", bound="_AsyncClosable")
 _DEEPSEEK_MODEL = _create_model(
     id=_DEEPSEEK_MODEL_ID,
     name="DeepSeek V4 Flash",
@@ -75,7 +89,7 @@ _DEEPSEEK_MODEL = _create_model(
 )
 
 
-def deepseekProvider() -> Provider:
+def deepseekProvider() -> _Provider:
     return _create_provider(
         id="deepseek",
         name="DeepSeek",
@@ -84,42 +98,46 @@ def deepseekProvider() -> Provider:
     )
 
 
-def _input_text(message: UserMessage) -> str:
+# Keep the runtime annotation resolvable without exporting Provider here.
+deepseekProvider.__annotations__["return"] = _Provider
+
+
+def _input_text(message: _UserMessage) -> str:
     content = message.content
     if isinstance(content, str):
         return content
     return "".join(block.text for block in content)
 
 
-def _assistant_text(message: AssistantMessage) -> str:
+def _assistant_text(message: _AssistantMessage) -> str:
     return "".join(
-        block.text for block in message.content if isinstance(block, TextContent)
+        block.text for block in message.content if isinstance(block, _TextContent)
     )
 
 
-def _tool_calls(message: AssistantMessage) -> tuple[dict[str, object], ...]:
+def _tool_calls(message: _AssistantMessage) -> tuple[dict[str, object], ...]:
     return tuple(
         {
             "id": block.id,
             "type": "function",
             "function": {
                 "name": block.name,
-                "arguments": encodeCanonical(block.arguments).decode("utf-8"),
+                "arguments": _encodeCanonical(block.arguments).decode("utf-8"),
             },
         }
         for block in message.content
-        if isinstance(block, ToolCall)
+        if isinstance(block, _ToolCall)
     )
 
 
-def _request_messages(context: Context) -> tuple[dict[str, object], ...]:
+def _request_messages(context: _Context) -> tuple[dict[str, object], ...]:
     messages: list[dict[str, object]] = []
     if context.systemPrompt is not None:
         messages.append({"role": "system", "content": context.systemPrompt})
     for message in context.messages:
-        if isinstance(message, UserMessage):
+        if isinstance(message, _UserMessage):
             messages.append({"role": "user", "content": _input_text(message)})
-        elif isinstance(message, AssistantMessage):
+        elif isinstance(message, _AssistantMessage):
             text = _assistant_text(message)
             calls = _tool_calls(message)
             if text or calls:
@@ -130,7 +148,7 @@ def _request_messages(context: Context) -> tuple[dict[str, object], ...]:
                 if calls:
                     assistant["tool_calls"] = calls
                 messages.append(assistant)
-        elif isinstance(message, ToolResultMessage):
+        elif isinstance(message, _ToolResultMessage):
             text = "\n".join(block.text for block in message.content)
             messages.append(
                 {
@@ -142,7 +160,7 @@ def _request_messages(context: Context) -> tuple[dict[str, object], ...]:
     return tuple(messages)
 
 
-def _request_tool(tool: Tool) -> dict[str, object]:
+def _request_tool(tool: _Tool) -> dict[str, object]:
     return {
         "type": "function",
         "function": {
@@ -155,21 +173,21 @@ def _request_tool(tool: Tool) -> dict[str, object]:
 
 
 def _request_body(
-    model: Model,
-    context: Context,
-    options: SimpleStreamOptions | None,
+    model: _Model,
+    context: _Context,
+    options: _SimpleStreamOptions | None,
 ) -> bytes:
     if model is not _DEEPSEEK_MODEL:
-        raise ModelsError("model_validation", "DeepSeek model is invalid")
-    if options is not None and type(options) is not SimpleStreamOptions:
+        raise _ModelsError("model_validation", "DeepSeek model is invalid")
+    if options is not None and type(options) is not _SimpleStreamOptions:
         raise TypeError("options must be a SimpleStreamOptions value")
     if options is not None:
         if options.temperature is not None and options.temperature > 2.0:
-            raise ModelsError(
+            raise _ModelsError(
                 "model_validation", "DeepSeek temperature must be between 0 and 2"
             )
         if options.maxTokens is not None and options.maxTokens > 384_000:
-            raise ModelsError(
+            raise _ModelsError(
                 "model_validation", "DeepSeek maxTokens must not exceed 384000"
             )
 
@@ -186,14 +204,14 @@ def _request_body(
         payload["temperature"] = options.temperature
     if options is not None and options.maxTokens is not None:
         payload["max_completion_tokens"] = options.maxTokens
-    return encodeCanonical(payload)
+    return _encodeCanonical(payload)
 
 
-def _usage_from_payload(payload: Mapping[str, object]) -> Usage:
+def _usage_from_payload(payload: _Mapping[str, object]) -> _Usage:
     def count(name: str) -> int:
         raw = payload.get(name)
         if type(raw) is not int or not 0 <= raw <= 2**53 - 1:
-            raise ModelsError("stream", "DeepSeek usage is invalid")
+            raise _ModelsError("stream", "DeepSeek usage is invalid")
         return raw
 
     prompt_tokens = count("prompt_tokens")
@@ -201,27 +219,27 @@ def _usage_from_payload(payload: Mapping[str, object]) -> Usage:
     total_tokens = count("total_tokens")
     cache_read = count("prompt_cache_hit_tokens")
     if cache_read > prompt_tokens:
-        raise ModelsError("stream", "DeepSeek usage is invalid")
+        raise _ModelsError("stream", "DeepSeek usage is invalid")
     input_tokens = prompt_tokens - cache_read
     if "prompt_cache_miss_tokens" in payload:
         cache_miss = count("prompt_cache_miss_tokens")
         if cache_miss != input_tokens:
-            raise ModelsError("stream", "DeepSeek usage is invalid")
+            raise _ModelsError("stream", "DeepSeek usage is invalid")
     completion_details = payload.get("completion_tokens_details")
-    if isinstance(completion_details, Mapping) and "reasoning_tokens" in completion_details:
-        raise ModelsError("stream", "DeepSeek usage is invalid")
+    if isinstance(completion_details, _Mapping) and "reasoning_tokens" in completion_details:
+        raise _ModelsError("stream", "DeepSeek usage is invalid")
     if total_tokens != input_tokens + completion_tokens + cache_read:
-        raise ModelsError("stream", "DeepSeek usage is invalid")
+        raise _ModelsError("stream", "DeepSeek usage is invalid")
     input_cost = input_tokens / 1_000_000 * 0.14
     output_cost = completion_tokens / 1_000_000 * 0.28
     cache_read_cost = cache_read / 1_000_000 * 0.0028
-    return Usage(
+    return _Usage(
         input=input_tokens,
         output=completion_tokens,
         cacheRead=cache_read,
         cacheWrite=0,
         totalTokens=total_tokens,
-        cost=UsageCost(
+        cost=_UsageCost(
             input=input_cost,
             output=output_cost,
             cacheRead=cache_read_cost,
@@ -231,8 +249,8 @@ def _usage_from_payload(payload: Mapping[str, object]) -> Usage:
     )
 
 
-def _empty_partial(model: Model) -> AssistantMessage:
-    return AssistantMessage(
+def _empty_partial(model: _Model) -> _AssistantMessage:
+    return _AssistantMessage(
         content=(),
         api=model.api,
         provider=model.provider,
@@ -243,7 +261,7 @@ def _empty_partial(model: Model) -> AssistantMessage:
     )
 
 
-async def _iter_sse_payloads(response: httpx.Response) -> AsyncIterator[dict[str, Any]]:
+async def _iter_sse_payloads(response: _httpx.Response) -> _AsyncIterator[dict[str, _Any]]:
     buffer = bytearray(await response.aread())
     while True:
         newline = buffer.find(b"\n\n")
@@ -262,24 +280,24 @@ async def _iter_sse_payloads(response: httpx.Response) -> AsyncIterator[dict[str
             data = line[5:].strip()
             if data == b"[DONE]":
                 if bytes(buffer).strip():
-                    raise ModelsError("stream", "DeepSeek stream is invalid")
+                    raise _ModelsError("stream", "DeepSeek stream is invalid")
                 return
             try:
-                payload = json.loads(
+                payload = _json.loads(
                     data.decode("utf-8"),
                     object_pairs_hook=_wire_object,
                     parse_constant=_reject_json_constant,
                 )
             except (UnicodeDecodeError, ValueError) as error:
-                raise ModelsError("stream", "DeepSeek stream is invalid") from error
+                raise _ModelsError("stream", "DeepSeek stream is invalid") from error
             if type(payload) is not dict:
-                raise ModelsError("stream", "DeepSeek stream is invalid")
-            yield cast(dict[str, Any], payload)
-    raise ModelsError("stream", "DeepSeek stream ended without terminal data")
+                raise _ModelsError("stream", "DeepSeek stream is invalid")
+            yield _cast(dict[str, _Any], payload)
+    raise _ModelsError("stream", "DeepSeek stream ended without terminal data")
 
 
-def _wire_object(pairs: list[tuple[str, Any]]) -> dict[str, Any]:
-    value: dict[str, Any] = {}
+def _wire_object(pairs: list[tuple[str, _Any]]) -> dict[str, _Any]:
+    value: dict[str, _Any] = {}
     for name, item in pairs:
         if name in value:
             raise ValueError("duplicate JSON key")
@@ -287,12 +305,12 @@ def _wire_object(pairs: list[tuple[str, Any]]) -> dict[str, Any]:
     return value
 
 
-def _reject_json_constant(value: str) -> NoReturn:
+def _reject_json_constant(value: str) -> _NoReturn:
     del value
     raise ValueError("invalid JSON constant")
 
 
-def _emit(validator: _AssistantMessageEventValidator, event: AssistantMessageEvent) -> AssistantMessageEvent:
+def _emit(validator: _AssistantMessageEventValidator, event: _AssistantMessageEvent) -> _AssistantMessageEvent:
     validator.accept(event)
     return event
 
@@ -313,10 +331,10 @@ class _StreamingToolCall:
         self.name = name
         self.fragments = ""
         self.argumentsSeen = False
-        self.arguments: Mapping[str, JSONValue] = {}
+        self.arguments: _Mapping[str, _JSONValue] = {}
 
-    def value(self) -> ToolCall:
-        return ToolCall(id=self.id, name=self.name, arguments=self.arguments)
+    def value(self) -> _ToolCall:
+        return _ToolCall(id=self.id, name=self.name, arguments=self.arguments)
 
     def append_identity(
         self,
@@ -335,11 +353,11 @@ class _StreamingToolCall:
         if parsed is not None:
             self.arguments = parsed
 
-    def finalize(self) -> ToolCall:
+    def finalize(self) -> _ToolCall:
         if self.argumentsSeen:
             finalized = _parsed_tool_arguments(self.fragments)
             if finalized is None:
-                raise ModelsError(
+                raise _ModelsError(
                     "stream", "DeepSeek Tool Call arguments are invalid"
                 )
             self.arguments = finalized
@@ -347,46 +365,46 @@ class _StreamingToolCall:
 
 
 def _replace_content(
-    partial: AssistantMessage,
+    partial: _AssistantMessage,
     content_index: int,
-    block: TextContent | ToolCall,
-) -> AssistantMessage:
+    block: _TextContent | _ToolCall,
+) -> _AssistantMessage:
     content = list(partial.content)
     content[content_index] = block
-    return replace(partial, content=tuple(content))
+    return _replace(partial, content=tuple(content))
 
 
 def _tool_delta_parts(
     raw: object,
 ) -> tuple[int, str | None, str | None, str]:
     if not isinstance(raw, dict):
-        raise ModelsError("stream", "DeepSeek Tool Call delta is invalid")
+        raise _ModelsError("stream", "DeepSeek Tool Call delta is invalid")
     stream_index = raw.get("index")
     if type(stream_index) is not int or stream_index < 0:
-        raise ModelsError("stream", "DeepSeek Tool Call delta is invalid")
+        raise _ModelsError("stream", "DeepSeek Tool Call delta is invalid")
     id_fragment = raw.get("id")
     if id_fragment is not None and type(id_fragment) is not str:
-        raise ModelsError("stream", "DeepSeek Tool Call delta is invalid")
+        raise _ModelsError("stream", "DeepSeek Tool Call delta is invalid")
     function = raw.get("function")
     if function is None:
         function = {}
     if not isinstance(function, dict):
-        raise ModelsError("stream", "DeepSeek Tool Call delta is invalid")
+        raise _ModelsError("stream", "DeepSeek Tool Call delta is invalid")
     name_fragment = function.get("name")
     argument_fragment = function.get("arguments", "")
     if name_fragment is not None and type(name_fragment) is not str:
-        raise ModelsError("stream", "DeepSeek Tool Call delta is invalid")
+        raise _ModelsError("stream", "DeepSeek Tool Call delta is invalid")
     if type(argument_fragment) is not str:
-        raise ModelsError("stream", "DeepSeek Tool Call delta is invalid")
+        raise _ModelsError("stream", "DeepSeek Tool Call delta is invalid")
     return stream_index, id_fragment, name_fragment, argument_fragment
 
 
-def _parsed_tool_arguments(fragments: str) -> Mapping[str, JSONValue] | None:
+def _parsed_tool_arguments(fragments: str) -> _Mapping[str, _JSONValue] | None:
     try:
         decoded = _decodeJSONValue(fragments.encode("utf-8"))
     except (TypeError, ValueError):
         return None
-    if not isinstance(decoded, Mapping):
+    if not isinstance(decoded, _Mapping):
         return None
     return decoded
 
@@ -394,10 +412,10 @@ def _parsed_tool_arguments(fragments: str) -> Mapping[str, JSONValue] | None:
 class _DeepSeekOperationState:
     __slots__ = ("latest",)
 
-    def __init__(self, latest: AssistantMessage) -> None:
+    def __init__(self, latest: _AssistantMessage) -> None:
         self.latest = latest
 
-    def remember(self, latest: AssistantMessage) -> AssistantMessage:
+    def remember(self, latest: _AssistantMessage) -> _AssistantMessage:
         self.latest = latest
         return latest
 
@@ -406,40 +424,40 @@ def _terminal_error(
     validator: _AssistantMessageEventValidator,
     state: _DeepSeekOperationState,
     *,
-    reason: Literal["error", "aborted"],
+    reason: _Literal["error", "aborted"],
     message: str,
-) -> AssistantMessageErrorEvent:
-    error = replace(
+) -> _AssistantMessageErrorEvent:
+    error = _replace(
         state.latest,
         stopReason=reason,
         errorMessage=message,
     )
-    terminal = AssistantMessageErrorEvent(reason=reason, error=error)
+    terminal = _AssistantMessageErrorEvent(reason=reason, error=error)
     validator.accept(terminal)
     return terminal
 
 
 async def _stream_simple(
-    model: Model,
-    context: Context,
-    options: SimpleStreamOptions | None,
-) -> AsyncIterator[AssistantMessageEvent]:
+    model: _Model,
+    context: _Context,
+    options: _SimpleStreamOptions | None,
+) -> _AsyncIterator[_AssistantMessageEvent]:
     validator = _AssistantMessageEventValidator()
     state = _DeepSeekOperationState(_empty_partial(model))
     try:
         async for event in _stream_simple_operation(
             model, context, options, state, validator
         ):
-            if isinstance(event, AssistantMessageStartEvent):
+            if isinstance(event, _AssistantMessageStartEvent):
                 state.remember(event.partial)
-            elif isinstance(event, AssistantMessageDoneEvent):
+            elif isinstance(event, _AssistantMessageDoneEvent):
                 state.remember(event.message)
-            elif isinstance(event, AssistantMessageErrorEvent):
+            elif isinstance(event, _AssistantMessageErrorEvent):
                 state.remember(event.error)
             else:
                 state.remember(event.partial)
             yield event
-    except asyncio.CancelledError:
+    except _asyncio.CancelledError:
         signal = _active_abort_signal()
         if signal is None or not signal.aborted:
             raise
@@ -449,9 +467,9 @@ async def _stream_simple(
             reason="aborted",
             message="Operation aborted",
         )
-    except LifecycleError:
+    except _LifecycleError:
         raise
-    except ModelsError as classified:
+    except _ModelsError as classified:
         if classified.code == "model_validation":
             raise
         public_error = (
@@ -470,7 +488,7 @@ async def _stream_simple(
             message=public_error,
         )
     except Exception as cause:
-        transport_failure = ModelsError(
+        transport_failure = _ModelsError(
             "provider",
             "DeepSeek request failed",
             cause=cause,
@@ -486,24 +504,24 @@ async def _stream_simple(
 def _raise_cleanup_failure(
     pending: BaseException | None,
     failure: BaseException,
-) -> NoReturn:
+) -> _NoReturn:
     prior_carrier: BaseException | None = pending
-    if isinstance(pending, asyncio.CancelledError):
+    if isinstance(pending, _asyncio.CancelledError):
         prior_carrier = pending.__cause__
     prior = (
         prior_carrier.causes
-        if isinstance(prior_carrier, LifecycleError)
+        if isinstance(prior_carrier, _LifecycleError)
         and prior_carrier.code == "cleanup"
         else ()
     )
-    cleanup = LifecycleError(
+    cleanup = _LifecycleError(
         "cleanup",
         "DeepSeek cleanup failed",
         causes=(*prior, failure),
     )
     signal = _active_abort_signal()
     if (
-        isinstance(pending, asyncio.CancelledError)
+        isinstance(pending, _asyncio.CancelledError)
         and (signal is None or not signal.aborted)
     ):
         pending.__cause__ = cleanup
@@ -511,12 +529,12 @@ def _raise_cleanup_failure(
     raise cleanup from failure
 
 
-class _AsyncClosable(Protocol):
+class _AsyncClosable(_Protocol):
     async def aclose(self) -> None: ...
 
 
-@asynccontextmanager
-async def _owned_resource(resource: _ClosableT) -> AsyncIterator[_ClosableT]:
+@_asynccontextmanager
+async def _owned_resource(resource: _ClosableT) -> _AsyncIterator[_ClosableT]:
     pending: BaseException | None = None
     try:
         yield resource
@@ -530,10 +548,10 @@ async def _owned_resource(resource: _ClosableT) -> AsyncIterator[_ClosableT]:
         raise pending
 
 
-@asynccontextmanager
-async def _deepseek_client() -> AsyncIterator[httpx.AsyncClient]:
-    client = httpx.AsyncClient(
-        transport=httpx.AsyncHTTPTransport(retries=0),
+@_asynccontextmanager
+async def _deepseek_client() -> _AsyncIterator[_httpx.AsyncClient]:
+    client = _httpx.AsyncClient(
+        transport=_httpx.AsyncHTTPTransport(retries=0),
         trust_env=False,
         follow_redirects=False,
         timeout=None,
@@ -542,13 +560,13 @@ async def _deepseek_client() -> AsyncIterator[httpx.AsyncClient]:
         yield client
 
 
-@asynccontextmanager
+@_asynccontextmanager
 async def _deepseek_response(
-    client: httpx.AsyncClient,
+    client: _httpx.AsyncClient,
     *,
-    headers: Mapping[str, str],
+    headers: _Mapping[str, str],
     body: bytes,
-) -> AsyncIterator[httpx.Response]:
+) -> _AsyncIterator[_httpx.Response]:
     request = client.build_request(
         "POST",
         _DEEPSEEK_URL,
@@ -560,16 +578,16 @@ async def _deepseek_response(
         yield response
 
 
-async def _is_context_overflow_response(response: httpx.Response) -> bool:
+async def _is_context_overflow_response(response: _httpx.Response) -> bool:
     if response.status_code != 400:
         return False
     try:
-        payload = json.loads(await response.aread())
-    except (json.JSONDecodeError, UnicodeDecodeError):
+        payload = _json.loads(await response.aread())
+    except (_json.JSONDecodeError, UnicodeDecodeError):
         return False
     if type(payload) is not dict or type(payload.get("error")) is not dict:
         return False
-    error = cast(dict[str, object], payload["error"])
+    error = _cast(dict[str, object], payload["error"])
     return error.get("code") in {
         "context_length_exceeded",
         "context_window_exceeded",
@@ -577,17 +595,17 @@ async def _is_context_overflow_response(response: httpx.Response) -> bool:
 
 
 async def _stream_simple_operation(
-    model: Model,
-    context: Context,
-    options: SimpleStreamOptions | None,
+    model: _Model,
+    context: _Context,
+    options: _SimpleStreamOptions | None,
     operation: _DeepSeekOperationState,
     validator: _AssistantMessageEventValidator,
-) -> AsyncIterator[AssistantMessageEvent]:
+) -> _AsyncIterator[_AssistantMessageEvent]:
     body = _request_body(model, context, options)
     partial = operation.latest
-    api_key = os.environ.get("DEEPSEEK_API_KEY")
+    api_key = _os.environ.get("DEEPSEEK_API_KEY")
     if not api_key:
-        raise ModelsError("auth", "DeepSeek authentication failed")
+        raise _ModelsError("auth", "DeepSeek authentication failed")
 
     headers = {
         "Authorization": f"Bearer {api_key}",
@@ -596,7 +614,7 @@ async def _stream_simple_operation(
     }
     text_index: int | None = None
     tool_calls: dict[int, _StreamingToolCall] = {}
-    finish: Literal["stop", "length", "toolUse"] | None = None
+    finish: _Literal["stop", "length", "toolUse"] | None = None
     usage = _ZERO_USAGE
     usage_seen = False
 
@@ -604,7 +622,7 @@ async def _stream_simple_operation(
         async with _deepseek_response(client, headers=headers, body=body) as response:
             if response.status_code != 200:
                 context_overflow = await _is_context_overflow_response(response)
-                raise ModelsError(
+                raise _ModelsError(
                     "auth" if response.status_code in (401, 403) else "provider",
                     (
                         "DeepSeek authentication failed"
@@ -614,69 +632,69 @@ async def _stream_simple_operation(
                         else "DeepSeek request failed"
                     ),
                 )
-            yield _emit(validator, AssistantMessageStartEvent(partial=partial))
+            yield _emit(validator, _AssistantMessageStartEvent(partial=partial))
             async for payload in _iter_sse_payloads(response):
                 if usage_seen:
-                    raise ModelsError(
+                    raise _ModelsError(
                         "stream", "DeepSeek usage payload must be unique and terminal"
                     )
                 response_id = payload.get("id")
                 response_model = payload.get("model")
                 if type(response_id) is str and partial.responseId is None:
                     partial = operation.remember(
-                        replace(partial, responseId=response_id)
+                        _replace(partial, responseId=response_id)
                     )
                 if type(response_model) is str and partial.responseModel is None:
                     partial = operation.remember(
-                        replace(partial, responseModel=response_model)
+                        _replace(partial, responseModel=response_model)
                     )
                 if "usage" in payload:
                     raw_usage = payload["usage"]
-                    if not isinstance(raw_usage, Mapping):
-                        raise ModelsError("stream", "DeepSeek usage is invalid")
+                    if not isinstance(raw_usage, _Mapping):
+                        raise _ModelsError("stream", "DeepSeek usage is invalid")
                     usage = _usage_from_payload(raw_usage)
                     usage_seen = True
-                    operation.remember(replace(partial, usage=usage))
+                    operation.remember(_replace(partial, usage=usage))
                 choices = payload.get("choices")
                 if not isinstance(choices, list) or not choices:
                     continue
                 choice = choices[0]
                 if not isinstance(choice, dict):
-                    raise ModelsError("stream", "DeepSeek stream is invalid")
+                    raise _ModelsError("stream", "DeepSeek stream is invalid")
                 delta = choice.get("delta")
                 if isinstance(delta, dict):
                     if delta.get("reasoning_content") is not None:
-                        raise ModelsError(
+                        raise _ModelsError(
                             "stream", "DeepSeek stream included reasoning content"
                         )
                     fragment = delta.get("content")
                     if type(fragment) is str and fragment:
                         if text_index is None:
                             text_index = len(partial.content)
-                            opened = replace(
+                            opened = _replace(
                                 partial,
-                                content=(*partial.content, TextContent(text="")),
+                                content=(*partial.content, _TextContent(text="")),
                             )
                             yield _emit(
                                 validator,
-                                AssistantMessageTextStartEvent(
+                                _AssistantMessageTextStartEvent(
                                     contentIndex=text_index,
                                     partial=opened,
                                 ),
                             )
                             partial = operation.remember(opened)
                         prior_text = partial.content[text_index]
-                        assert isinstance(prior_text, TextContent)
+                        assert isinstance(prior_text, _TextContent)
                         partial = operation.remember(
                             _replace_content(
                                 partial,
                                 text_index,
-                                TextContent(text=prior_text.text + fragment),
+                                _TextContent(text=prior_text.text + fragment),
                             )
                         )
                         yield _emit(
                             validator,
-                            AssistantMessageTextDeltaEvent(
+                            _AssistantMessageTextDeltaEvent(
                                 contentIndex=text_index,
                                 delta=fragment,
                                 partial=partial,
@@ -685,7 +703,7 @@ async def _stream_simple_operation(
                     raw_tool_calls = delta.get("tool_calls")
                     if raw_tool_calls is not None:
                         if not isinstance(raw_tool_calls, list):
-                            raise ModelsError(
+                            raise _ModelsError(
                                 "stream", "DeepSeek Tool Call delta is invalid"
                             )
                         for raw_tool_call in raw_tool_calls:
@@ -704,14 +722,14 @@ async def _stream_simple_operation(
                                 )
                                 tool_calls[stream_index] = state
                                 partial = operation.remember(
-                                    replace(
+                                    _replace(
                                         partial,
                                         content=(*partial.content, state.value()),
                                     )
                                 )
                                 yield _emit(
                                     validator,
-                                    AssistantMessageToolCallStartEvent(
+                                    _AssistantMessageToolCallStartEvent(
                                         contentIndex=state.contentIndex,
                                         partial=partial,
                                     ),
@@ -728,7 +746,7 @@ async def _stream_simple_operation(
                             )
                             yield _emit(
                                 validator,
-                                AssistantMessageToolCallDeltaEvent(
+                                _AssistantMessageToolCallDeltaEvent(
                                     contentIndex=state.contentIndex,
                                     delta=argument_fragment,
                                     partial=partial,
@@ -738,17 +756,17 @@ async def _stream_simple_operation(
                 if type(finish_reason) is str:
                     mapped = _FINISH_REASONS.get(finish_reason)
                     if mapped is None:
-                        raise ModelsError("stream", "DeepSeek finish reason is invalid")
+                        raise _ModelsError("stream", "DeepSeek finish reason is invalid")
                     finish = mapped
 
     tool_calls_by_content = {
         state.contentIndex: state for state in tool_calls.values()
     }
     for content_index, block in enumerate(partial.content):
-        if isinstance(block, TextContent):
+        if isinstance(block, _TextContent):
             yield _emit(
                 validator,
-                AssistantMessageTextEndEvent(
+                _AssistantMessageTextEndEvent(
                     contentIndex=content_index,
                     content=block.text,
                     partial=partial,
@@ -762,22 +780,22 @@ async def _stream_simple_operation(
             )
             yield _emit(
                 validator,
-                AssistantMessageToolCallEndEvent(
+                _AssistantMessageToolCallEndEvent(
                     contentIndex=content_index,
                     toolCall=tool_call,
                     partial=partial,
                 ),
             )
     if finish is None:
-        raise ModelsError("stream", "DeepSeek stream ended without a finish reason")
+        raise _ModelsError("stream", "DeepSeek stream ended without a finish reason")
     if not usage_seen:
-        raise ModelsError("stream", "DeepSeek stream ended without terminal usage")
-    message = replace(
+        raise _ModelsError("stream", "DeepSeek stream ended without terminal usage")
+    message = _replace(
         partial,
         usage=usage,
         stopReason=finish,
     )
     yield _emit(
         validator,
-        AssistantMessageDoneEvent(reason=finish, message=message),
+        _AssistantMessageDoneEvent(reason=finish, message=message),
     )

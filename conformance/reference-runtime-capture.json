@@ -1,0 +1,1874 @@
+{
+  "schemaVersion": 1,
+  "referenceRevision": "0e6909f050eeb15e8f6c05185511f3788357ddb3",
+  "cases": [
+    {
+      "id": "reference.public-import-roots",
+      "observations": {
+        "A": "admitted",
+        "L": [],
+        "T": {
+          "roots": [
+            "@earendil-works/pi-ai",
+            "@earendil-works/pi-agent-core",
+            "@earendil-works/pi-coding-agent"
+          ],
+          "distinct": true
+        },
+        "E": [],
+        "C": "not_applicable"
+      }
+    },
+    {
+      "id": "reference.no-tool-run-trace",
+      "observations": {
+        "A": "admitted",
+        "L": [
+          "agent_start",
+          "turn_start",
+          "message_start:user",
+          "message_end:user",
+          "message_start:assistant",
+          "message_update:text_start",
+          "message_update:text_delta",
+          "message_update:text_end",
+          "message_end:assistant",
+          "turn_end",
+          "agent_end"
+        ],
+        "T": {
+          "classification": "ordinary",
+          "roles": [
+            "user",
+            "assistant"
+          ]
+        },
+        "E": {
+          "providerCalls": 1
+        },
+        "C": "not_applicable"
+      }
+    },
+    {
+      "id": "reference.run-result-identity",
+      "observations": {
+        "A": "admitted",
+        "L": {
+          "agentEndMessagesIsResult": true
+        },
+        "T": {
+          "carrier": "array",
+          "roles": [
+            "user",
+            "assistant"
+          ]
+        },
+        "E": {
+          "contextMessagesIdentityPreserved": true,
+          "contextValueUnchanged": true
+        },
+        "C": "not_applicable"
+      }
+    },
+    {
+      "id": "reference.message-public-value-records",
+      "observations": {
+        "A": "admitted",
+        "L": [],
+        "T": {
+          "records": [
+            "TextContent",
+            "ToolCall",
+            "UserMessage",
+            "AssistantMessage",
+            "ToolResultMessage",
+            "Usage",
+            "UsageCost",
+            "Context"
+          ],
+          "contentKinds": [
+            "text",
+            "toolCall"
+          ],
+          "messageRoles": [
+            "user",
+            "assistant",
+            "toolResult"
+          ],
+          "stopReasons": [
+            "stop",
+            "length",
+            "toolUse",
+            "error",
+            "aborted"
+          ],
+          "immutable": false,
+          "hashable": false
+        },
+        "E": {
+          "nestedAliasesRetained": true
+        },
+        "C": "post-construction mutation observable"
+      }
+    },
+    {
+      "id": "reference.json-value-domain",
+      "observations": {
+        "A": {
+          "accepted": [
+            "null",
+            "bool",
+            "unicode-string",
+            "safe-int",
+            "finite-float",
+            "array",
+            "string-object"
+          ],
+          "rejected": [
+            "cycle",
+            "non-string-key",
+            "nonfinite-float"
+          ]
+        },
+        "L": [],
+        "T": "mutable-json",
+        "E": [],
+        "C": "finite-tree"
+      }
+    },
+    {
+      "id": "reference.optional-message-fields",
+      "observations": {
+        "A": "admitted",
+        "L": [],
+        "T": {
+          "missingAttributesReadAs": "undefined",
+          "requiredDetailsNull": true,
+          "emptyValuesPreserved": true
+        },
+        "E": {
+          "missingContextBytes": "{\"messages\":[]}",
+          "presentEmptyContextBytes": "insertion-ordered Reference JSON"
+        },
+        "C": "semantic distinctions preserved"
+      }
+    },
+    {
+      "id": "reference.canonical-message-bytes",
+      "observations": {
+        "A": "ordinary-json",
+        "L": [],
+        "T": {
+          "numericCarriers": [
+            "number"
+          ],
+          "unicode": "JSON.stringify",
+          "mappingOrder": "insertion"
+        },
+        "E": {
+          "codecPublic": false,
+          "reencodeByteIdentical": false
+        },
+        "C": "permissive-parse-and-stringify"
+      }
+    },
+    {
+      "id": "reference.assistant-message-event-variants",
+      "observations": {
+        "A": "admitted",
+        "L": {
+          "doneTrace": [
+            "start",
+            "text_start",
+            "text_delta",
+            "text_end",
+            "toolcall_start",
+            "toolcall_delta",
+            "toolcall_end",
+            "done"
+          ],
+          "preStartErrorTrace": [
+            "error"
+          ]
+        },
+        "T": {
+          "uniqueTerminal": true,
+          "terminalPayloadIdentity": true
+        },
+        "E": [],
+        "C": "no-event-after-terminal"
+      }
+    },
+    {
+      "id": "reference.tool-schema-validation",
+      "observations": {
+        "A": "closed_draft_2020_12_object_subset",
+        "L": [],
+        "T": {
+          "converted": {
+            "value": 2
+          },
+          "mutable": true,
+          "sourceUnchanged": true
+        },
+        "E": [],
+        "C": "fresh_working_tree"
+      }
+    },
+    {
+      "id": "reference.tool-callable-values",
+      "observations": {
+        "A": "admitted",
+        "L": [],
+        "T": {
+          "toolIsValue": true,
+          "agentToolIdentity": true,
+          "textOnlyResult": true,
+          "resultHasIsError": false
+        },
+        "E": [],
+        "C": "owned_snapshots"
+      }
+    },
+    {
+      "id": "reference.strict-python-tool-callable",
+      "observations": {
+        "A": "four logical inputs",
+        "L": [
+          "update",
+          "return"
+        ],
+        "T": {
+          "params": {
+            "count": 2
+          },
+          "signalRequired": false,
+          "updateCallbackSynchronous": true,
+          "resultHasIsError": false
+        },
+        "E": "callable_invoked_once",
+        "C": "promise_settled"
+      }
+    },
+    {
+      "id": "reference.redacted-tool-validation-errors",
+      "observations": {
+        "A": "rejected",
+        "L": [],
+        "T": {
+          "class": "Error",
+          "aggregate": true,
+          "rfc6901": false,
+          "argumentValuesExposed": true,
+          "schemaExposed": false
+        },
+        "E": "no_tool_effect",
+        "C": "validator_order_diagnostic"
+      }
+    },
+    {
+      "id": "reference.low-level-loop-carriers",
+      "observations": {
+        "A": "four_public_entries",
+        "L": {
+          "promptTerminal": "agent_end",
+          "continuationTerminal": "agent_end"
+        },
+        "T": {
+          "streamPromptRoles": [
+            "user",
+            "assistant"
+          ],
+          "streamContinuationRoles": [
+            "assistant"
+          ],
+          "sinkPromptRoles": [
+            "user",
+            "assistant"
+          ],
+          "sinkContinuationRoles": [
+            "assistant"
+          ]
+        },
+        "E": {
+          "modelCalls": 4
+        },
+        "C": {
+          "lazyBeforeActivation": false
+        }
+      }
+    },
+    {
+      "id": "reference.immutable-loop-context",
+      "observations": {
+        "A": "admitted",
+        "L": [],
+        "T": {
+          "continuationRoles": [
+            "assistant"
+          ]
+        },
+        "E": {
+          "callerContextMutated": true
+        },
+        "C": "shared_message_array_enlarged"
+      }
+    },
+    {
+      "id": "reference.managed-event-stream",
+      "observations": {
+        "A": {
+          "firstConsumer": "admitted",
+          "secondConsumer": "admitted"
+        },
+        "L": [
+          "agent_start",
+          "turn_start",
+          "message_start",
+          "message_end",
+          "message_start",
+          "message_update",
+          "message_update",
+          "message_update",
+          "message_end",
+          "turn_end",
+          "agent_end"
+        ],
+        "T": {
+          "agentEndSharesIdentity": true,
+          "resultObserversShareIdentity": true
+        },
+        "E": {
+          "producerActivations": 1
+        },
+        "C": "events_partition_between_consumers"
+      }
+    },
+    {
+      "id": "reference.readonly-abort-signal",
+      "observations": {
+        "A": "externally_constructible_observer",
+        "L": [],
+        "T": {
+          "cancelledWaiterLocal": true,
+          "normalSignalsAborted": [
+            false,
+            false,
+            false,
+            false
+          ],
+          "publicMembers": [
+            "aborted",
+            "reason",
+            "throwIfAborted",
+            "addEventListener"
+          ],
+          "sameRunIdentity": true
+        },
+        "E": [],
+        "C": "retained_normal_signal_false"
+      }
+    },
+    {
+      "id": "reference.awaited-event-sink",
+      "observations": {
+        "A": "sync_or_promise",
+        "L": "each_event_barrier",
+        "T": {
+          "failureCode": "generic_error",
+          "noPartialResult": true
+        },
+        "E": {
+          "modelBlockedBehindSink": true,
+          "failedSinkStartedModel": false
+        },
+        "C": "rejection_without_managed_classification"
+      }
+    },
+    {
+      "id": "reference.managed-run-cancellation",
+      "observations": {
+        "A": "controller_abort",
+        "L": "signal_based_failure_classification",
+        "T": "terminal_listener_can_observe_active_controller",
+        "E": "prepared_effects_can_start_after_late_abort",
+        "C": "run_cleared_after_terminal_emit"
+      }
+    },
+    {
+      "id": "reference.closed-lifecycle-error-carrier",
+      "observations": {
+        "A": "generic_error",
+        "L": [],
+        "T": {
+          "class": "Error",
+          "code": null,
+          "orderedCauseCount": 0,
+          "standardCause": false
+        },
+        "E": [],
+        "C": "message_or_identity_classification"
+      }
+    },
+    {
+      "id": "reference.one-validated-tool-turn",
+      "observations": {
+        "A": "admitted",
+        "L": [
+          "agent_start",
+          "turn_start",
+          "message_start",
+          "message_end",
+          "message_start",
+          "message_update",
+          "message_update",
+          "message_end",
+          "tool_execution_start",
+          "tool_execution_update",
+          "tool_execution_end",
+          "message_start",
+          "message_end",
+          "turn_end",
+          "turn_start",
+          "message_start",
+          "message_update",
+          "message_update",
+          "message_update",
+          "message_end",
+          "turn_end",
+          "agent_end"
+        ],
+        "T": {
+          "convertedParams": {
+            "count": 2
+          },
+          "isError": false,
+          "order": [
+            "prepare",
+            "execute"
+          ],
+          "roles": [
+            "user",
+            "assistant",
+            "toolResult",
+            "assistant"
+          ],
+          "startArgs": {
+            "n": "2"
+          }
+        },
+        "E": {
+          "providerCalls": 2
+        },
+        "C": {
+          "laterModelTurn": true,
+          "signalUnaborted": true
+        }
+      }
+    },
+    {
+      "id": "reference.tool-outcome-versus-failure",
+      "observations": {
+        "A": "admitted",
+        "L": "start_then_end",
+        "T": {
+          "isError": false,
+          "messageIsError": false,
+          "negativeDomainText": "Read path \"missing.txt\" was not found"
+        },
+        "E": "callable_returned",
+        "C": {
+          "roles": [
+            "user",
+            "assistant",
+            "toolResult",
+            "assistant"
+          ]
+        }
+      }
+    },
+    {
+      "id": "reference.redacted-tool-runtime-errors",
+      "observations": {
+        "A": "recoverable_tool_failure",
+        "L": "start_then_end_then_result",
+        "T": {
+          "errorTextSource": "caught_exception_or_ad_hoc_string",
+          "secretLeaked": true
+        },
+        "E": {
+          "preflightExecuted": false
+        },
+        "C": "next_model_turn"
+      }
+    },
+    {
+      "id": "reference.tool-turn-projection-identity",
+      "observations": {
+        "A": "admitted",
+        "L": {
+          "agentEndMessagesIsResult": true
+        },
+        "T": {
+          "carrier": "array",
+          "roles": [
+            "user",
+            "assistant",
+            "toolResult",
+            "assistant"
+          ]
+        },
+        "E": {
+          "contextMessagesIdentityPreserved": false
+        },
+        "C": "shared_history_array"
+      }
+    },
+    {
+      "id": "reference.strict-tool-call-correlation",
+      "observations": {
+        "parallel": {
+          "preparedValues": [
+            1,
+            2,
+            3,
+            4
+          ],
+          "executedIds": [
+            "duplicate",
+            "unique",
+            "duplicate",
+            ""
+          ],
+          "resultIds": [
+            "duplicate",
+            "unique",
+            "duplicate",
+            ""
+          ],
+          "resultErrors": [
+            false,
+            false,
+            false,
+            false
+          ],
+          "resultTexts": [
+            "ok:duplicate",
+            "ok:unique",
+            "ok:duplicate",
+            "ok:"
+          ],
+          "providerCalls": 2
+        },
+        "sequential": {
+          "preparedValues": [
+            1,
+            2,
+            3,
+            4
+          ],
+          "executedIds": [
+            "duplicate",
+            "unique",
+            "duplicate",
+            ""
+          ],
+          "resultIds": [
+            "duplicate",
+            "unique",
+            "duplicate",
+            ""
+          ],
+          "resultErrors": [
+            false,
+            false,
+            false,
+            false
+          ],
+          "resultTexts": [
+            "ok:duplicate",
+            "ok:unique",
+            "ok:duplicate",
+            "ok:"
+          ],
+          "providerCalls": 2
+        }
+      }
+    },
+    {
+      "id": "reference.deterministic-tool-batch-control",
+      "observations": {
+        "truncated": {
+          "toolEffects": 0,
+          "resultIds": [
+            "first",
+            "second"
+          ],
+          "allErrors": true,
+          "providerCalls": 2
+        },
+        "unanimousTermination": {
+          "providerCalls": 1,
+          "resultIds": [
+            "first",
+            "second"
+          ],
+          "roles": [
+            "user",
+            "assistant",
+            "toolResult",
+            "toolResult"
+          ],
+          "turnEndedBeforeAgent": true
+        }
+      }
+    },
+    {
+      "id": "reference.agent-public-surface",
+      "observations": {
+        "A": "admitted",
+        "C": "not_applicable",
+        "E": [],
+        "L": [],
+        "T": {
+          "continueIsCallable": true,
+          "exported": [
+            "Agent",
+            "AgentOptions",
+            "AgentState"
+          ],
+          "hasContinueAlias": true,
+          "members": [
+            "abort",
+            "continue",
+            "prompt",
+            "reset",
+            "signal",
+            "state",
+            "subscribe",
+            "waitForIdle"
+          ]
+        }
+      }
+    },
+    {
+      "id": "reference.strict-agent-run-admission",
+      "observations": {
+        "A": {
+          "assistantTail": "admitted",
+          "busy": "busy",
+          "carrier": "type_error",
+          "emptySequence": "admitted"
+        },
+        "C": "later_busy_run_settled",
+        "E": {
+          "idleProviderCalls": 1
+        },
+        "L": [],
+        "T": {
+          "busyStreamCalls": 1,
+          "unchangedIdleHistory": false
+        }
+      }
+    },
+    {
+      "id": "reference.owned-agent-state-mutation",
+      "observations": {
+        "A": "idle_reset_admitted",
+        "C": "reuse_ready",
+        "E": {
+          "providerCalls": 1
+        },
+        "L": [],
+        "T": {
+          "busyAssign": "mutated",
+          "busyUnchanged": false,
+          "errorCleared": true,
+          "hadHistory": true,
+          "messagesAfterReset": 0,
+          "promptPreserved": "kept",
+          "sameStateIdentity": true,
+          "seedIsolated": true
+        }
+      }
+    },
+    {
+      "id": "reference.agent-low-level-semantic-identity",
+      "observations": {
+        "A": "admitted",
+        "C": "agent_history_is_reduction_suffix",
+        "E": {
+          "providerCalls": 2
+        },
+        "L": {
+          "idleAfterPrompt": true,
+          "streamingDuringAgentEnd": true
+        },
+        "T": {
+          "eventTypesEqual": true,
+          "roles": [
+            "user",
+            "assistant"
+          ],
+          "suffixEqualsLowLevel": true
+        }
+      }
+    },
+    {
+      "id": "reference.distinct-listener-registrations",
+      "observations": {
+        "A": "duplicate_callable_registered_twice",
+        "C": "unsubscribe_removed_only_own_record",
+        "E": {
+          "providerCalls": 2
+        },
+        "L": {
+          "order": [
+            "shared",
+            "mutator",
+            "mutator",
+            "late"
+          ]
+        },
+        "T": []
+      }
+    },
+    {
+      "id": "reference.agent-ordinary-model-error",
+      "observations": {
+        "A": "ordinary_model_error_admitted",
+        "C": "fresh_run_after_error",
+        "E": {
+          "streamCalls": 2
+        },
+        "L": [],
+        "T": {
+          "errorMessage": "Model stream failed",
+          "recovered": true,
+          "secretLeaked": false,
+          "stateErrorAfterFailure": "Model stream failed",
+          "stateErrorAfterReuse": null,
+          "stopReason": "error"
+        }
+      }
+    },
+    {
+      "id": "reference.agent-clean-cancellation",
+      "observations": {
+        "A": "admitted",
+        "L": {
+          "agentEndCount": 1
+        },
+        "T": {
+          "stopReason": "aborted"
+        },
+        "E": {
+          "modelCalls": 1
+        },
+        "C": {
+          "idle": true
+        }
+      }
+    },
+    {
+      "id": "reference.agent-fail-closed-lifecycle",
+      "observations": {
+        "A": "admitted",
+        "L": {
+          "listenerAttempts": [
+            "first"
+          ],
+          "sinkAgentEnd": false
+        },
+        "T": {
+          "listener": "raised_callback",
+          "eventSink": "raised_callback",
+          "cleanup": "best_effort",
+          "model": "error"
+        },
+        "E": {
+          "listenerModelCalls": 0
+        },
+        "C": {
+          "cleanupIdle": "best_effort"
+        }
+      }
+    },
+    {
+      "id": "reference.deepseek-factory-catalog",
+      "observations": {
+        "A": "admitted",
+        "L": [],
+        "T": {
+          "providerId": "deepseek",
+          "providerName": "DeepSeek",
+          "modelId": "deepseek-v4-flash",
+          "api": "openai-completions"
+        },
+        "E": [],
+        "C": "not_applicable"
+      }
+    },
+    {
+      "id": "reference.deepseek-request-bytes",
+      "observations": {
+        "A": "admitted",
+        "L": [],
+        "T": {
+          "method": "POST",
+          "url": "https://api.deepseek.com/chat/completions",
+          "model": "deepseek-v4-flash",
+          "stream": true,
+          "thinking": {
+            "type": "disabled"
+          }
+        },
+        "E": {
+          "requestCount": 1
+        },
+        "C": "not_applicable"
+      }
+    },
+    {
+      "id": "reference.deepseek-text-stream-terminal",
+      "observations": {
+        "A": "admitted",
+        "L": [
+          "start",
+          "text_start",
+          "text_delta",
+          "text_delta",
+          "text_end",
+          "done"
+        ],
+        "T": {
+          "text": "Hello",
+          "stopReason": "stop"
+        },
+        "E": {
+          "requestCount": 1
+        },
+        "C": "not_applicable"
+      }
+    },
+    {
+      "id": "reference.deepseek-request-preflight",
+      "observations": {
+        "A": {
+          "validBoundaries": "admitted",
+          "firstOutside": "admitted_to_request"
+        },
+        "L": [],
+        "T": {
+          "temperatureField": "temperature",
+          "maxTokensField": "max_completion_tokens",
+          "clamped": false
+        },
+        "E": {
+          "firstOutsideCanReachEffect": true
+        },
+        "C": "provider_owned_rejection"
+      }
+    },
+    {
+      "id": "reference.strict-toolcall-json-finalization",
+      "observations": {
+        "A": {
+          "complete": "admitted",
+          "incomplete": "repaired_or_empty_fallback"
+        },
+        "L": [
+          "start",
+          "toolcall_start",
+          "toolcall_delta",
+          "toolcall_delta",
+          "toolcall_end",
+          "done"
+        ],
+        "T": {
+          "id": "call-1",
+          "name": "echo",
+          "arguments": {
+            "count": "2"
+          }
+        },
+        "E": {
+          "requestCount": 1
+        },
+        "C": "malformed_fallback_can_publish"
+      }
+    },
+    {
+      "id": "reference.deepseek-tool-round-trip",
+      "observations": {
+        "A": "admitted",
+        "L": [
+          "assistant:toolUse",
+          "tool:start",
+          "tool:end",
+          "toolResult",
+          "assistant:stop"
+        ],
+        "T": {
+          "roles": [
+            "user",
+            "assistant",
+            "toolResult",
+            "assistant"
+          ],
+          "convertedParams": {
+            "count": 2
+          }
+        },
+        "E": {
+          "providerRequests": 2,
+          "toolExecutions": 1
+        },
+        "C": "continued_after_tool_result"
+      }
+    },
+    {
+      "id": "reference.strict-deepseek-usage-finalization",
+      "observations": {
+        "A": {
+          "valid": "admitted",
+          "malformed": "zero_filled_or_recomputed"
+        },
+        "L": "terminal usage projection",
+        "T": {
+          "input": 16,
+          "output": 5,
+          "cacheRead": 4,
+          "totalTokens": 25
+        },
+        "E": {
+          "costRatesPerMillion": {
+            "input": 0.14,
+            "output": 0.28,
+            "cacheRead": 0.0028,
+            "cacheWrite": 0
+          }
+        },
+        "C": "reported_total_not_preserved_as_independent_observation"
+      }
+    },
+    {
+      "id": "reference.deepseek-failure-classification",
+      "observations": {
+        "A": "admitted",
+        "L": {
+          "preStart": [
+            "error"
+          ],
+          "postStart": [
+            "start",
+            "text_start",
+            "text_delta",
+            "error"
+          ]
+        },
+        "T": {
+          "categories": [
+            "auth",
+            "provider",
+            "stream"
+          ],
+          "partial": "safe partial",
+          "responseId": "safe-response-id",
+          "secretLeaked": false
+        },
+        "E": {
+          "requestCount": 3
+        },
+        "C": "terminal_assistant_all_helpers"
+      }
+    },
+    {
+      "id": "reference.deepseek-failure-reuse",
+      "observations": {
+        "A": "caller_started_runs",
+        "L": [],
+        "T": {
+          "provider": "error",
+          "removedKey": "error",
+          "recovered": true
+        },
+        "E": {
+          "requestCount": 2,
+          "requestCountAfterRemoval": 1,
+          "oneAttemptPerActivatedRun": true
+        },
+        "C": {
+          "idleAfterFailure": true,
+          "freshRunAfterFailure": true,
+          "keyReread": true
+        }
+      }
+    },
+    {
+      "id": "reference.deepseek-cancellation-settlement",
+      "observations": {
+        "A": "current_run_captured",
+        "L": {
+          "cleanupBeforeTerminal": "best_effort"
+        },
+        "T": {
+          "stopReason": "aborted"
+        },
+        "E": {
+          "requestCounts": [
+            1,
+            1
+          ]
+        },
+        "C": {
+          "freshRun": true
+        }
+      }
+    },
+    {
+      "id": "reference.session-empty-unflushed",
+      "observations": {
+        "A": "persistent_and_in_memory_admitted",
+        "L": [],
+        "T": {
+          "version": 3,
+          "persistentEmpty": true,
+          "memoryEmpty": true,
+          "leafs": [
+            null,
+            null
+          ]
+        },
+        "E": {
+          "directoryCreated": true,
+          "candidateFileExists": false,
+          "memoryCwdExists": false,
+          "memoryFile": null
+        },
+        "C": "empty_unflushed"
+      }
+    },
+    {
+      "id": "reference.session-supplied-manager-identity",
+      "observations": {
+        "A": "supplied_manager_admitted",
+        "L": [],
+        "T": {
+          "sameManager": true,
+          "sessionId": "identity",
+          "model": {
+            "provider": "deepseek",
+            "id": "deepseek-v4-flash"
+          },
+          "messages": 0
+        },
+        "E": {
+          "managerUnchangedByDisposal": true
+        },
+        "C": "disposed_idle"
+      }
+    },
+    {
+      "id": "reference.session-caller-ids",
+      "observations": {
+        "A": "caller_and_generated_ids_admitted",
+        "L": [],
+        "T": {
+          "create": "empty",
+          "inMemory": "memory",
+          "newSession": "reset.id",
+          "forkFrom": "fork.id",
+          "generatedVersion": 7
+        },
+        "E": {
+          "forkFileCreated": true
+        },
+        "C": "ids_preserved"
+      }
+    },
+    {
+      "id": "reference.session-no-continuing-lease",
+      "observations": {
+        "A": "two_managers_and_sessions_admitted",
+        "L": [],
+        "T": {
+          "samePath": true,
+          "sameId": true
+        },
+        "E": {
+          "leaseFiles": 0
+        },
+        "C": "independent_disposal"
+      }
+    },
+    {
+      "id": "reference.session-prompt-lazy-flush",
+      "observations": {
+        "A": "one_prompt_admitted",
+        "L": [
+          "agent_start",
+          "turn_start",
+          "message_start",
+          "message_end",
+          "message_start",
+          "message_update",
+          "message_update",
+          "message_update",
+          "message_end",
+          "turn_end",
+          "agent_end",
+          "agent_settled"
+        ],
+        "T": {
+          "activePathIsCompleteTree": true,
+          "agentEndIsRunSuffix": true,
+          "entryTypes": [
+            "model_change",
+            "thinking_level_change",
+            "message",
+            "message"
+          ],
+          "messageRoles": [
+            "user",
+            "assistant"
+          ]
+        },
+        "E": {
+          "beforeAwait": {
+            "entries": 0,
+            "file": false,
+            "requests": 0
+          },
+          "physicalTypes": [
+            "session",
+            "model_change",
+            "thinking_level_change",
+            "message",
+            "message"
+          ],
+          "requestCount": 1
+        },
+        "C": {
+          "reopenedValueEqual": true,
+          "recoveredIdle": true
+        }
+      }
+    },
+    {
+      "id": "reference.session-incomplete-recovery",
+      "observations": {
+        "A": "live_nonempty_path_reopened",
+        "L": [],
+        "T": {
+          "assistantCount": 1,
+          "roles": [
+            "user",
+            "assistant",
+            "user"
+          ],
+          "userText": [
+            "complete",
+            "interrupted"
+          ]
+        },
+        "E": {
+          "fileUnchangedByOpen": true,
+          "leaseFiles": 0,
+          "requestCount": 2
+        },
+        "C": {
+          "freshPromptRequired": true,
+          "recoveredIdle": true,
+          "redispatched": false
+        }
+      }
+    },
+    {
+      "id": "reference.session-persistence-fault-continuity",
+      "observations": {
+        "A": "raw_file_faults_propagated",
+        "L": [],
+        "T": {
+          "errors": [
+            "raw_file_error",
+            "raw_file_error"
+          ],
+          "firstMemoryTypes": [
+            "message",
+            "message"
+          ],
+          "labelRetainedInMemory": true
+        },
+        "E": {
+          "appendPrefixUnchanged": true,
+          "firstPartialBytes": 17,
+          "settledMarkers": 0
+        },
+        "C": {
+          "continuedFromMissingParent": true,
+          "reopenedBranchTypes": [
+            "model_change"
+          ],
+          "reopenedLostFailedLabel": true
+        }
+      }
+    },
+    {
+      "id": "reference.session-best-effort-recovery",
+      "observations": {
+        "A": "operation_specific_file_admission",
+        "L": [],
+        "T": {
+          "label": "kept",
+          "listed": [
+            "tolerant",
+            "strict"
+          ],
+          "listedAll": [
+            "tolerant",
+            "strict"
+          ],
+          "migratedVersion": 3,
+          "recent": "strict",
+          "recoveredTypes": [
+            "model_change",
+            "label"
+          ]
+        },
+        "E": {
+          "absentUnflushed": true,
+          "emptyInitialized": true,
+          "inMemoryDidNotAppend": true,
+          "invalid": "Error",
+          "invalidUnchanged": true,
+          "recoveryUnchanged": true
+        },
+        "C": {
+          "leaf": "label",
+          "memoryModeRetained": true,
+          "migrationEntryCount": 1
+        }
+      }
+    },
+    {
+      "id": "reference.session-stale-multi-manager-append",
+      "observations": {
+        "A": "two_process_snapshots_admitted",
+        "L": [],
+        "T": {
+          "models": [
+            "one",
+            "two"
+          ],
+          "physicalEntryCount": 3,
+          "sharedParent": true
+        },
+        "E": {
+          "exitCodes": [
+            0,
+            0
+          ],
+          "leaseFiles": 0
+        },
+        "C": {
+          "recoveredLeafInPhysicalSuffix": true,
+          "staleSnapshotCount": 1
+        }
+      }
+    },
+    {
+      "id": "reference.session-cancel-error-reuse",
+      "observations": {
+        "A": "error_cancel_and_reuse",
+        "L": [
+          "agent_end",
+          "agent_end",
+          "agent_end",
+          "agent_end"
+        ],
+        "T": {
+          "stopReasons": [
+            "error",
+            "aborted",
+            "stop"
+          ]
+        },
+        "E": {
+          "cancelledRequests": 2,
+          "requestCountBeforeDisposal": 3
+        },
+        "C": {
+          "reuseSucceeded": true
+        }
+      }
+    },
+    {
+      "id": "reference.session-managed-disposal",
+      "observations": {
+        "A": "concurrent_active_disposal",
+        "L": [],
+        "T": {
+          "finalStopReason": "aborted"
+        },
+        "E": {
+          "requestCount": 4
+        },
+        "C": {
+          "disposedAdmission": "admitted",
+          "idle": true,
+          "streaming": false
+        }
+      }
+    },
+    {
+      "id": "reference.session-compaction",
+      "observations": {
+        "A": "manual_compaction",
+        "L": [
+          "compaction_start",
+          "compaction_end"
+        ],
+        "T": {
+          "entryDelta": 1,
+          "firstKeptMatches": true,
+          "fullTreeRetained": true,
+          "summary": "installed checkpoint"
+        },
+        "E": {
+          "requestCount": 1
+        },
+        "C": {
+          "contextRoles": [
+            "user",
+            "user",
+            "assistant"
+          ],
+          "managerMatchesSession": true
+        },
+        "automatic": {
+          "agentEndWillRetry": [
+            true,
+            false
+          ],
+          "compactionReasons": [
+            "overflow"
+          ],
+          "entryDelta": 4,
+          "requestCount": 3,
+          "settled": true
+        }
+      }
+    },
+    {
+      "id": "reference.builtin-tool-registry",
+      "observations": {
+        "A": "built-ins plus overridable Extension names",
+        "L": [],
+        "T": {
+          "names": [
+            "read",
+            "bash",
+            "edit",
+            "write"
+          ],
+          "extensionOverride": true
+        },
+        "E": [],
+        "C": "session published with replaced built-in"
+      }
+    },
+    {
+      "id": "reference.literal-tool-paths-read",
+      "observations": {
+        "A": "tilde/file-URL/@ expansion and alternate probes",
+        "L": [
+          "tool_execution_end"
+        ],
+        "T": "resolved or probed target text",
+        "E": "I/O may follow expanded spelling",
+        "C": "cwd unchanged"
+      }
+    },
+    {
+      "id": "reference.strict-text-file-read",
+      "observations": {
+        "A": "bytes admitted without a regular-file gate",
+        "L": [
+          "tool_execution_end"
+        ],
+        "T": "replacement-decoded text or image attachment",
+        "E": "may block on special files",
+        "C": "file unchanged"
+      }
+    },
+    {
+      "id": "reference.strict-read-pagination",
+      "observations": {
+        "A": "unconstrained numbers admitted",
+        "L": [
+          "tool_execution_end"
+        ],
+        "T": "slice selection or thrown beyond-end failure",
+        "E": "no write",
+        "C": "reusable"
+      }
+    },
+    {
+      "id": "reference.actionable-read-outcomes",
+      "observations": {
+        "A": "expected filesystem errors throw",
+        "L": [
+          "tool_execution_end"
+        ],
+        "T": {
+          "isError": true,
+          "genericFailure": true
+        },
+        "E": "no write",
+        "C": "agent continues with execution error"
+      }
+    },
+    {
+      "id": "reference.truthful-write-result",
+      "observations": {
+        "A": "content.length UTF-16 units labeled as bytes",
+        "L": [
+          "tool_execution_end"
+        ],
+        "T": "unquoted path interpolated into success text",
+        "E": "host writeFile utf-8",
+        "C": "file readable"
+      }
+    },
+    {
+      "id": "reference.literal-tool-paths-write",
+      "observations": {
+        "A": "tilde/file-URL/@ expansion",
+        "L": [
+          "tool_execution_end"
+        ],
+        "T": "resolved or expanded target",
+        "E": "I/O may follow expanded spelling",
+        "C": "cwd unchanged"
+      }
+    },
+    {
+      "id": "reference.actionable-write-outcomes",
+      "observations": {
+        "A": "expected filesystem errors throw",
+        "L": [
+          "tool_execution_end"
+        ],
+        "T": {
+          "isError": true,
+          "genericFailure": true
+        },
+        "E": "mkdir or write may have started",
+        "C": "agent continues with execution error"
+      }
+    },
+    {
+      "id": "reference.write-mutation-serialization",
+      "observations": {
+        "A": "parallel built-ins plus same-file queue",
+        "L": [
+          "tool_execution_end"
+        ],
+        "T": "source-ordered Results",
+        "E": "same-key writes serialize; other keys and reads remain concurrent",
+        "C": "queue is process-local"
+      }
+    },
+    {
+      "id": "reference.strict-edit-arguments",
+      "observations": {
+        "A": "private prepareArguments repairs JSON-string edits and folds legacy fields",
+        "L": [
+          "tool_execution_end"
+        ],
+        "T": "repaired execute or thrown invalid input",
+        "E": "may mutate after repair",
+        "C": "file may change"
+      }
+    },
+    {
+      "id": "reference.literal-edit-text",
+      "observations": {
+        "A": "replacement-decode, CRLF normalization, and fuzzy match",
+        "L": [
+          "tool_execution_end"
+        ],
+        "T": "normalized match or split-based uniqueness",
+        "E": "newline style restored; overlapping starts may be missed",
+        "C": "file rewritten"
+      }
+    },
+    {
+      "id": "reference.precomputed-edit-result",
+      "observations": {
+        "A": "write then compute diff/patch",
+        "L": [
+          "tool_execution_end"
+        ],
+        "T": "computation failure may follow a completed write",
+        "E": "file may already be replaced",
+        "C": "later continuity ambiguous"
+      }
+    },
+    {
+      "id": "reference.actionable-edit-outcomes",
+      "observations": {
+        "A": "expected filesystem and matching errors throw",
+        "L": [
+          "tool_execution_end"
+        ],
+        "T": {
+          "isError": true,
+          "genericFailure": true
+        },
+        "E": "write may have started",
+        "C": "agent continues with execution error"
+      }
+    },
+    {
+      "id": "reference.literal-tool-paths-edit",
+      "observations": {
+        "A": "tilde/file-URL/@ expansion",
+        "L": [
+          "tool_execution_end"
+        ],
+        "T": "resolved or expanded target",
+        "E": "I/O may follow expanded spelling",
+        "C": "cwd unchanged"
+      }
+    },
+    {
+      "id": "reference.edit-mutation-serialization",
+      "observations": {
+        "A": "parallel built-ins plus same-file queue",
+        "L": [
+          "tool_execution_end"
+        ],
+        "T": "source-ordered Results",
+        "E": "same-key edit/write serialize; other keys and reads remain concurrent",
+        "C": "queue is process-local"
+      }
+    },
+    {
+      "id": "reference.bash-command-surface",
+      "observations": {
+        "A": "command admitted; extra fields ignored or repaired",
+        "L": [
+          "tool_execution_end"
+        ],
+        "T": "empty or stdout text",
+        "E": "subprocess in cwd",
+        "C": "cwd unchanged"
+      }
+    },
+    {
+      "id": "reference.unmodified-host-shell-environment",
+      "observations": {
+        "A": "command admitted",
+        "L": [
+          "tool_execution_end"
+        ],
+        "T": "PATH may include managed-binary prepend",
+        "E": "child inherits process.env plus prepend",
+        "C": "fresh snapshot next spawn"
+      }
+    },
+    {
+      "id": "reference.bash-output-updates",
+      "observations": {
+        "A": "command admitted",
+        "L": [
+          "tool_execution_update",
+          "tool_execution_end"
+        ],
+        "T": "merged replacement-decoded text",
+        "E": "real pipes",
+        "C": "terminal matches tail"
+      }
+    },
+    {
+      "id": "reference.private-bash-output-spill",
+      "observations": {
+        "A": "truncated command admitted",
+        "L": [
+          "tool_execution_end"
+        ],
+        "T": "tail plus full-output path",
+        "E": "umask-dependent temp log",
+        "C": "path retained"
+      }
+    },
+    {
+      "id": "reference.actionable-bash-outcomes",
+      "observations": {
+        "A": "status and spawn errors throw",
+        "L": [
+          "tool_execution_end"
+        ],
+        "T": "thrown output/status text",
+        "E": "timeout kills the tree",
+        "C": "agent continues with execution error"
+      }
+    },
+    {
+      "id": "reference.truthful-bash-signal-termination",
+      "observations": {
+        "A": "command admitted",
+        "L": [
+          "tool_execution_end"
+        ],
+        "T": "apparent success with null exitCode",
+        "E": "process signaled",
+        "C": "agent continues"
+      }
+    },
+    {
+      "id": "reference.bash-cancellation-cleanup",
+      "observations": {
+        "A": "started command",
+        "L": [
+          "tool_execution_end"
+        ],
+        "T": "aborted throw",
+        "E": "best-effort kill",
+        "C": "session continues"
+      }
+    },
+    {
+      "id": "reference.explicit-project-resource-trust",
+      "observations": {
+        "A": "untrusted default still probes and may load project resources",
+        "L": [],
+        "T": "session published",
+        "E": "trust may be inherited",
+        "C": "later recovery can reuse saved trust"
+      }
+    },
+    {
+      "id": "reference.omh-project-config-root-prompt-resources",
+      "observations": {
+        "A": "project .pi Skills admitted",
+        "L": [],
+        "T": "pi skill descriptors present",
+        "E": [
+          ".pi/skills"
+        ],
+        "C": "not_applicable"
+      }
+    },
+    {
+      "id": "reference.fixed-session-prompt-resources",
+      "observations": {
+        "A": "invalid Skills may warn and continue",
+        "L": [],
+        "T": "skill expansion rereads the file",
+        "E": "loaded templates, reread skills",
+        "C": "later edits visible to /skill:"
+      }
+    },
+    {
+      "id": "reference.strict-prompt-resource-invocation",
+      "observations": {
+        "A": "unknown commands pass through as literal User text",
+        "L": [
+          "agent_start"
+        ],
+        "T": "literal slash User Message",
+        "E": [
+          "model"
+        ],
+        "C": "run proceeds"
+      }
+    },
+    {
+      "id": "reference.fixed-session-system-prompt",
+      "observations": {
+        "A": "customPrompt/guidelines/append/contextFiles may replace or extend the prompt",
+        "L": [],
+        "T": "pi identity and docs paths present",
+        "E": "prompt may change across turns",
+        "C": "not_applicable"
+      }
+    },
+    {
+      "id": "reference.deterministic-extension-discovery",
+      "observations": {
+        "A": "unsorted filesystem enumeration across several source tiers",
+        "L": [],
+        "T": "order depends on readdir",
+        "E": [
+          "user/global/settings sources"
+        ],
+        "C": "session published with mixed sources"
+      }
+    },
+    {
+      "id": "reference.python-extension-entrypoint",
+      "observations": {
+        "A": "default export admitted",
+        "L": [
+          "factory invoked"
+        ],
+        "T": "diagnostics for invalid export",
+        "E": "later modules continue",
+        "C": "partial session"
+      }
+    },
+    {
+      "id": "reference.fixed-extension-registration",
+      "observations": {
+        "A": "broad runtime registration",
+        "L": [],
+        "T": "first-registration-wins plus refresh",
+        "E": "late registerTool mutates",
+        "C": "session published with refreshed tools"
+      }
+    },
+    {
+      "id": "reference.snapshot-extension-context",
+      "observations": {
+        "A": "live context",
+        "L": [],
+        "T": "current runtime properties",
+        "E": "actions available",
+        "C": "invalidated on disposal"
+      }
+    },
+    {
+      "id": "reference.fail-closed-extension-handlers",
+      "observations": {
+        "A": "handler error reported",
+        "L": "later handlers continue",
+        "T": "ordinary continuation",
+        "E": "later effects proceed",
+        "C": "session continues"
+      }
+    },
+    {
+      "id": "reference.session-scoped-extension-modules",
+      "observations": {
+        "A": "cached factory reuse",
+        "L": [],
+        "T": "one module load, repeated factory",
+        "E": "shared module cache",
+        "C": "in-place reload possible"
+      }
+    },
+    {
+      "id": "reference.atomic-extension-initialization",
+      "observations": {
+        "A": "per-extension diagnostics",
+        "L": [],
+        "T": "partial session with remaining Extensions",
+        "E": "later modules continue",
+        "C": "partial result published"
+      }
+    },
+    {
+      "id": "reference.require-named-check-for-success",
+      "observations": {
+        "A": "all_fixtures_admitted",
+        "L": "edit_may_be_followed_directly_by_done",
+        "T": "ordinary_completion",
+        "E": "named_check_not_required",
+        "C": "session_continues"
+      }
+    },
+    {
+      "id": "reference.explicit-command-mode-admission",
+      "observations": {
+        "A": "auto-selects print for non-TTY and concatenates stdin/@file/messages",
+        "L": "may progress into a Run",
+        "T": "print or interactive depending on TTY",
+        "E": "Session/resource effects may occur",
+        "C": "not_applicable"
+      }
+    },
+    {
+      "id": "reference.deterministic-one-shot-terminal-carrier",
+      "observations": {
+        "A": "print mode admitted",
+        "L": "final Text blocks each with added LF",
+        "T": "error/aborted as raw stderr status 1",
+        "E": "HUP/TERM 129/143 after disposal",
+        "C": "disposed"
+      }
+    },
+    {
+      "id": "reference.redacted-command-diagnostics",
+      "observations": {
+        "A": "broad catch paths admitted",
+        "L": "raw exception messages",
+        "T": "arbitrary error text",
+        "E": "may expose causes",
+        "C": "not_applicable"
+      }
+    },
+    {
+      "id": "reference.plain-repl-transcript",
+      "observations": {
+        "A": "interactive messages admitted",
+        "L": "cumulative Assistant, Tool arguments/updates/results, and Agent state redraw",
+        "T": "rich pending/success/error components",
+        "E": "terminal state is rewritten",
+        "C": "interactive Session remains active"
+      }
+    },
+    {
+      "id": "reference.repl-reject-busy-ordinary-message",
+      "observations": {
+        "A": "second line accepted as steering",
+        "L": "second-message lifecycle follows active Run",
+        "T": "no busy rejection",
+        "E": "steering or queued effect",
+        "C": "first Run and queued work continue"
+      }
+    },
+    {
+      "id": "reference.repl-control-inputs",
+      "observations": {
+        "A": "Escape aborts and restores queues; second Ctrl-C within 500 ms exits",
+        "L": "force-exit timing window",
+        "T": "queued restoration",
+        "E": "double Ctrl-C may skip cleanup",
+        "C": "process may exit 0"
+      }
+    },
+    {
+      "id": "reference.repl-signal-status",
+      "observations": {
+        "A": "interactive signal exits 0",
+        "L": "dispose/drain/stop then exit",
+        "T": "may print a resume command",
+        "E": "status 0 after signal",
+        "C": "ordinary exit may hint"
+      }
+    },
+    {
+      "id": "reference.reject-missing-model-at-session-creation",
+      "observations": {
+        "A": "session returned with fallback information",
+        "L": [],
+        "T": "failure deferred to prompt preflight",
+        "E": "no Model request",
+        "C": "invalid Session remains publicly reachable"
+      }
+    },
+    {
+      "id": "reference.atomic-session-construction",
+      "observations": {
+        "A": "construction cancellation may interrupt without an enclosing cleanup scope",
+        "L": "partial resource lifetime",
+        "T": "no atomic publication barrier",
+        "E": "partial live resources may remain",
+        "C": "orphan ownership possible"
+      }
+    }
+  ]
+}

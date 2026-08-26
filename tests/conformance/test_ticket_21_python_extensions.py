@@ -4,6 +4,7 @@ import asyncio
 import json
 import os
 from pathlib import Path
+import socket
 import sys
 from typing import Any, cast
 
@@ -869,15 +870,20 @@ def test_async_factory_cancellation_exposes_no_session(
     monkeypatch.setenv("DEEPSEEK_API_KEY", "configured")
     workspace = tmp_path / "project"
     workspace.mkdir()
+    started_read, started_write = socket.socketpair()
+    started_read.setblocking(False)
+    monkeypatch.setenv("OMH_TEST_EXTENSION_STARTED_FD", str(started_write.fileno()))
     _write_extension(
         workspace,
         "alpha",
         """
 import asyncio
+import os
 from pathlib import Path
 
 async def extension(api):
     Path(__file__).resolve().parents[2].joinpath("entered.txt").write_text("yes", encoding="utf-8")
+    os.write(int(os.environ["OMH_TEST_EXTENSION_STARTED_FD"]), b"1")
     await asyncio.Event().wait()
 """,
     )
@@ -895,15 +901,16 @@ async def extension(api):
                 )
             )
         )
-        for _ in range(50):
-            if (workspace / "entered.txt").exists():
-                break
-            await asyncio.sleep(0)
+        assert await asyncio.get_running_loop().sock_recv(started_read, 1) == b"1"
         operation.cancel()
         with pytest.raises(asyncio.CancelledError):
             await operation
 
-    asyncio.run(cancel_factory())
+    try:
+        asyncio.run(asyncio.wait_for(cancel_factory(), timeout=10.0))
+    finally:
+        started_read.close()
+        started_write.close()
     assert manager.getEntries() == ()
     assert (workspace / "entered.txt").read_text(encoding="utf-8") == "yes"
 
@@ -936,12 +943,12 @@ def test_ticket_21_matrix_records_extension_obligations() -> None:
     assert set(required.values()) <= cases.keys()
     for obligation, corpus_case in required.items():
         assert rows[obligation]["corpusCase"] == corpus_case
-        assert rows[obligation]["executableCases"] == [
+        assert rows[obligation]["executableRunners"] == [
             "ticket-21-extensions",
             "ticket-21-installed",
         ]
         assert cases[corpus_case]["obligation"] == obligation
     trust = rows["omh-v0.explicit-project-resource-trust"]
-    assert "ticket-21-extensions" in trust["executableCases"]
+    assert "ticket-21-extensions" in trust["executableRunners"]
     builtin = rows["omh-v0.builtin-tool-registry"]
-    assert "ticket-21-extensions" in builtin["executableCases"]
+    assert "ticket-21-extensions" in builtin["executableRunners"]

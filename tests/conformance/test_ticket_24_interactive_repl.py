@@ -880,4 +880,4 @@ def test_ticket_24_matrix_connects_interactive_repl_rows() -> None:
         row = obligations[obligation_id]
         assert cases[case_id]["obligation"] == obligation_id
         assert row["corpusCase"] == case_id
-        assert row["executableCases"] == ["ticket-24-repl", "ticket-24-installed"]
+        assert row["executableRunners"] == ["ticket-24-repl", "ticket-24-installed"]

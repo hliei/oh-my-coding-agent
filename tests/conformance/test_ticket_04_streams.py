@@ -59,9 +59,17 @@ def test_abort_signal_is_factory_produced_read_only_and_waiter_local() -> None:
         )
         await started.wait()
         signal = captured[0]
-        first = asyncio.create_task(signal.wait())
-        second = asyncio.create_task(signal.wait())
-        await asyncio.sleep(0)
+        first_started = asyncio.Event()
+        second_started = asyncio.Event()
+
+        async def observed_wait(started_wait: asyncio.Event) -> None:
+            started_wait.set()
+            await signal.wait()
+
+        first = asyncio.create_task(observed_wait(first_started))
+        second = asyncio.create_task(observed_wait(second_started))
+        await first_started.wait()
+        await second_started.wait()
 
         first.cancel()
         with pytest.raises(asyncio.CancelledError):
@@ -77,7 +85,7 @@ def test_abort_signal_is_factory_produced_read_only_and_waiter_local() -> None:
         with pytest.raises(asyncio.CancelledError):
             await second
 
-    asyncio.run(observe())
+    asyncio.run(asyncio.wait_for(observe(), timeout=10.0))
 
 
 def test_agent_loop_activates_once_and_retains_fifo_for_a_late_consumer() -> None:
@@ -786,5 +794,5 @@ def test_ticket_04_conformance_authorities_are_linked_to_public_observations() -
     assert set(required.values()) <= cases.keys()
     for obligation, corpus_case in required.items():
         assert rows[obligation]["corpusCase"] == corpus_case
-        assert "ticket-04-streams" in rows[obligation]["executableCases"]
+        assert "ticket-04-streams" in rows[obligation]["executableRunners"]
         assert cases[corpus_case]["obligation"] == obligation

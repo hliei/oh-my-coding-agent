@@ -22,6 +22,7 @@ def _run(*command: str, cwd: Path = ROOT) -> subprocess.CompletedProcess[str]:
         text=True,
         stdout=subprocess.PIPE,
         stderr=subprocess.PIPE,
+        timeout=30,
     )
 
 
@@ -45,6 +46,7 @@ def installed_python(tmp_path_factory: pytest.TempPathFactory) -> Path:
     _run(
         "uv",
         "build",
+        "--offline",
         "--wheel",
         "--out-dir",
         os.fspath(distribution),
@@ -58,6 +60,7 @@ def installed_python(tmp_path_factory: pytest.TempPathFactory) -> Path:
         "uv",
         "pip",
         "install",
+        "--offline",
         "--python",
         os.fspath(python),
         os.fspath(wheel),
@@ -75,16 +78,29 @@ def _assert_installed_scenario(installed_python: Path, scenario_name: str) -> No
         cwd=installed_python.parent,
     )
     actual = json.loads(completed.stdout)
+    matrix = json.loads((ROOT / "conformance/obligation-matrix.json").read_text())
     corpus = json.loads((ROOT / "conformance/reference-observation-corpus.json").read_text())
+    ticket = scenario_name.removeprefix("ticket_").removesuffix("_scenario.py")
+    executable_case = f"ticket-{ticket}-installed"
+    required_case_ids = {
+        row["corpusCase"]
+        for row in matrix["obligations"]
+        if executable_case in row["executableRunners"]
+    }
     all_expected = {
         case["id"]: case.get("omhExpectation", case["observations"])
         for case in corpus["cases"]
     }
+    assert set(actual) == required_case_ids
     assert actual == {case_id: all_expected[case_id] for case_id in actual}
 
 
 def test_installed_wheel_completes_no_tool_faux_run(installed_python: Path) -> None:
     _assert_installed_scenario(installed_python, "ticket_01_scenario.py")
+
+
+def test_installed_wheel_closes_public_value_records(installed_python: Path) -> None:
+    _assert_installed_scenario(installed_python, "ticket_02_scenario.py")
 
 
 def test_installed_wheel_completes_tool_schema_and_callable_values(
@@ -213,6 +229,24 @@ def test_installed_wheel_completes_one_shot_command_mode(
     _assert_installed_scenario(installed_python, "ticket_23_scenario.py")
 
 
+def test_installed_wheel_drives_interactive_repl_transcripts(
+    installed_python: Path,
+) -> None:
+    _assert_installed_scenario(installed_python, "ticket_24_scenario.py")
+
+
+def test_installed_wheel_settles_command_mode_signals(
+    installed_python: Path,
+) -> None:
+    _assert_installed_scenario(installed_python, "ticket_25_scenario.py")
+
+
+def test_installed_wheel_closes_the_complete_public_surface(
+    installed_python: Path,
+) -> None:
+    _assert_installed_scenario(installed_python, "ticket_26_scenario.py")
+
+
 def test_first_conformance_authorities_are_closed_and_linked() -> None:
     matrix = json.loads((ROOT / "conformance/obligation-matrix.json").read_text())
     corpus = json.loads((ROOT / "conformance/reference-observation-corpus.json").read_text())
@@ -238,7 +272,7 @@ def test_first_conformance_authorities_are_closed_and_linked() -> None:
     }
     assert required <= set(obligation_ids)
     ticket_01_rows = [row for row in obligations if row["id"] in required]
-    assert all(row["executableCases"] == ["ticket-01-installed"] for row in ticket_01_rows)
+    assert all(row["executableRunners"] == ["ticket-01-installed"] for row in ticket_01_rows)
     assert all(row["normalization"] for row in obligations)
     assert all(
         row["evidenceClass"] in {"exact-parity", "local-release"}

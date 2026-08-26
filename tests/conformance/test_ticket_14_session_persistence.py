@@ -655,7 +655,7 @@ def test_ticket_14_matrix_records_fault_recovery_and_concurrency() -> None:
     assert set(required.values()) <= cases.keys()
     for obligation, corpus_case in required.items():
         assert rows[obligation]["corpusCase"] == corpus_case
-        assert rows[obligation]["executableCases"] == [
+        assert rows[obligation]["executableRunners"] == [
             "ticket-14-session",
             "ticket-14-installed",
         ]

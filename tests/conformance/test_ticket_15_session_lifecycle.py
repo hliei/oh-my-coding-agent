@@ -1132,7 +1132,7 @@ def test_listener_owner_task_cancellation_aborts_before_model_effect(
                 owner = asyncio.current_task()
                 assert owner is not None
                 owner.cancel()
-                await asyncio.sleep(0)
+                await asyncio.Event().wait()
 
         def later(event: AgentSessionEvent) -> None:
             if isinstance(event, AgentSessionEvent.AgentStart):
@@ -1148,7 +1148,7 @@ def test_listener_owner_task_cancellation_aborts_before_model_effect(
         assert session.messages[-1].stopReason == "aborted"
         await session.dispose()
 
-    asyncio.run(scenario())
+    asyncio.run(asyncio.wait_for(scenario(), timeout=10.0))
 
 
 def test_large_trailing_tool_result_reports_uncompactable_history(
@@ -2457,6 +2457,6 @@ def test_ticket_15_obligations_link_corpus_and_executable_evidence() -> None:
         row = obligations[obligation_id]
         case = cases[corpus_id]
         assert row["corpusCase"] == corpus_id
-        assert row["executableCases"] == executable_cases
+        assert row["executableRunners"] == executable_cases
         assert case["obligation"] == obligation_id
         assert case["referenceCitations"]

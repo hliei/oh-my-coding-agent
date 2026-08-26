@@ -108,6 +108,42 @@ async def _observe() -> dict[str, object]:
     else:
         raise AssertionError("failed sink returned a partial result")
 
+    cancellation_started = asyncio.Event()
+    cancellation_cleaned = asyncio.Event()
+    cancellation_signals: list[oh_my_llm.AbortSignal] = []
+
+    async def blocked_stream(
+        model: Any,
+        context: Any,
+        options: Any,
+        signal: oh_my_llm.AbortSignal,
+    ) -> Any:
+        del model, context, options
+        cancellation_signals.append(signal)
+        cancellation_started.set()
+        try:
+            await asyncio.Event().wait()
+        finally:
+            cancellation_cleaned.set()
+        if False:
+            yield None
+
+    cancelled = asyncio.create_task(
+        oh_my_core.runAgentLoop(
+            (prompt,), context, config, lambda event: None, blocked_stream
+        )
+    )
+    await cancellation_started.wait()
+    cancelled.cancel()
+    try:
+        await cancelled
+    except asyncio.CancelledError:
+        pass
+    else:
+        raise AssertionError("cancelled loop returned normally")
+    assert cancellation_cleaned.is_set()
+    assert cancellation_signals[0].aborted
+
     assert isinstance(prompt_events[-1], AgentEvent.AgentEnd)
     prompt_stream_terminal = prompt_events[10]
     assert isinstance(prompt_stream_terminal, AgentEvent.AgentEnd)
@@ -185,6 +221,13 @@ async def _observe() -> dict[str, object]:
             "E": [],
             "C": "classification_without_message_parsing",
         },
+        "reference.managed-run-cancellation": {
+            "A": "owner_managed_request",
+            "L": "aborted_only_after_clean_settlement",
+            "T": "terminal_classification_irreversible_before_terminal_sink",
+            "E": "no_new_effect_after_cutoff",
+            "C": "owned_work_settled_before_return_or_reraise",
+        },
     }
 
 
@@ -199,7 +242,8 @@ def main() -> None:
         "runAgentLoop",
         "runAgentLoopContinue",
     } <= set(oh_my_core.__all__)
-    print(json.dumps(asyncio.run(_observe()), sort_keys=True, separators=(",", ":")))
+    observations = asyncio.run(asyncio.wait_for(_observe(), timeout=10.0))
+    print(json.dumps(observations, sort_keys=True, separators=(",", ":")))
 
 
 if __name__ == "__main__":

@@ -1,5 +1,28 @@
 {
   "schemaVersion": 1,
+  "closure": {
+    "knownParityGaps": [],
+    "unresolvedParityGaps": [],
+    "requiredJourneyObligations": [
+      "omh-v0.programmatic-product-journey",
+      "omh-v0.require-named-check-for-success",
+      "omh-v0.programmatic-failure-boundaries",
+      "omh-v0.programmatic-session-topology",
+      "omh-v0.programmatic-recovery-continuity",
+      "omh-v0.explicit-command-mode-admission",
+      "omh-v0.deterministic-one-shot-terminal-carrier",
+      "omh-v0.plain-repl-transcript",
+      "omh-v0.repl-control-inputs",
+      "omh-v0.repl-signal-status"
+    ],
+    "requiredLocalObligations": [
+      "omh-v0.public-surface-closure",
+      "omh-v0.locked-dependency-packaging-contract",
+      "omh-v0.closed-release-row-selection",
+      "omh-v0.deterministic-conformance-policy",
+      "omh-v0.reference-corpus-reproducibility"
+    ]
+  },
   "obligations": [
     {
       "id": "omh-v0.public-import-roots",
@@ -11,7 +34,8 @@
       "normalization": "map only the three Reference roots to the three independently named omh roots",
       "evidenceClass": "PA:omh-python-import-roots",
       "corpusCase": "reference.public-import-roots",
-      "executableCases": ["ticket-01-installed"]
+      "executableCases": ["reference.public-import-roots"],
+      "executableRunners": ["ticket-01-installed"]
     },
     {
       "id": "omh-v0.no-tool-run-trace",
@@ -23,7 +47,8 @@
       "normalization": "ignore timestamps, token estimates, raw text chunk sizes, and async carrier mechanics",
       "evidenceClass": "exact-parity",
       "corpusCase": "reference.no-tool-run-trace",
-      "executableCases": ["ticket-01-installed"]
+      "executableCases": ["reference.no-tool-run-trace"],
+      "executableRunners": ["ticket-01-installed"]
     },
     {
       "id": "omh-v0.run-result-identity",
@@ -35,7 +60,8 @@
       "normalization": "map only the Reference result-array carrier to the owned Python tuple carrier",
       "evidenceClass": "PA:frozen-public-value-records",
       "corpusCase": "reference.run-result-identity",
-      "executableCases": ["ticket-01-installed"]
+      "executableCases": ["reference.run-result-identity"],
+      "executableRunners": ["ticket-01-installed"]
     },
     {
       "id": "omh-v0.excluded-public-aliases",
@@ -48,7 +74,8 @@
       "evidenceClass": "local-release",
       "referenceApplicability": {"status": "not_applicable", "reason": "product-scope"},
       "corpusCase": "reference.excluded-public-aliases",
-      "executableCases": ["ticket-01-installed"]
+      "executableCases": ["reference.excluded-public-aliases"],
+      "executableRunners": ["ticket-01-installed"]
     },
     {
       "id": "omh-v0.message-public-value-records",
@@ -60,7 +87,8 @@
       "normalization": "apply only PA:frozen-public-value-records; preserve content, tags, field names, order, and carrier distinctions",
       "evidenceClass": "PA:frozen-public-value-records",
       "corpusCase": "reference.message-public-value-records",
-      "executableCases": ["ticket-02-values"]
+      "executableCases": ["reference.message-public-value-records"],
+      "executableRunners": ["ticket-02-values", "ticket-02-installed"]
     },
     {
       "id": "omh-v0.json-value-domain",
@@ -72,7 +100,8 @@
       "normalization": "safe integers and finite binary64 values map to the corresponding JavaScript number domain while Python carrier identity remains explicit",
       "evidenceClass": "PA:frozen-public-value-records",
       "corpusCase": "reference.json-value-domain",
-      "executableCases": ["ticket-02-values"]
+      "executableCases": ["reference.json-value-domain"],
+      "executableRunners": ["ticket-02-values", "ticket-02-installed"]
     },
     {
       "id": "omh-v0.optional-message-fields",
@@ -84,7 +113,8 @@
       "normalization": "apply only PA:none-for-absent-optional-field",
       "evidenceClass": "PA:none-for-absent-optional-field",
       "corpusCase": "reference.optional-message-fields",
-      "executableCases": ["ticket-02-values"]
+      "executableCases": ["reference.optional-message-fields"],
+      "executableRunners": ["ticket-02-values", "ticket-02-installed"]
     },
     {
       "id": "omh-v0.canonical-message-bytes",
@@ -96,11 +126,12 @@
       "normalization": "apply PA:type-preserving-canonical-json for int versus float, signed zero, key order, and optional omission",
       "evidenceClass": "PA:type-preserving-canonical-json",
       "corpusCase": "reference.canonical-message-bytes",
-      "executableCases": ["ticket-02-values"]
+      "executableCases": ["reference.canonical-message-bytes"],
+      "executableRunners": ["ticket-02-values", "ticket-02-installed"]
     },
     {
       "id": "omh-v0.assistant-message-event-variants",
-      "authority": ".scratch/omh-v0/issues/05-choose-values-schemas-errors-contract.md#assistant-message-event-protocol",
+      "authority": ".scratch/omh-v0/issues/05-choose-values-schemas-errors-contract.md#model-values",
       "publicInterface": "oh_my_llm.AssistantMessageEvent",
       "scenario": "observe every selected event variant in one cumulative text and Tool Call lifecycle plus a pre-start error",
       "observations": {"A": "nine closed variants admitted", "L": "one start-to-done indexed content trace plus one sole pre-start error trace", "T": "terminal payload identity", "E": "not_applicable", "C": "no event after terminal"},
@@ -108,7 +139,8 @@
       "normalization": "exclude thinking events and normalize Reference mutable snapshots to independent immutable values",
       "evidenceClass": "exact-parity",
       "corpusCase": "reference.assistant-message-event-variants",
-      "executableCases": ["ticket-02-values"]
+      "executableCases": ["reference.assistant-message-event-variants"],
+      "executableRunners": ["ticket-02-values", "ticket-02-installed"]
     },
     {
       "id": "omh-v0.tool-schema-validation",
@@ -120,11 +152,12 @@
       "normalization": "apply PA:json-schema-mapping and the selected ECMAScript/RE2 pattern intersection",
       "evidenceClass": "PA:json-schema-mapping",
       "corpusCase": "reference.tool-schema-validation",
-      "executableCases": ["ticket-03-tools", "ticket-03-installed"]
+      "executableCases": ["reference.tool-schema-validation"],
+      "executableRunners": ["ticket-03-tools", "ticket-03-installed"]
     },
     {
       "id": "omh-v0.tool-callable-values",
-      "authority": ".scratch/omh-v0/issues/05-choose-values-schemas-errors-contract.md#agent-tool-and-result-values",
+      "authority": ".scratch/omh-v0/issues/05-choose-values-schemas-errors-contract.md#tool-schemas-and-execution-values",
       "publicInterface": "oh_my_llm.Tool and oh_my_core.AgentTool, AgentToolResult, AgentToolUpdateCallback",
       "scenario": "construct and retain one model Tool, executable AgentTool, partial result, and final result",
       "observations": {"A": "closed carriers admitted", "L": "not_applicable", "T": "Tool/result values and identity-bearing AgentTool", "E": "no construction effect", "C": "owned immutable snapshots"},
@@ -132,7 +165,8 @@
       "normalization": "apply PA:frozen-public-value-records only to Tool and AgentToolResult; retain AgentTool identity",
       "evidenceClass": "PA:frozen-public-value-records",
       "corpusCase": "reference.tool-callable-values",
-      "executableCases": ["ticket-03-tools", "ticket-03-installed"]
+      "executableCases": ["reference.tool-callable-values"],
+      "executableRunners": ["ticket-03-tools", "ticket-03-installed"]
     },
     {
       "id": "omh-v0.strict-python-tool-callable",
@@ -144,7 +178,8 @@
       "normalization": "apply PA:strict-python-tool-callable to require all four positional Python arguments and an awaitable return",
       "evidenceClass": "PA:strict-python-tool-callable",
       "corpusCase": "reference.strict-python-tool-callable",
-      "executableCases": ["ticket-03-tools", "ticket-03-installed"]
+      "executableCases": ["reference.strict-python-tool-callable"],
+      "executableRunners": ["ticket-03-tools", "ticket-03-installed"]
     },
     {
       "id": "omh-v0.redacted-tool-validation-errors",
@@ -156,7 +191,8 @@
       "normalization": "ABD:redacted-deterministic-tool-validation-errors",
       "evidenceClass": "ABD:redacted-deterministic-tool-validation-errors",
       "corpusCase": "reference.redacted-tool-validation-errors",
-      "executableCases": ["ticket-03-tools", "ticket-03-installed"]
+      "executableCases": ["reference.redacted-tool-validation-errors"],
+      "executableRunners": ["ticket-03-tools", "ticket-03-installed"]
     },
     {
       "id": "omh-v0.low-level-loop-carriers",
@@ -168,7 +204,8 @@
       "normalization": "PA:python-async-resource-carriers",
       "evidenceClass": "PA:python-async-resource-carriers",
       "corpusCase": "reference.low-level-loop-carriers",
-      "executableCases": ["ticket-04-streams", "ticket-04-installed"]
+      "executableCases": ["reference.low-level-loop-carriers"],
+      "executableRunners": ["ticket-04-streams", "ticket-04-installed"]
     },
     {
       "id": "omh-v0.immutable-loop-context",
@@ -180,7 +217,8 @@
       "normalization": "ABD:immutable-loop-context",
       "evidenceClass": "ABD:immutable-loop-context",
       "corpusCase": "reference.immutable-loop-context",
-      "executableCases": ["ticket-04-streams", "ticket-04-installed"]
+      "executableCases": ["reference.immutable-loop-context"],
+      "executableRunners": ["ticket-04-streams", "ticket-04-installed"]
     },
     {
       "id": "omh-v0.managed-event-stream",
@@ -192,7 +230,8 @@
       "normalization": "ABD:managed-event-stream",
       "evidenceClass": "ABD:managed-event-stream",
       "corpusCase": "reference.managed-event-stream",
-      "executableCases": ["ticket-04-streams", "ticket-04-installed"]
+      "executableCases": ["reference.managed-event-stream"],
+      "executableRunners": ["ticket-04-streams", "ticket-04-installed"]
     },
     {
       "id": "omh-v0.readonly-abort-signal",
@@ -204,7 +243,8 @@
       "normalization": "PA:readonly-abort-signal",
       "evidenceClass": "PA:readonly-abort-signal",
       "corpusCase": "reference.readonly-abort-signal",
-      "executableCases": ["ticket-04-streams", "ticket-04-installed"]
+      "executableCases": ["reference.readonly-abort-signal"],
+      "executableRunners": ["ticket-04-streams", "ticket-04-installed"]
     },
     {
       "id": "omh-v0.awaited-event-sink",
@@ -216,7 +256,8 @@
       "normalization": "ABD:managed-lifecycle-callbacks",
       "evidenceClass": "ABD:managed-lifecycle-callbacks",
       "corpusCase": "reference.awaited-event-sink",
-      "executableCases": ["ticket-04-streams", "ticket-04-installed"]
+      "executableCases": ["reference.awaited-event-sink"],
+      "executableRunners": ["ticket-04-streams", "ticket-04-installed"]
     },
     {
       "id": "omh-v0.managed-run-cancellation",
@@ -228,7 +269,8 @@
       "normalization": "ABD:managed-run-cancellation",
       "evidenceClass": "ABD:managed-run-cancellation",
       "corpusCase": "reference.managed-run-cancellation",
-      "executableCases": ["ticket-04-streams"]
+      "executableCases": ["reference.managed-run-cancellation"],
+      "executableRunners": ["ticket-04-streams", "ticket-04-installed"]
     },
     {
       "id": "omh-v0.closed-lifecycle-error-carrier",
@@ -240,7 +282,8 @@
       "normalization": "PA:closed-lifecycle-error-carrier",
       "evidenceClass": "PA:closed-lifecycle-error-carrier",
       "corpusCase": "reference.closed-lifecycle-error-carrier",
-      "executableCases": ["ticket-04-streams", "ticket-04-installed"]
+      "executableCases": ["reference.closed-lifecycle-error-carrier"],
+      "executableRunners": ["ticket-04-streams", "ticket-04-installed"]
     },
     {
       "id": "omh-v0.one-validated-tool-turn",
@@ -252,11 +295,12 @@
       "normalization": "ignore timestamps, chunk sizes, and async carrier mechanics; preserve original Tool Call arguments on events",
       "evidenceClass": "exact-parity",
       "corpusCase": "reference.one-validated-tool-turn",
-      "executableCases": ["ticket-05-tool-turn", "ticket-05-installed"]
+      "executableCases": ["reference.one-validated-tool-turn"],
+      "executableRunners": ["ticket-05-tool-turn", "ticket-05-installed"]
     },
     {
       "id": "omh-v0.tool-outcome-versus-failure",
-      "authority": ".scratch/omh-v0/issues/07-choose-agent-loop-and-tool-lifecycle.md#tool-outcome-versus-tool-failure",
+      "authority": ".scratch/omh-v0/issues/07-choose-agent-loop-and-tool-lifecycle.md#tool-admission-execution-and-projection",
       "publicInterface": "oh_my_core.runAgentLoop ToolExecutionEnd and ToolResultMessage",
       "scenario": "a Tool returns a valid AgentToolResult whose text reports an expected negative domain outcome",
       "observations": {"A": "callable returned a valid result", "L": "start then successful end", "T": "isError remains false", "E": "no Runtime failure synthesis", "C": "later Model Turn still occurs"},
@@ -264,7 +308,8 @@
       "normalization": "none beyond the closed Tool Outcome versus Tool Failure terminology",
       "evidenceClass": "exact-parity",
       "corpusCase": "reference.tool-outcome-versus-failure",
-      "executableCases": ["ticket-05-tool-turn", "ticket-05-installed"]
+      "executableCases": ["reference.tool-outcome-versus-failure"],
+      "executableRunners": ["ticket-05-tool-turn", "ticket-05-installed"]
     },
     {
       "id": "omh-v0.redacted-tool-runtime-errors",
@@ -276,7 +321,8 @@
       "normalization": "ABD:redacted-tool-runtime-errors; schema failures keep the accepted validation text unchanged",
       "evidenceClass": "ABD:redacted-tool-runtime-errors",
       "corpusCase": "reference.redacted-tool-runtime-errors",
-      "executableCases": ["ticket-05-tool-turn", "ticket-05-installed"]
+      "executableCases": ["reference.redacted-tool-runtime-errors"],
+      "executableRunners": ["ticket-05-tool-turn", "ticket-05-installed"]
     },
     {
       "id": "omh-v0.tool-turn-projection-identity",
@@ -288,7 +334,8 @@
       "normalization": "ABD:immutable-loop-context and PA:frozen-public-value-records for the Run-suffix tuple",
       "evidenceClass": "ABD:immutable-loop-context",
       "corpusCase": "reference.tool-turn-projection-identity",
-      "executableCases": ["ticket-05-tool-turn", "ticket-05-installed"]
+      "executableCases": ["reference.tool-turn-projection-identity"],
+      "executableRunners": ["ticket-05-tool-turn", "ticket-05-installed"]
     },
     {
       "id": "omh-v0.strict-tool-call-correlation",
@@ -300,7 +347,8 @@
       "normalization": "ABD:strict-tool-call-correlation in each execution mode",
       "evidenceClass": "ABD:strict-tool-call-correlation",
       "corpusCase": "reference.strict-tool-call-correlation",
-      "executableCases": ["ticket-06-tool-batches", "ticket-06-installed"]
+      "executableCases": ["reference.strict-tool-call-correlation"],
+      "executableRunners": ["ticket-06-tool-batches", "ticket-06-installed"]
     },
     {
       "id": "omh-v0.deterministic-tool-batch-control",
@@ -312,7 +360,8 @@
       "normalization": "ignore timestamps and async carrier mechanics; preserve source order and termination intent",
       "evidenceClass": "exact-parity",
       "corpusCase": "reference.deterministic-tool-batch-control",
-      "executableCases": ["ticket-06-tool-batches", "ticket-06-installed"]
+      "executableCases": ["reference.deterministic-tool-batch-control"],
+      "executableRunners": ["ticket-06-tool-batches", "ticket-06-installed"]
     },
     {
       "id": "omh-v0.agent-public-surface",
@@ -324,7 +373,8 @@
       "normalization": "PA:python-illegal-identifier",
       "evidenceClass": "PA:python-illegal-identifier",
       "corpusCase": "reference.agent-public-surface",
-      "executableCases": ["ticket-07-agent", "ticket-07-installed"]
+      "executableCases": ["reference.agent-public-surface"],
+      "executableRunners": ["ticket-07-agent", "ticket-07-installed"]
     },
     {
       "id": "omh-v0.strict-agent-run-admission",
@@ -336,7 +386,8 @@
       "normalization": "ABD:strict-agent-run-admission; existing busy and continuation rejection remain direct parity",
       "evidenceClass": "ABD:strict-agent-run-admission",
       "corpusCase": "reference.strict-agent-run-admission",
-      "executableCases": ["ticket-07-agent", "ticket-07-installed"]
+      "executableCases": ["reference.strict-agent-run-admission"],
+      "executableRunners": ["ticket-07-agent", "ticket-07-installed"]
     },
     {
       "id": "omh-v0.owned-agent-state-mutation",
@@ -348,7 +399,8 @@
       "normalization": "ABD:owned-agent-state-mutation",
       "evidenceClass": "ABD:owned-agent-state-mutation",
       "corpusCase": "reference.owned-agent-state-mutation",
-      "executableCases": ["ticket-07-agent", "ticket-07-installed"]
+      "executableCases": ["reference.owned-agent-state-mutation"],
+      "executableRunners": ["ticket-07-agent", "ticket-07-installed"]
     },
     {
       "id": "omh-v0.agent-low-level-semantic-identity",
@@ -360,7 +412,8 @@
       "normalization": "ignore timestamps, token estimates, and async carrier mechanics",
       "evidenceClass": "exact-parity",
       "corpusCase": "reference.agent-low-level-semantic-identity",
-      "executableCases": ["ticket-07-agent", "ticket-07-installed"]
+      "executableCases": ["reference.agent-low-level-semantic-identity"],
+      "executableRunners": ["ticket-07-agent", "ticket-07-installed"]
     },
     {
       "id": "omh-v0.distinct-listener-registrations",
@@ -372,7 +425,8 @@
       "normalization": "ABD:distinct-listener-registrations",
       "evidenceClass": "ABD:distinct-listener-registrations",
       "corpusCase": "reference.distinct-listener-registrations",
-      "executableCases": ["ticket-07-agent", "ticket-07-installed"]
+      "executableCases": ["reference.distinct-listener-registrations"],
+      "executableRunners": ["ticket-07-agent", "ticket-07-installed"]
     },
     {
       "id": "omh-v0.agent-ordinary-model-error",
@@ -384,7 +438,8 @@
       "normalization": "ignore timestamps; compare the selected redacted public Model-stream message rather than raw exception text",
       "evidenceClass": "exact-parity",
       "corpusCase": "reference.agent-ordinary-model-error",
-      "executableCases": ["ticket-07-agent", "ticket-07-installed"]
+      "executableCases": ["reference.agent-ordinary-model-error"],
+      "executableRunners": ["ticket-07-agent", "ticket-07-installed"]
     },
     {
       "id": "omh-v0.agent-clean-cancellation",
@@ -396,7 +451,8 @@
       "normalization": "ABD:managed-run-cancellation",
       "evidenceClass": "ABD:managed-run-cancellation",
       "corpusCase": "reference.agent-clean-cancellation",
-      "executableCases": ["ticket-08-agent-cancellation", "ticket-08-installed"]
+      "executableCases": ["reference.agent-clean-cancellation"],
+      "executableRunners": ["ticket-08-agent-cancellation", "ticket-08-installed"]
     },
     {
       "id": "omh-v0.agent-fail-closed-lifecycle",
@@ -408,7 +464,8 @@
       "normalization": "ABD:managed-lifecycle-callbacks and ABD:managed-run-cancellation",
       "evidenceClass": "ABD:managed-lifecycle-callbacks",
       "corpusCase": "reference.agent-fail-closed-lifecycle",
-      "executableCases": ["ticket-08-agent-cancellation", "ticket-08-installed"]
+      "executableCases": ["reference.agent-fail-closed-lifecycle"],
+      "executableRunners": ["ticket-08-agent-cancellation", "ticket-08-installed"]
     },
     {
       "id": "omh-v0.deepseek-factory-catalog",
@@ -420,7 +477,8 @@
       "normalization": "map only the selected child path and static catalog; ignore excluded aliases, discovery, and capability metadata",
       "evidenceClass": "exact-parity",
       "corpusCase": "reference.deepseek-factory-catalog",
-      "executableCases": ["ticket-09-deepseek", "ticket-09-installed"]
+      "executableCases": ["reference.deepseek-factory-catalog"],
+      "executableRunners": ["ticket-09-deepseek", "ticket-09-installed"]
     },
     {
       "id": "omh-v0.deepseek-auth-observation",
@@ -433,7 +491,8 @@
       "evidenceClass": "local-release",
       "referenceApplicability": {"status": "not_applicable", "reason": "product-scope"},
       "corpusCase": "reference.deepseek-auth-observation",
-      "executableCases": ["ticket-09-deepseek", "ticket-09-installed"]
+      "executableCases": ["reference.deepseek-auth-observation"],
+      "executableRunners": ["ticket-09-deepseek", "ticket-09-installed"]
     },
     {
       "id": "omh-v0.deepseek-request-bytes",
@@ -445,7 +504,8 @@
       "normalization": "ignore HTTPX-added hop-by-hop headers other than Authorization, Content-Type, and Accept-Encoding",
       "evidenceClass": "exact-parity",
       "corpusCase": "reference.deepseek-request-bytes",
-      "executableCases": ["ticket-09-deepseek", "ticket-09-installed"]
+      "executableCases": ["reference.deepseek-request-bytes"],
+      "executableRunners": ["ticket-09-deepseek", "ticket-09-installed"]
     },
     {
       "id": "omh-v0.deepseek-text-stream-terminal",
@@ -457,7 +517,8 @@
       "normalization": "ignore timestamps and raw SSE chunk boundaries other than the selected two-fragment text split",
       "evidenceClass": "exact-parity",
       "corpusCase": "reference.deepseek-text-stream-terminal",
-      "executableCases": ["ticket-09-deepseek", "ticket-09-installed"]
+      "executableCases": ["reference.deepseek-text-stream-terminal"],
+      "executableRunners": ["ticket-09-deepseek", "ticket-09-installed"]
     },
     {
       "id": "omh-v0.deepseek-request-preflight",
@@ -469,7 +530,8 @@
       "normalization": "ABD:deepseek-request-preflight",
       "evidenceClass": "ABD:deepseek-request-preflight",
       "corpusCase": "reference.deepseek-request-preflight",
-      "executableCases": ["ticket-10-deepseek", "ticket-10-installed"]
+      "executableCases": ["reference.deepseek-request-preflight"],
+      "executableRunners": ["ticket-10-deepseek", "ticket-10-installed"]
     },
     {
       "id": "omh-v0.strict-toolcall-json-finalization",
@@ -481,7 +543,8 @@
       "normalization": "ABD:strict-toolcall-json-finalization",
       "evidenceClass": "ABD:strict-toolcall-json-finalization",
       "corpusCase": "reference.strict-toolcall-json-finalization",
-      "executableCases": ["ticket-10-deepseek", "ticket-10-installed"]
+      "executableCases": ["reference.strict-toolcall-json-finalization"],
+      "executableRunners": ["ticket-10-deepseek", "ticket-10-installed"]
     },
     {
       "id": "omh-v0.deepseek-tool-round-trip",
@@ -493,7 +556,8 @@
       "normalization": "ignore timestamps, raw SSE chunk boundaries, and Python async carrier mechanics",
       "evidenceClass": "exact-parity",
       "corpusCase": "reference.deepseek-tool-round-trip",
-      "executableCases": ["ticket-10-deepseek", "ticket-10-installed"]
+      "executableCases": ["reference.deepseek-tool-round-trip"],
+      "executableRunners": ["ticket-10-deepseek", "ticket-10-installed"]
     },
     {
       "id": "omh-v0.strict-deepseek-usage-finalization",
@@ -505,7 +569,8 @@
       "normalization": "ABD:strict-deepseek-usage-finalization",
       "evidenceClass": "ABD:strict-deepseek-usage-finalization",
       "corpusCase": "reference.strict-deepseek-usage-finalization",
-      "executableCases": ["ticket-10-deepseek", "ticket-10-installed"]
+      "executableCases": ["reference.strict-deepseek-usage-finalization"],
+      "executableRunners": ["ticket-10-deepseek", "ticket-10-installed"]
     },
     {
       "id": "omh-v0.deepseek-failure-classification",
@@ -517,7 +582,8 @@
       "normalization": "ignore timestamps, raw wire chunk boundaries, Provider prose, exception objects, and authenticated request bytes",
       "evidenceClass": "exact-parity",
       "corpusCase": "reference.deepseek-failure-classification",
-      "executableCases": ["ticket-11-deepseek-failures", "ticket-11-installed"]
+      "executableCases": ["reference.deepseek-failure-classification"],
+      "executableRunners": ["ticket-11-deepseek-failures", "ticket-11-installed"]
     },
     {
       "id": "omh-v0.deepseek-failure-reuse",
@@ -529,7 +595,8 @@
       "normalization": "ignore timestamps, raw authenticated headers, and Python task mechanics",
       "evidenceClass": "exact-parity",
       "corpusCase": "reference.deepseek-failure-reuse",
-      "executableCases": ["ticket-11-deepseek-failures", "ticket-11-installed"]
+      "executableCases": ["reference.deepseek-failure-reuse"],
+      "executableRunners": ["ticket-11-deepseek-failures", "ticket-11-installed"]
     },
     {
       "id": "omh-v0.deepseek-cancellation-settlement",
@@ -541,7 +608,8 @@
       "normalization": "ABD:managed-run-cancellation",
       "evidenceClass": "ABD:managed-run-cancellation",
       "corpusCase": "reference.deepseek-cancellation-settlement",
-      "executableCases": ["ticket-11-deepseek-failures", "ticket-11-installed"]
+      "executableCases": ["reference.deepseek-cancellation-settlement"],
+      "executableRunners": ["ticket-11-deepseek-failures", "ticket-11-installed"]
     },
     {
       "id": "omh-v0.session-empty-unflushed",
@@ -553,7 +621,8 @@
       "normalization": "ABD:omh-user-session-root; ignore generated id and timestamp bytes",
       "evidenceClass": "ABD:omh-user-session-root",
       "corpusCase": "reference.session-empty-unflushed",
-      "executableCases": ["ticket-12-session", "ticket-12-installed"]
+      "executableCases": ["reference.session-empty-unflushed"],
+      "executableRunners": ["ticket-12-session", "ticket-12-installed"]
     },
     {
       "id": "omh-v0.session-supplied-manager-identity",
@@ -565,7 +634,8 @@
       "normalization": "PA:python-async-resource-carriers and ABD:managed-session-disposal",
       "evidenceClass": "ABD:managed-session-disposal",
       "corpusCase": "reference.session-supplied-manager-identity",
-      "executableCases": ["ticket-12-session", "ticket-12-installed"]
+      "executableCases": ["reference.session-supplied-manager-identity"],
+      "executableRunners": ["ticket-12-session", "ticket-12-installed"]
     },
     {
       "id": "omh-v0.session-caller-ids",
@@ -577,7 +647,8 @@
       "normalization": "ignore generated UUIDv7 random bits and timestamps",
       "evidenceClass": "exact-parity",
       "corpusCase": "reference.session-caller-ids",
-      "executableCases": ["ticket-12-session", "ticket-12-installed"]
+      "executableCases": ["reference.session-caller-ids"],
+      "executableRunners": ["ticket-12-session", "ticket-12-installed"]
     },
     {
       "id": "omh-v0.session-no-continuing-lease",
@@ -589,7 +660,8 @@
       "normalization": "ignore Python object ids and async carrier mechanics",
       "evidenceClass": "exact-parity",
       "corpusCase": "reference.session-no-continuing-lease",
-      "executableCases": ["ticket-12-session", "ticket-12-installed"]
+      "executableCases": ["reference.session-no-continuing-lease"],
+      "executableRunners": ["ticket-12-session", "ticket-12-installed"]
     },
     {
       "id": "omh-v0.session-prompt-lazy-flush",
@@ -601,7 +673,8 @@
       "normalization": "PA:python-async-resource-carriers; ignore entry ids, timestamps, authenticated request bytes, and product-root path",
       "evidenceClass": "PA:python-async-resource-carriers",
       "corpusCase": "reference.session-prompt-lazy-flush",
-      "executableCases": ["ticket-13-session", "ticket-13-installed"]
+      "executableCases": ["reference.session-prompt-lazy-flush"],
+      "executableRunners": ["ticket-13-session", "ticket-13-installed"]
     },
     {
       "id": "omh-v0.session-incomplete-recovery",
@@ -613,7 +686,8 @@
       "normalization": "ignore entry ids, timestamps, Python task mechanics, and the still-live source manager snapshot",
       "evidenceClass": "exact-parity",
       "corpusCase": "reference.session-incomplete-recovery",
-      "executableCases": ["ticket-13-session", "ticket-13-installed"]
+      "executableCases": ["reference.session-incomplete-recovery"],
+      "executableRunners": ["ticket-13-session", "ticket-13-installed"]
     },
     {
       "id": "omh-v0.session-persistence-fault-continuity",
@@ -625,7 +699,8 @@
       "normalization": "ignore generated ids and timestamps plus language-specific raw filesystem exception class and prose",
       "evidenceClass": "exact-parity",
       "corpusCase": "reference.session-persistence-fault-continuity",
-      "executableCases": ["ticket-14-session", "ticket-14-installed"]
+      "executableCases": ["reference.session-persistence-fault-continuity"],
+      "executableRunners": ["ticket-14-session", "ticket-14-installed"]
     },
     {
       "id": "omh-v0.session-best-effort-recovery",
@@ -637,7 +712,8 @@
       "normalization": "ignore generated migration ids, timestamps, filesystem mtimes, and product-root mapping",
       "evidenceClass": "exact-parity",
       "corpusCase": "reference.session-best-effort-recovery",
-      "executableCases": ["ticket-14-session", "ticket-14-installed"]
+      "executableCases": ["reference.session-best-effort-recovery"],
+      "executableRunners": ["ticket-14-session", "ticket-14-installed"]
     },
     {
       "id": "omh-v0.session-stale-multi-manager-append",
@@ -649,7 +725,8 @@
       "normalization": "sort concurrent model labels and ignore process scheduling, entry ids, timestamps, and physical sibling order",
       "evidenceClass": "exact-parity",
       "corpusCase": "reference.session-stale-multi-manager-append",
-      "executableCases": ["ticket-14-session", "ticket-14-installed"]
+      "executableCases": ["reference.session-stale-multi-manager-append"],
+      "executableRunners": ["ticket-14-session", "ticket-14-installed"]
     },
     {
       "id": "omh-v0.session-cancel-error-reuse",
@@ -661,7 +738,8 @@
       "normalization": "ABD:managed-run-cancellation and PA:python-async-resource-carriers",
       "evidenceClass": "ABD:managed-run-cancellation",
       "corpusCase": "reference.session-cancel-error-reuse",
-      "executableCases": ["ticket-08-agent-cancellation", "ticket-15-session", "ticket-15-installed"]
+      "executableCases": ["reference.session-cancel-error-reuse"],
+      "executableRunners": ["ticket-08-agent-cancellation", "ticket-15-session", "ticket-15-installed"]
     },
     {
       "id": "omh-v0.session-managed-disposal",
@@ -673,7 +751,8 @@
       "normalization": "ABD:managed-session-disposal and PA:python-async-resource-carriers",
       "evidenceClass": "ABD:managed-session-disposal",
       "corpusCase": "reference.session-managed-disposal",
-      "executableCases": ["ticket-15-session", "ticket-15-installed"]
+      "executableCases": ["reference.session-managed-disposal"],
+      "executableRunners": ["ticket-15-session", "ticket-15-installed"]
     },
     {
       "id": "omh-v0.session-compaction",
@@ -685,7 +764,8 @@
       "normalization": "ignore entry ids, timestamps, token-estimate rounding, and Python async carrier mechanics",
       "evidenceClass": "exact-parity",
       "corpusCase": "reference.session-compaction",
-      "executableCases": ["ticket-15-session", "ticket-15-installed"]
+      "executableCases": ["reference.session-compaction"],
+      "executableRunners": ["ticket-15-session", "ticket-15-installed"]
     },
     {
       "id": "omh-v0.builtin-tool-registry",
@@ -697,7 +777,8 @@
       "normalization": "ABD:non-overridable-built-in-tools; Extension collision rows remain ticket 21",
       "evidenceClass": "ABD:non-overridable-built-in-tools",
       "corpusCase": "reference.builtin-tool-registry",
-      "executableCases": ["ticket-16-read", "ticket-16-installed", "ticket-21-extensions", "ticket-21-installed"]
+      "executableCases": ["reference.builtin-tool-registry"],
+      "executableRunners": ["ticket-16-read", "ticket-16-installed", "ticket-21-extensions"]
     },
     {
       "id": "omh-v0.literal-tool-paths-read",
@@ -709,7 +790,8 @@
       "normalization": "ABD:literal-tool-paths; normalize only platform separators",
       "evidenceClass": "ABD:literal-tool-paths",
       "corpusCase": "reference.literal-tool-paths-read",
-      "executableCases": ["ticket-16-read", "ticket-16-installed"]
+      "executableCases": ["reference.literal-tool-paths-read"],
+      "executableRunners": ["ticket-16-read", "ticket-16-installed"]
     },
     {
       "id": "omh-v0.strict-text-file-read",
@@ -721,7 +803,8 @@
       "normalization": "ABD:strict-text-file-read",
       "evidenceClass": "ABD:strict-text-file-read",
       "corpusCase": "reference.strict-text-file-read",
-      "executableCases": ["ticket-16-read", "ticket-16-installed"]
+      "executableCases": ["reference.strict-text-file-read"],
+      "executableRunners": ["ticket-16-read", "ticket-16-installed"]
     },
     {
       "id": "omh-v0.strict-read-pagination",
@@ -733,7 +816,8 @@
       "normalization": "ABD:strict-read-pagination and PA:json-schema-mapping",
       "evidenceClass": "ABD:strict-read-pagination",
       "corpusCase": "reference.strict-read-pagination",
-      "executableCases": ["ticket-16-read", "ticket-16-installed"]
+      "executableCases": ["reference.strict-read-pagination"],
+      "executableRunners": ["ticket-16-read", "ticket-16-installed"]
     },
     {
       "id": "omh-v0.actionable-read-outcomes",
@@ -745,7 +829,8 @@
       "normalization": "ABD:actionable-built-in-outcomes and ABD:managed-run-cancellation",
       "evidenceClass": "ABD:actionable-built-in-outcomes",
       "corpusCase": "reference.actionable-read-outcomes",
-      "executableCases": ["ticket-16-read", "ticket-16-installed"]
+      "executableCases": ["reference.actionable-read-outcomes"],
+      "executableRunners": ["ticket-16-read", "ticket-16-installed"]
     },
     {
       "id": "omh-v0.truthful-write-result",
@@ -757,7 +842,8 @@
       "normalization": "ABD:truthful-write-result",
       "evidenceClass": "ABD:truthful-write-result",
       "corpusCase": "reference.truthful-write-result",
-      "executableCases": ["ticket-17-write", "ticket-17-installed"]
+      "executableCases": ["reference.truthful-write-result"],
+      "executableRunners": ["ticket-17-write", "ticket-17-installed"]
     },
     {
       "id": "omh-v0.literal-tool-paths-write",
@@ -769,7 +855,8 @@
       "normalization": "ABD:literal-tool-paths; normalize only platform separators",
       "evidenceClass": "ABD:literal-tool-paths",
       "corpusCase": "reference.literal-tool-paths-write",
-      "executableCases": ["ticket-17-write", "ticket-17-installed"]
+      "executableCases": ["reference.literal-tool-paths-write"],
+      "executableRunners": ["ticket-17-write", "ticket-17-installed"]
     },
     {
       "id": "omh-v0.actionable-write-outcomes",
@@ -781,11 +868,12 @@
       "normalization": "ABD:actionable-built-in-outcomes and ABD:managed-run-cancellation",
       "evidenceClass": "ABD:actionable-built-in-outcomes",
       "corpusCase": "reference.actionable-write-outcomes",
-      "executableCases": ["ticket-17-write", "ticket-17-installed"]
+      "executableCases": ["reference.actionable-write-outcomes"],
+      "executableRunners": ["ticket-17-write", "ticket-17-installed"]
     },
     {
       "id": "omh-v0.write-mutation-serialization",
-      "authority": ".scratch/omh-v0/issues/10-choose-coding-tools-and-workspace-contract.md#same-file-mutation-queue",
+      "authority": ".scratch/omh-v0/issues/10-choose-coding-tools-and-workspace-contract.md#fixed-tool-set-workspace-and-scheduling",
       "publicInterface": "oh_my_coding_agent.AgentSession.prompt write Tool",
       "scenario": "run a parallel batch of two writes to one existing target, one write to a different file, and one read",
       "observations": {"A": "parallel built-in batch admitted", "L": "same-key writes do not overlap inside execute; unrelated write and read may complete while the first same-key write is held", "T": "all four Tool Outcomes succeed", "E": "final same-target bytes are one complete write; the other file is written concurrently", "C": "queue identity remains process-local for later edit/write sharing"},
@@ -793,7 +881,8 @@
       "normalization": "ignore scheduling jitter; compare ownership overlap, final bytes, and peer completion while the first same-key write is held",
       "evidenceClass": "exact-parity",
       "corpusCase": "reference.write-mutation-serialization",
-      "executableCases": ["ticket-17-write", "ticket-17-installed"]
+      "executableCases": ["reference.write-mutation-serialization"],
+      "executableRunners": ["ticket-17-write", "ticket-17-installed"]
     },
     {
       "id": "omh-v0.strict-edit-arguments",
@@ -805,7 +894,8 @@
       "normalization": "ABD:strict-edit-arguments and PA:json-schema-mapping",
       "evidenceClass": "ABD:strict-edit-arguments",
       "corpusCase": "reference.strict-edit-arguments",
-      "executableCases": ["ticket-18-edit", "ticket-18-installed"]
+      "executableCases": ["reference.strict-edit-arguments"],
+      "executableRunners": ["ticket-18-edit", "ticket-18-installed"]
     },
     {
       "id": "omh-v0.literal-edit-text",
@@ -817,7 +907,8 @@
       "normalization": "ABD:literal-edit-text; omh-only CRLF/Unicode cases use the same comparator without normalization",
       "evidenceClass": "ABD:literal-edit-text",
       "corpusCase": "reference.literal-edit-text",
-      "executableCases": ["ticket-18-edit", "ticket-18-installed"]
+      "executableCases": ["reference.literal-edit-text"],
+      "executableRunners": ["ticket-18-edit", "ticket-18-installed"]
     },
     {
       "id": "omh-v0.precomputed-edit-result",
@@ -829,7 +920,8 @@
       "normalization": "ABD:precomputed-edit-result and ABD:managed-run-cancellation",
       "evidenceClass": "ABD:precomputed-edit-result",
       "corpusCase": "reference.precomputed-edit-result",
-      "executableCases": ["ticket-18-edit", "ticket-18-installed"]
+      "executableCases": ["reference.precomputed-edit-result"],
+      "executableRunners": ["ticket-18-edit", "ticket-18-installed"]
     },
     {
       "id": "omh-v0.actionable-edit-outcomes",
@@ -841,7 +933,8 @@
       "normalization": "ABD:actionable-built-in-outcomes",
       "evidenceClass": "ABD:actionable-built-in-outcomes",
       "corpusCase": "reference.actionable-edit-outcomes",
-      "executableCases": ["ticket-18-edit", "ticket-18-installed"]
+      "executableCases": ["reference.actionable-edit-outcomes"],
+      "executableRunners": ["ticket-18-edit", "ticket-18-installed"]
     },
     {
       "id": "omh-v0.literal-tool-paths-edit",
@@ -853,11 +946,12 @@
       "normalization": "ABD:literal-tool-paths; normalize only platform separators",
       "evidenceClass": "ABD:literal-tool-paths",
       "corpusCase": "reference.literal-tool-paths-edit",
-      "executableCases": ["ticket-18-edit", "ticket-18-installed"]
+      "executableCases": ["reference.literal-tool-paths-edit"],
+      "executableRunners": ["ticket-18-edit", "ticket-18-installed"]
     },
     {
       "id": "omh-v0.edit-mutation-serialization",
-      "authority": ".scratch/omh-v0/issues/10-choose-coding-tools-and-workspace-contract.md#same-file-mutation-queue",
+      "authority": ".scratch/omh-v0/issues/10-choose-coding-tools-and-workspace-contract.md#fixed-tool-set-workspace-and-scheduling",
       "publicInterface": "oh_my_coding_agent.AgentSession.prompt edit Tool",
       "scenario": "run a parallel batch of one edit and one write to the same existing target, one write to a different file, and one read",
       "observations": {"A": "parallel built-in batch admitted", "L": "same-key edit/write do not overlap inside execute; unrelated write and read may complete while the first same-key mutation is held", "T": "all four Tool Outcomes succeed", "E": "final same-target bytes are the later complete write; the other file is written concurrently", "C": "queue identity remains process-local"},
@@ -865,11 +959,12 @@
       "normalization": "ignore scheduling jitter; compare ownership overlap, final bytes, and peer completion while the first same-key mutation is held",
       "evidenceClass": "exact-parity",
       "corpusCase": "reference.edit-mutation-serialization",
-      "executableCases": ["ticket-18-edit", "ticket-18-installed"]
+      "executableCases": ["reference.edit-mutation-serialization"],
+      "executableRunners": ["ticket-18-edit", "ticket-18-installed"]
     },
     {
       "id": "omh-v0.bash-command-surface",
-      "authority": ".scratch/omh-v0/issues/10-choose-coding-tools-and-workspace-contract.md#bash-arguments",
+      "authority": ".scratch/omh-v0/issues/10-choose-coding-tools-and-workspace-contract.md#bash",
       "publicInterface": "oh_my_coding_agent.AgentSession.prompt bash Tool",
       "scenario": "admit command plus optional bounded timeout, reject cwd/env/shell overrides, start in Workspace, and return empty or exact untruncated output",
       "observations": {"A": "command plus optional timeout admitted; unknown process fields rejected", "L": "initial empty update then ordinary Tool Outcome", "T": "exact output or (no output)", "E": "host subprocess starts in Workspace", "C": "Workspace identity unchanged"},
@@ -877,7 +972,8 @@
       "normalization": "PA:json-schema-mapping for timeout bounds; ignore PID and scheduling jitter",
       "evidenceClass": "exact-parity",
       "corpusCase": "reference.bash-command-surface",
-      "executableCases": ["ticket-19-bash", "ticket-19-installed"]
+      "executableCases": ["reference.bash-command-surface"],
+      "executableRunners": ["ticket-19-bash", "ticket-19-installed"]
     },
     {
       "id": "omh-v0.unmodified-host-shell-environment",
@@ -889,11 +985,12 @@
       "normalization": "ABD:unmodified-host-shell-environment",
       "evidenceClass": "ABD:unmodified-host-shell-environment",
       "corpusCase": "reference.unmodified-host-shell-environment",
-      "executableCases": ["ticket-19-bash", "ticket-19-installed"]
+      "executableCases": ["reference.unmodified-host-shell-environment"],
+      "executableRunners": ["ticket-19-bash", "ticket-19-installed"]
     },
     {
       "id": "omh-v0.bash-output-updates",
-      "authority": ".scratch/omh-v0/issues/10-choose-coding-tools-and-workspace-contract.md#bash-updates-and-merge",
+      "authority": ".scratch/omh-v0/issues/10-choose-coding-tools-and-workspace-contract.md#bash",
       "publicInterface": "oh_my_coding_agent.AgentSession.prompt bash Tool",
       "scenario": "merge stdout/stderr in arrival order, replacement-decode UTF-8, and emit empty then coalesced cumulative updates",
       "observations": {"A": "command admitted", "L": "empty update, immediate first dirty snapshot, coalesced later snapshots, final dirty before terminal", "T": "merged decoded text without notices on updates", "E": "real pipes only", "C": "terminal Result matches the final tail"},
@@ -901,7 +998,8 @@
       "normalization": "ignore exact inter-chunk timing other than the 100ms coalescing bound and first-dirty immediacy",
       "evidenceClass": "exact-parity",
       "corpusCase": "reference.bash-output-updates",
-      "executableCases": ["ticket-19-bash", "ticket-19-installed"]
+      "executableCases": ["reference.bash-output-updates"],
+      "executableRunners": ["ticket-19-bash", "ticket-19-installed"]
     },
     {
       "id": "omh-v0.private-bash-output-spill",
@@ -913,7 +1011,8 @@
       "normalization": "ABD:private-bash-output-spill",
       "evidenceClass": "ABD:private-bash-output-spill",
       "corpusCase": "reference.private-bash-output-spill",
-      "executableCases": ["ticket-19-bash", "ticket-19-installed"]
+      "executableCases": ["reference.private-bash-output-spill"],
+      "executableRunners": ["ticket-19-bash", "ticket-19-installed"]
     },
     {
       "id": "omh-v0.actionable-bash-outcomes",
@@ -925,7 +1024,8 @@
       "normalization": "ABD:actionable-built-in-outcomes",
       "evidenceClass": "ABD:actionable-built-in-outcomes",
       "corpusCase": "reference.actionable-bash-outcomes",
-      "executableCases": ["ticket-19-bash", "ticket-19-installed"]
+      "executableCases": ["reference.actionable-bash-outcomes"],
+      "executableRunners": ["ticket-19-bash", "ticket-19-installed"]
     },
     {
       "id": "omh-v0.truthful-bash-signal-termination",
@@ -937,11 +1037,12 @@
       "normalization": "ABD:truthful-bash-signal-termination",
       "evidenceClass": "ABD:truthful-bash-signal-termination",
       "corpusCase": "reference.truthful-bash-signal-termination",
-      "executableCases": ["ticket-19-bash", "ticket-19-installed"]
+      "executableCases": ["reference.truthful-bash-signal-termination"],
+      "executableRunners": ["ticket-19-bash", "ticket-19-installed"]
     },
     {
       "id": "omh-v0.bash-cancellation-cleanup",
-      "authority": ".scratch/omh-v0/issues/10-choose-coding-tools-and-workspace-contract.md#ABD:managed-run-cancellation",
+      "authority": ".scratch/omh-v0/issues/04-choose-async-stream-cancellation-contract.md#ABD:managed-run-cancellation",
       "publicInterface": "oh_my_coding_agent.AgentSession.prompt bash Tool",
       "scenario": "abort an active bash process, drain the owned tree, suppress success, and raise cleanup when close fails after truncation",
       "observations": {"A": "started command", "L": "cancelled Tool Failure; close failure is cleanup LifecycleError", "T": "Tool bash execution was cancelled", "E": "owned process tree is dead; unexposed spill removed", "C": "Session remains reusable after confirmed cancellation"},
@@ -949,7 +1050,8 @@
       "normalization": "ABD:managed-run-cancellation",
       "evidenceClass": "ABD:managed-run-cancellation",
       "corpusCase": "reference.bash-cancellation-cleanup",
-      "executableCases": ["ticket-19-bash", "ticket-19-installed"]
+      "executableCases": ["reference.bash-cancellation-cleanup"],
+      "executableRunners": ["ticket-19-bash", "ticket-19-installed"]
     },
     {
       "id": "omh-v0.explicit-project-resource-trust",
@@ -961,7 +1063,8 @@
       "normalization": "ABD:explicit-project-resource-trust; do not inherit saved/ancestor/UI trust",
       "evidenceClass": "ABD:explicit-project-resource-trust",
       "corpusCase": "reference.explicit-project-resource-trust",
-      "executableCases": ["ticket-20-resources", "ticket-20-installed", "ticket-21-extensions", "ticket-21-installed"]
+      "executableCases": ["reference.explicit-project-resource-trust"],
+      "executableRunners": ["ticket-20-resources", "ticket-20-installed", "ticket-21-extensions"]
     },
     {
       "id": "omh-v0.omh-project-config-root-prompt-resources",
@@ -973,7 +1076,8 @@
       "normalization": "ABD:omh-project-config-root",
       "evidenceClass": "ABD:omh-project-config-root",
       "corpusCase": "reference.omh-project-config-root-prompt-resources",
-      "executableCases": ["ticket-20-resources", "ticket-20-installed"]
+      "executableCases": ["reference.omh-project-config-root-prompt-resources"],
+      "executableRunners": ["ticket-20-resources", "ticket-20-installed"]
     },
     {
       "id": "omh-v0.fixed-session-prompt-resources",
@@ -985,7 +1089,8 @@
       "normalization": "ABD:fixed-session-prompt-resources",
       "evidenceClass": "ABD:fixed-session-prompt-resources",
       "corpusCase": "reference.fixed-session-prompt-resources",
-      "executableCases": ["ticket-20-resources", "ticket-20-installed"]
+      "executableCases": ["reference.fixed-session-prompt-resources"],
+      "executableRunners": ["ticket-20-resources", "ticket-20-installed"]
     },
     {
       "id": "omh-v0.strict-prompt-resource-invocation",
@@ -997,7 +1102,8 @@
       "normalization": "ABD:strict-prompt-resource-invocation",
       "evidenceClass": "ABD:strict-prompt-resource-invocation",
       "corpusCase": "reference.strict-prompt-resource-invocation",
-      "executableCases": ["ticket-20-resources", "ticket-20-installed"]
+      "executableCases": ["reference.strict-prompt-resource-invocation"],
+      "executableRunners": ["ticket-20-resources", "ticket-20-installed"]
     },
     {
       "id": "omh-v0.fixed-session-system-prompt",
@@ -1009,7 +1115,8 @@
       "normalization": "ABD:fixed-session-system-prompt; named-check success claims remain ABD:require-named-check-for-success",
       "evidenceClass": "ABD:fixed-session-system-prompt",
       "corpusCase": "reference.fixed-session-system-prompt",
-      "executableCases": ["ticket-20-resources", "ticket-20-installed"]
+      "executableCases": ["reference.fixed-session-system-prompt"],
+      "executableRunners": ["ticket-20-resources", "ticket-20-installed"]
     },
     {
       "id": "omh-v0.deterministic-extension-discovery",
@@ -1021,7 +1128,8 @@
       "normalization": "ABD:deterministic-extension-discovery",
       "evidenceClass": "ABD:deterministic-extension-discovery",
       "corpusCase": "reference.deterministic-extension-discovery",
-      "executableCases": ["ticket-21-extensions", "ticket-21-installed"]
+      "executableCases": ["reference.deterministic-extension-discovery"],
+      "executableRunners": ["ticket-21-extensions", "ticket-21-installed"]
     },
     {
       "id": "omh-v0.python-extension-entrypoint",
@@ -1033,7 +1141,8 @@
       "normalization": "PA:python-extension-entrypoint",
       "evidenceClass": "PA:python-extension-entrypoint",
       "corpusCase": "reference.python-extension-entrypoint",
-      "executableCases": ["ticket-21-extensions", "ticket-21-installed"]
+      "executableCases": ["reference.python-extension-entrypoint"],
+      "executableRunners": ["ticket-21-extensions", "ticket-21-installed"]
     },
     {
       "id": "omh-v0.fixed-extension-registration",
@@ -1045,7 +1154,8 @@
       "normalization": "ABD:fixed-extension-registration",
       "evidenceClass": "ABD:fixed-extension-registration",
       "corpusCase": "reference.fixed-extension-registration",
-      "executableCases": ["ticket-21-extensions", "ticket-21-installed"]
+      "executableCases": ["reference.fixed-extension-registration"],
+      "executableRunners": ["ticket-21-extensions", "ticket-21-installed"]
     },
     {
       "id": "omh-v0.snapshot-extension-context",
@@ -1057,7 +1167,8 @@
       "normalization": "ABD:snapshot-extension-context",
       "evidenceClass": "ABD:snapshot-extension-context",
       "corpusCase": "reference.snapshot-extension-context",
-      "executableCases": ["ticket-21-extensions", "ticket-21-installed"]
+      "executableCases": ["reference.snapshot-extension-context"],
+      "executableRunners": ["ticket-21-extensions", "ticket-21-installed"]
     },
     {
       "id": "omh-v0.fail-closed-extension-handlers",
@@ -1069,7 +1180,8 @@
       "normalization": "ABD:fail-closed-extension-handlers",
       "evidenceClass": "ABD:fail-closed-extension-handlers",
       "corpusCase": "reference.fail-closed-extension-handlers",
-      "executableCases": ["ticket-21-extensions", "ticket-21-installed"]
+      "executableCases": ["reference.fail-closed-extension-handlers"],
+      "executableRunners": ["ticket-21-extensions", "ticket-21-installed"]
     },
     {
       "id": "omh-v0.session-scoped-extension-modules",
@@ -1081,7 +1193,8 @@
       "normalization": "ABD:session-scoped-extension-modules",
       "evidenceClass": "ABD:session-scoped-extension-modules",
       "corpusCase": "reference.session-scoped-extension-modules",
-      "executableCases": ["ticket-21-extensions", "ticket-21-installed"]
+      "executableCases": ["reference.session-scoped-extension-modules"],
+      "executableRunners": ["ticket-21-extensions", "ticket-21-installed"]
     },
     {
       "id": "omh-v0.atomic-extension-initialization",
@@ -1093,7 +1206,8 @@
       "normalization": "ABD:atomic-extension-initialization",
       "evidenceClass": "ABD:atomic-extension-initialization",
       "corpusCase": "reference.atomic-extension-initialization",
-      "executableCases": ["ticket-21-extensions", "ticket-21-installed"]
+      "executableCases": ["reference.atomic-extension-initialization"],
+      "executableRunners": ["ticket-21-extensions", "ticket-21-installed"]
     },
     {
       "id": "omh-v0.programmatic-product-journey",
@@ -1104,9 +1218,10 @@
       "comparator": "compare the bounded repository outcome, Tool order, terminal report, and persistent continuity while applying the named-check ABD only to the success-claim gate",
       "normalization": "product identity, Python Tool/value carriers, and ABD:require-named-check-for-success",
       "evidenceClass": "local-release",
-      "referenceApplicability": {"status": "not_applicable", "reason": "composed-journey-coverage"},
+      "referenceApplicability": {"status": "not_applicable", "reason": "product-scope"},
       "corpusCase": "reference.programmatic-product-journey",
-      "executableCases": ["ticket-22-journey", "ticket-22-installed"]
+      "executableCases": ["reference.programmatic-product-journey"],
+      "executableRunners": ["ticket-22-journey", "ticket-22-installed"]
     },
     {
       "id": "omh-v0.require-named-check-for-success",
@@ -1118,7 +1233,8 @@
       "normalization": "ABD:require-named-check-for-success",
       "evidenceClass": "ABD:require-named-check-for-success",
       "corpusCase": "reference.require-named-check-for-success",
-      "executableCases": ["ticket-22-journey", "ticket-22-installed"]
+      "executableCases": ["reference.require-named-check-for-success"],
+      "executableRunners": ["ticket-22-journey", "ticket-22-installed"]
     },
     {
       "id": "omh-v0.programmatic-failure-boundaries",
@@ -1129,9 +1245,10 @@
       "comparator": "compare terminal classifications, request effects, overlap admission, and same-instance reuse",
       "normalization": "Python LifecycleError carrier and owned cancellation mechanics only",
       "evidenceClass": "local-release",
-      "referenceApplicability": {"status": "not_applicable", "reason": "composed-journey-coverage"},
+      "referenceApplicability": {"status": "not_applicable", "reason": "product-scope"},
       "corpusCase": "reference.programmatic-failure-boundaries",
-      "executableCases": ["ticket-22-journey", "ticket-22-installed"]
+      "executableCases": ["reference.programmatic-failure-boundaries"],
+      "executableRunners": ["ticket-22-journey", "ticket-22-installed"]
     },
     {
       "id": "omh-v0.programmatic-session-topology",
@@ -1142,9 +1259,10 @@
       "comparator": "compare public tree/context projections, source and fork bytes, compaction retry bound, persistence effects, and trusted versus untrusted Skill behavior",
       "normalization": "Session carrier paths, Python value records, Project Resource Trust, and accepted compaction carrier mechanics",
       "evidenceClass": "local-release",
-      "referenceApplicability": {"status": "not_applicable", "reason": "composed-journey-coverage"},
+      "referenceApplicability": {"status": "not_applicable", "reason": "product-scope"},
       "corpusCase": "reference.programmatic-session-topology",
-      "executableCases": ["ticket-22-journey", "ticket-22-installed"]
+      "executableCases": ["reference.programmatic-session-topology"],
+      "executableRunners": ["ticket-22-journey", "ticket-22-installed"]
     },
     {
       "id": "omh-v0.programmatic-recovery-continuity",
@@ -1155,9 +1273,10 @@
       "comparator": "compare parsed-prefix entries, absent replay, fresh resource/auth binding, active-path continuation, and unchanged malformed bytes",
       "normalization": "Python JSONL carrier and product identity paths only",
       "evidenceClass": "local-release",
-      "referenceApplicability": {"status": "not_applicable", "reason": "composed-journey-coverage"},
+      "referenceApplicability": {"status": "not_applicable", "reason": "product-scope"},
       "corpusCase": "reference.programmatic-recovery-continuity",
-      "executableCases": ["ticket-22-journey", "ticket-22-installed"]
+      "executableCases": ["reference.programmatic-recovery-continuity"],
+      "executableRunners": ["ticket-22-journey", "ticket-22-installed"]
     },
     {
       "id": "omh-v0.explicit-command-mode-admission",
@@ -1169,7 +1288,8 @@
       "normalization": "ABD:explicit-command-mode-admission",
       "evidenceClass": "ABD:explicit-command-mode-admission",
       "corpusCase": "reference.explicit-command-mode-admission",
-      "executableCases": ["ticket-23-one-shot", "ticket-23-installed"]
+      "executableCases": ["reference.explicit-command-mode-admission"],
+      "executableRunners": ["ticket-23-one-shot", "ticket-23-installed"]
     },
     {
       "id": "omh-v0.deterministic-one-shot-terminal-carrier",
@@ -1181,7 +1301,8 @@
       "normalization": "ABD:deterministic-one-shot-terminal-carrier",
       "evidenceClass": "ABD:deterministic-one-shot-terminal-carrier",
       "corpusCase": "reference.deterministic-one-shot-terminal-carrier",
-      "executableCases": ["ticket-23-one-shot", "ticket-23-installed", "ticket-25-signals"]
+      "executableCases": ["reference.deterministic-one-shot-terminal-carrier"],
+      "executableRunners": ["ticket-23-one-shot", "ticket-23-installed", "ticket-25-signals"]
     },
     {
       "id": "omh-v0.redacted-command-diagnostics",
@@ -1193,7 +1314,8 @@
       "normalization": "ABD:redacted-command-diagnostics",
       "evidenceClass": "ABD:redacted-command-diagnostics",
       "corpusCase": "reference.redacted-command-diagnostics",
-      "executableCases": ["ticket-23-one-shot", "ticket-23-installed", "ticket-25-signals"]
+      "executableCases": ["reference.redacted-command-diagnostics"],
+      "executableRunners": ["ticket-23-one-shot", "ticket-23-installed", "ticket-25-signals"]
     },
     {
       "id": "omh-v0.plain-repl-transcript",
@@ -1205,7 +1327,8 @@
       "normalization": "ABD:plain-repl-transcript",
       "evidenceClass": "ABD:plain-repl-transcript",
       "corpusCase": "reference.plain-repl-transcript",
-      "executableCases": ["ticket-24-repl", "ticket-24-installed"]
+      "executableCases": ["reference.plain-repl-transcript"],
+      "executableRunners": ["ticket-24-repl", "ticket-24-installed"]
     },
     {
       "id": "omh-v0.repl-reject-busy-ordinary-message",
@@ -1217,7 +1340,8 @@
       "normalization": "ABD:repl-reject-busy-ordinary-message",
       "evidenceClass": "ABD:repl-reject-busy-ordinary-message",
       "corpusCase": "reference.repl-reject-busy-ordinary-message",
-      "executableCases": ["ticket-24-repl", "ticket-24-installed"]
+      "executableCases": ["reference.repl-reject-busy-ordinary-message"],
+      "executableRunners": ["ticket-24-repl", "ticket-24-installed"]
     },
     {
       "id": "omh-v0.repl-control-inputs",
@@ -1229,7 +1353,8 @@
       "normalization": "ABD:repl-control-inputs",
       "evidenceClass": "ABD:repl-control-inputs",
       "corpusCase": "reference.repl-control-inputs",
-      "executableCases": ["ticket-25-signals", "ticket-25-installed"]
+      "executableCases": ["reference.repl-control-inputs"],
+      "executableRunners": ["ticket-25-signals", "ticket-25-installed"]
     },
     {
       "id": "omh-v0.repl-signal-status",
@@ -1241,7 +1366,8 @@
       "normalization": "ABD:repl-signal-status",
       "evidenceClass": "ABD:repl-signal-status",
       "corpusCase": "reference.repl-signal-status",
-      "executableCases": ["ticket-25-signals", "ticket-25-installed"]
+      "executableCases": ["reference.repl-signal-status"],
+      "executableRunners": ["ticket-25-signals", "ticket-25-installed"]
     },
     {
       "id": "omh-v0.command-posix-terminal-signals",
@@ -1254,7 +1380,126 @@
       "evidenceClass": "local-release",
       "referenceApplicability": {"status": "not_applicable", "reason": "platform"},
       "corpusCase": "reference.command-posix-terminal-signals",
-      "executableCases": ["ticket-25-signals", "ticket-25-installed"]
+      "executableCases": ["reference.command-posix-terminal-signals"],
+      "executableRunners": ["ticket-25-signals", "ticket-25-installed"]
+    },
+    {
+      "id": "omh-v0.public-surface-closure",
+      "authority": ".scratch/omh-v0/issues/03-choose-public-python-interface.md#distribution-and-import-seams",
+      "publicInterface": "installed omh Distribution, oh_my_llm, oh_my_llm.providers.deepseek, oh_my_core, and oh_my_coding_agent",
+      "scenario": "inspect installed metadata, closed root and child exports, factory-produced public members, signatures, Session version, and excluded aliases",
+      "observations": {"A": "one Distribution, console command, three roots, and one real-Provider child admitted", "L": "not_applicable", "T": "exact public names, members, signatures, and CURRENT_SESSION_VERSION 3", "E": "no excluded root, path, re-export, alias, or implementation-only child name", "C": "closed installed public surface"},
+      "comparator": "not_applicable: product-scope",
+      "normalization": "canonical sorted names, inspect signatures, normalized metadata requirement order, and one authority-compiled SHA-256",
+      "evidenceClass": "local-release",
+      "referenceApplicability": {"status": "not_applicable", "reason": "product-scope"},
+      "corpusCase": "reference.public-surface-closure",
+      "executableCases": ["reference.public-surface-closure"],
+      "executableRunners": ["ticket-26-closure", "ticket-26-installed"],
+      "coverage": {
+        "publicPaths": ["oh_my_llm", "oh_my_llm.providers.deepseek", "oh_my_core", "oh_my_coding_agent"],
+        "publicRoots": {
+          "oh_my_llm": ["AbortSignal", "AuthResult", "AssistantMessage", "AssistantMessageDoneEvent", "AssistantMessageErrorEvent", "AssistantMessageEvent", "AssistantMessageStartEvent", "AssistantMessageTextDeltaEvent", "AssistantMessageTextEndEvent", "AssistantMessageTextStartEvent", "AssistantMessageToolCallDeltaEvent", "AssistantMessageToolCallEndEvent", "AssistantMessageToolCallStartEvent", "Context", "EventStream", "FauxProviderHandle", "FauxResponseFactory", "FauxResponseStep", "JSONValue", "LifecycleError", "LifecycleErrorCode", "Message", "Model", "Models", "ModelsError", "ModelsErrorCode", "MutableModels", "Provider", "SimpleStreamOptions", "StopReason", "StreamOptions", "TextContent", "Tool", "ToolCall", "ToolResultMessage", "Usage", "UsageCost", "UserMessage", "createModels", "fauxAssistantMessage", "fauxProvider", "fauxText", "fauxToolCall", "validateToolArguments", "validateToolCall"],
+          "oh_my_core": ["Agent", "AgentContext", "AgentEvent", "AgentEventSink", "AgentLoopConfig", "AgentMessage", "AgentOptions", "AgentState", "AgentTool", "AgentToolResult", "AgentToolUpdateCallback", "StreamFn", "ToolExecutionMode", "agentLoop", "agentLoopContinue", "runAgentLoop", "runAgentLoopContinue"],
+          "oh_my_coding_agent": ["AgentSession", "AgentSessionEvent", "AgentSessionEventListener", "BranchSummaryEntry", "CURRENT_SESSION_VERSION", "CompactionEntry", "CompactionResult", "CreateAgentSessionOptions", "CreateAgentSessionResult", "CustomEntry", "CustomMessageEntry", "ExtensionAPI", "ExtensionContext", "FileEntry", "LabelEntry", "ModelChangeEntry", "NewSessionOptions", "PromptOptions", "SessionContext", "SessionEntry", "SessionEntryBase", "SessionHeader", "SessionInfo", "SessionInfoEntry", "SessionManager", "SessionMessageEntry", "SessionTreeNode", "ThinkingLevelChangeEntry", "createAgentSession"]
+        },
+        "publicMembers": {
+          "oh_my_llm.Models": ["complete", "completeSimple", "getAuth", "getModel", "getModels", "getProvider", "getProviders", "stream", "streamSimple"],
+          "oh_my_llm.MutableModels": ["setProvider"],
+          "oh_my_llm.Provider": ["id", "name"],
+          "oh_my_llm.FauxProviderHandle": ["appendResponses", "getModel", "getPendingResponseCount", "models", "provider", "setResponses", "state"],
+          "oh_my_llm.AbortSignal": ["aborted", "wait"],
+          "oh_my_llm.EventStream": ["aclose", "result"],
+          "oh_my_core.Agent": ["abort", "continue_", "prompt", "reset", "signal", "state", "subscribe", "waitForIdle"],
+          "oh_my_coding_agent.SessionManager": ["appendCompaction", "appendCustomEntry", "appendCustomMessageEntry", "appendLabelChange", "appendMessage", "appendModelChange", "appendSessionInfo", "appendThinkingLevelChange", "branch", "branchWithSummary", "buildContextEntries", "buildSessionContext", "continueRecent", "create", "createBranchedSession", "forkFrom", "getBranch", "getChildren", "getCwd", "getEntries", "getEntry", "getHeader", "getLabel", "getLeafEntry", "getLeafId", "getSessionDir", "getSessionFile", "getSessionId", "getSessionName", "getTree", "inMemory", "isPersisted", "list", "listAll", "newSession", "open", "resetLeaf", "setSessionFile", "usesDefaultSessionDir"],
+          "oh_my_coding_agent.AgentSession": ["abort", "abortBranchSummary", "abortCompaction", "autoCompactionEnabled", "compact", "dispose", "getUserMessagesForForking", "isCompacting", "isIdle", "isStreaming", "messages", "model", "navigateTree", "prompt", "sessionFile", "sessionId", "sessionManager", "sessionName", "setAutoCompactionEnabled", "setSessionName", "subscribe", "systemPrompt", "waitForIdle"],
+          "oh_my_coding_agent.ExtensionAPI": ["on", "registerTool"],
+          "oh_my_coding_agent.ExtensionContext": ["cwd", "messages", "model", "sessionId", "signal"]
+        }
+      }
+    },
+    {
+      "id": "omh-v0.reject-missing-model-at-session-creation",
+      "authority": ".scratch/omh-v0/issues/02-choose-v0-parity-policy.md#ABD:reject-missing-model-at-session-creation",
+      "publicInterface": "installed oh_my_coding_agent.createAgentSession",
+      "scenario": "construct with a foreign explicit Model and with the selected default Model but no authentication",
+      "observations": {"A": "both invalid Product Session constructions rejected", "L": "no Session lifecycle", "T": "no usable AgentSession result", "E": "no default Session directory or Model request", "C": "a later valid construction remains possible"},
+      "comparator": "compare rejection at Product Session construction rather than Reference prompt preflight; compare lifecycle position and classification, not wording",
+      "normalization": "ABD:reject-missing-model-at-session-creation",
+      "evidenceClass": "ABD:reject-missing-model-at-session-creation",
+      "corpusCase": "reference.reject-missing-model-at-session-creation",
+      "executableCases": ["reference.reject-missing-model-at-session-creation"],
+      "executableRunners": ["ticket-12-session", "ticket-12-installed"]
+    },
+    {
+      "id": "omh-v0.atomic-session-construction",
+      "authority": ".scratch/omh-v0/issues/04-choose-async-stream-cancellation-contract.md#ABD:atomic-session-construction",
+      "publicInterface": "installed oh_my_coding_agent.createAgentSession",
+      "scenario": "cancel at the private constructed-before-delivered barrier while observing only public manager state and result publication",
+      "observations": {"A": "construction cancelled before publication", "L": "owned cleanup completes before cancellation returns", "T": "CancelledError and no AgentSession result", "E": "supplied SessionManager remains unchanged", "C": "no reachable Session or live owned task"},
+      "comparator": "contrast Reference partial live-resource exposure with omh empty live-resource and publication sets; persistent bytes and Extension side effects remain separately owned",
+      "normalization": "ABD:atomic-session-construction and PA:python-async-resource-carriers",
+      "evidenceClass": "ABD:atomic-session-construction",
+      "corpusCase": "reference.atomic-session-construction",
+      "executableCases": ["reference.atomic-session-construction"],
+      "executableRunners": ["ticket-12-session", "ticket-12-installed"]
+    },
+    {
+      "id": "omh-v0.locked-dependency-packaging-contract",
+      "authority": ".scratch/omh-v0/issues/13-choose-v0-python-dependencies.md#answer",
+      "publicInterface": "installed omh Distribution metadata and locked repository inputs",
+      "scenario": "verify the exact CPython range, three Runtime pins, one Build pin/backend, explicit package inventory, console script, and drift-free uv.lock",
+      "observations": {"A": "one locked dependency and build graph admitted", "L": "not_applicable", "T": "CPython >=3.12,<3.14; httpx, google-re2, PyYAML, and Hatchling exact pins", "E": "no undeclared Runtime package, source-tree package, or lock drift", "C": "one atomic Distribution with three public packages and omh command"},
+      "comparator": "not_applicable: packaging",
+      "normalization": "canonical requirement names and ordering only",
+      "evidenceClass": "local-release",
+      "referenceApplicability": {"status": "not_applicable", "reason": "packaging"},
+      "corpusCase": "reference.locked-dependency-packaging-contract",
+      "executableCases": ["reference.locked-dependency-packaging-contract"],
+      "executableRunners": ["ticket-26-closure"]
+    },
+    {
+      "id": "omh-v0.closed-release-row-selection",
+      "authority": ".scratch/omh-v0/issues/12-define-v0-conformance-and-release-gate.md#supported-release-rows",
+      "publicInterface": "release Matrix selection",
+      "scenario": "enumerate exactly the four selected operating-system, architecture, and CPython-minor rows without inferring any other support",
+      "observations": {"A": "four rows selected", "L": "not_applicable", "T": "macOS 26 arm64 and Ubuntu 24.04 x86_64, each on CPython 3.12 and 3.13", "E": "no support inferred from artifact or dependency availability", "C": "unselected environments remain outside v0"},
+      "comparator": "not_applicable: platform",
+      "normalization": "OS family/release, architecture, and CPython minor tuples",
+      "evidenceClass": "local-release",
+      "referenceApplicability": {"status": "not_applicable", "reason": "platform"},
+      "corpusCase": "reference.closed-release-row-selection",
+      "executableCases": ["reference.closed-release-row-selection"],
+      "executableRunners": ["ticket-26-closure"],
+      "coverage": {"releaseRows": ["macOS 26|arm64|CPython 3.12", "macOS 26|arm64|CPython 3.13", "Ubuntu 24.04|x86_64|CPython 3.12", "Ubuntu 24.04|x86_64|CPython 3.13"]}
+    },
+    {
+      "id": "omh-v0.deterministic-conformance-policy",
+      "authority": ".scratch/omh-v0/issues/12-define-v0-conformance-and-release-gate.md#deterministic-conformance",
+      "publicInterface": "installed public imports and omh Command Modes plus private nondeterminism seams",
+      "scenario": "audit every conformance module and executable-case edge for installed-only observation, real resources, explicit barriers, bounded failure-only watchdogs, and offline execution",
+      "observations": {"A": "complete suite admitted without skip or xfail", "L": "explicit barriers rather than timing sleeps", "T": "watchdogs can only fail hangs", "E": "real resources, private injections, and zero external network request", "C": "zero uncovered obligations and orphan cases"},
+      "comparator": "not_applicable: release-process",
+      "normalization": "AST policy audit plus Matrix/corpus graph identity",
+      "evidenceClass": "local-release",
+      "referenceApplicability": {"status": "not_applicable", "reason": "release-process"},
+      "corpusCase": "reference.deterministic-conformance-policy",
+      "executableCases": ["reference.deterministic-conformance-policy"],
+      "executableRunners": ["ticket-26-closure"]
+    },
+    {
+      "id": "omh-v0.reference-corpus-reproducibility",
+      "authority": ".scratch/omh-v0/issues/12-define-v0-conformance-and-release-gate.md#fixed-reference-oracle",
+      "publicInterface": "Reference Capture Row evidence infrastructure",
+      "scenario": "validate every case and citation against the fixed revision and regenerate canonical corpus bytes twice without reading omh output",
+      "observations": {"A": "one fixed capture corpus admitted", "L": "not_applicable", "T": "two generated byte streams equal the committed corpus", "E": "fixed git objects only and no current omh oracle", "C": "moving HEAD or noncanonical bytes fail"},
+      "comparator": "not_applicable: release-process",
+      "normalization": "UTF-8 JSON with fixed insertion order, two-space indentation, and terminal LF",
+      "evidenceClass": "local-release",
+      "referenceApplicability": {"status": "not_applicable", "reason": "release-process"},
+      "corpusCase": "reference.reference-corpus-reproducibility",
+      "executableCases": ["reference.reference-corpus-reproducibility"],
+      "executableRunners": ["ticket-26-closure"]
     }
   ]
 }

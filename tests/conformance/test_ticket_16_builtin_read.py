@@ -768,5 +768,5 @@ def test_ticket_16_matrix_records_registry_and_read_obligations() -> None:
         assert {
             "ticket-16-read",
             "ticket-16-installed",
-        } <= set(rows[obligation]["executableCases"])
+        } <= set(rows[obligation]["executableRunners"])
         assert cases[corpus_case]["obligation"] == obligation

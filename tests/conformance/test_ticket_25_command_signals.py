@@ -600,12 +600,12 @@ def test_ticket_25_matrix_closes_command_mode_signal_rows(tmp_path: Path) -> Non
         row = obligations[obligation_id]
         assert cases[case_id]["obligation"] == obligation_id
         assert row["corpusCase"] == case_id
-        assert row["executableCases"] == ["ticket-25-signals", "ticket-25-installed"]
+        assert row["executableRunners"] == ["ticket-25-signals", "ticket-25-installed"]
 
     diagnostics = obligations["omh-v0.redacted-command-diagnostics"]
-    assert "ticket-25-signals" in diagnostics["executableCases"]
+    assert "ticket-25-signals" in diagnostics["executableRunners"]
     one_shot = obligations["omh-v0.deterministic-one-shot-terminal-carrier"]
-    assert "ticket-25-signals" in one_shot["executableCases"]
+    assert "ticket-25-signals" in one_shot["executableRunners"]
 
     assert control_observations(
         tmp_path / "control-home", tmp_path / "control-workspace"

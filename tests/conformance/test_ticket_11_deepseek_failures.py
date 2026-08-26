@@ -813,6 +813,6 @@ def test_ticket_11_conformance_links_failure_reuse_and_cancellation() -> None:
     assert set(required.values()) <= cases.keys()
     for obligation, corpus_case in required.items():
         assert rows[obligation]["corpusCase"] == corpus_case
-        assert "ticket-11-deepseek-failures" in rows[obligation]["executableCases"]
-        assert "ticket-11-installed" in rows[obligation]["executableCases"]
+        assert "ticket-11-deepseek-failures" in rows[obligation]["executableRunners"]
+        assert "ticket-11-installed" in rows[obligation]["executableRunners"]
         assert cases[corpus_case]["obligation"] == obligation

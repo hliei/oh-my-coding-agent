@@ -169,7 +169,7 @@ def test_ticket_22_matrix_connects_each_journey_observation_to_authority() -> No
     for obligation, corpus_case in required.items():
         row = rows[obligation]
         assert row["corpusCase"] == corpus_case
-        assert row["executableCases"] == [
+        assert row["executableRunners"] == [
             "ticket-22-journey",
             "ticket-22-installed",
         ]
@@ -191,7 +191,7 @@ def test_ticket_22_matrix_connects_each_journey_observation_to_authority() -> No
     composed = required.keys() - {"omh-v0.require-named-check-for-success"}
     not_applicable = {
         "status": "not_applicable",
-        "reason": "composed-journey-coverage",
+        "reason": "product-scope",
     }
     for obligation in composed:
         row = rows[obligation]
@@ -199,5 +199,5 @@ def test_ticket_22_matrix_connects_each_journey_observation_to_authority() -> No
         assert row["referenceApplicability"] == not_applicable
         assert cases[required[obligation]]["observations"] == {
             "reference": "not_applicable",
-            "reason": "composed-journey-coverage",
+            "reason": "product-scope",
         }

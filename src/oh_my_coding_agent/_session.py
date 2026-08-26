@@ -1448,7 +1448,7 @@ async def createAgentSession(
             ) from error
         raise
     try:
-        await asyncio.sleep(0)
+        await _yield_before_session_publication()
     except asyncio.CancelledError:
         disposal = asyncio.create_task(session.dispose())
         while not disposal.done():
@@ -1459,3 +1459,7 @@ async def createAgentSession(
         disposal.result()
         raise
     return CreateAgentSessionResult(session=session)
+
+
+async def _yield_before_session_publication() -> None:
+    await asyncio.sleep(0)

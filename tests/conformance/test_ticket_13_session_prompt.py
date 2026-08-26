@@ -368,8 +368,14 @@ def test_wait_for_idle_includes_the_agent_settled_listener_barrier(
         session.subscribe(listener)
         prompt = asyncio.create_task(session.prompt("barrier"))
         await settled_started.wait()
-        idle = asyncio.create_task(session.waitForIdle())
-        await asyncio.sleep(0)
+        idle_started = asyncio.Event()
+
+        async def wait_for_settlement() -> None:
+            idle_started.set()
+            await session.waitForIdle()
+
+        idle = asyncio.create_task(wait_for_settlement())
+        await idle_started.wait()
         assert idle.done() is False
         assert prompt.done() is False
 
@@ -378,7 +384,7 @@ def test_wait_for_idle_includes_the_agent_settled_listener_barrier(
         await idle
         await session.dispose()
 
-    asyncio.run(scenario())
+    asyncio.run(asyncio.wait_for(scenario(), timeout=10.0))
 
 
 def test_ticket_13_matrix_records_prompt_and_incomplete_recovery() -> None:
@@ -398,7 +404,7 @@ def test_ticket_13_matrix_records_prompt_and_incomplete_recovery() -> None:
     assert set(required.values()) <= cases.keys()
     for obligation, corpus_case in required.items():
         assert rows[obligation]["corpusCase"] == corpus_case
-        assert rows[obligation]["executableCases"] == [
+        assert rows[obligation]["executableRunners"] == [
             "ticket-13-session",
             "ticket-13-installed",
         ]

@@ -10,6 +10,7 @@ import uuid
 import pytest
 
 import oh_my_coding_agent
+import oh_my_coding_agent._session as session_module
 from oh_my_coding_agent import (
     AgentSession,
     CURRENT_SESSION_VERSION,
@@ -384,17 +385,28 @@ def test_creation_cancellation_publishes_no_session_or_manager_mutation(
         os.fspath(tmp_path), NewSessionOptions(id="cancelled")
     )
     before = (manager.getHeader(), manager.getEntries(), manager.getSessionFile())
+    publication_reached = asyncio.Event()
+    release_publication = asyncio.Event()
+
+    async def hold_publication() -> None:
+        publication_reached.set()
+        await release_publication.wait()
+
+    monkeypatch.setattr(
+        session_module, "_yield_before_session_publication", hold_publication
+    )
 
     async def cancel_at_publication_boundary() -> None:
         operation = asyncio.create_task(
             createAgentSession(CreateAgentSessionOptions(sessionManager=manager))
         )
-        await asyncio.sleep(0)
+        await publication_reached.wait()
         operation.cancel()
+        release_publication.set()
         with pytest.raises(asyncio.CancelledError):
             await operation
 
-    asyncio.run(cancel_at_publication_boundary())
+    asyncio.run(asyncio.wait_for(cancel_at_publication_boundary(), timeout=10.0))
     assert (manager.getHeader(), manager.getEntries(), manager.getSessionFile()) == before
 
 
@@ -412,6 +424,12 @@ def test_ticket_12_matrix_records_empty_identity_id_and_no_lease_obligations() -
         "omh-v0.session-no-continuing-lease": (
             "reference.session-no-continuing-lease"
         ),
+        "omh-v0.reject-missing-model-at-session-creation": (
+            "reference.reject-missing-model-at-session-creation"
+        ),
+        "omh-v0.atomic-session-construction": (
+            "reference.atomic-session-construction"
+        ),
     }
     rows = {row["id"]: row for row in matrix["obligations"]}
     cases = {case["id"]: case for case in corpus["cases"]}
@@ -419,7 +437,7 @@ def test_ticket_12_matrix_records_empty_identity_id_and_no_lease_obligations() -
     assert set(required.values()) <= cases.keys()
     for obligation, corpus_case in required.items():
         assert rows[obligation]["corpusCase"] == corpus_case
-        assert rows[obligation]["executableCases"] == [
+        assert rows[obligation]["executableRunners"] == [
             "ticket-12-session",
             "ticket-12-installed",
         ]

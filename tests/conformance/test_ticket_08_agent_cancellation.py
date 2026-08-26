@@ -1563,8 +1563,8 @@ def test_ticket_08_conformance_distinguishes_every_terminal_carrier() -> None:
     assert set(required.values()) <= cases.keys()
     for obligation, corpus_case in required.items():
         assert rows[obligation]["corpusCase"] == corpus_case
-        assert "ticket-08-agent-cancellation" in rows[obligation]["executableCases"]
-        assert "ticket-08-installed" in rows[obligation]["executableCases"]
+        assert "ticket-08-agent-cancellation" in rows[obligation]["executableRunners"]
+        assert "ticket-08-installed" in rows[obligation]["executableRunners"]
         assert cases[corpus_case]["obligation"] == obligation
     carriers = cases["reference.agent-fail-closed-lifecycle"]["omhExpectation"][
         "T"

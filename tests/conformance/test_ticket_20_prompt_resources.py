@@ -650,5 +650,5 @@ def test_ticket_20_matrix_records_prompt_resource_obligations() -> None:
         assert {
             "ticket-20-resources",
             "ticket-20-installed",
-        } <= set(rows[obligation]["executableCases"])
+        } <= set(rows[obligation]["executableRunners"])
         assert cases[corpus_case]["obligation"] == obligation

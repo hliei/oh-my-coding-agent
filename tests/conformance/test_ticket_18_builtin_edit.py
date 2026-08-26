@@ -1205,7 +1205,7 @@ def test_ticket_18_matrix_records_edit_obligations() -> None:
     assert set(required.values()) <= cases.keys()
     for obligation, corpus_case in required.items():
         assert rows[obligation]["corpusCase"] == corpus_case
-        assert rows[obligation]["executableCases"] == [
+        assert rows[obligation]["executableRunners"] == [
             "ticket-18-edit",
             "ticket-18-installed",
         ]

@@ -7,12 +7,14 @@ from pathlib import Path
 import tempfile
 import uuid
 
+import oh_my_coding_agent._session as session_module
 from oh_my_coding_agent import (
     CreateAgentSessionOptions,
     NewSessionOptions,
     SessionManager,
     createAgentSession,
 )
+from oh_my_llm import ModelsError, fauxProvider
 
 
 async def _identity(root: Path) -> dict[str, object]:
@@ -46,6 +48,90 @@ async def _identity(root: Path) -> dict[str, object]:
     }
 
 
+async def _reject_invalid_creation(root: Path) -> dict[str, object]:
+    home = root / "rejected-home"
+    os.environ["HOME"] = os.fspath(home)
+    os.environ.pop("DEEPSEEK_API_KEY", None)
+    foreign = fauxProvider().getModel()
+    assert foreign is not None
+    foreign_carrier = "not_rejected"
+    try:
+        await createAgentSession(
+            CreateAgentSessionOptions(cwd=os.fspath(root), model=foreign)
+        )
+    except ValueError:
+        foreign_carrier = "ValueError"
+
+    auth_carrier = "not_rejected"
+    try:
+        await createAgentSession(CreateAgentSessionOptions(cwd=os.fspath(root)))
+    except ModelsError as error:
+        auth_carrier = f"ModelsError:{error.code}"
+
+    os.environ["DEEPSEEK_API_KEY"] = "omh-conformance-canary"
+    return {
+        "A": {
+            "foreignModel": "rejected",
+            "missingAuthentication": "rejected",
+        },
+        "L": [],
+        "T": {
+            "foreignModel": foreign_carrier,
+            "missingAuthentication": auth_carrier,
+            "sessionPublished": False,
+        },
+        "E": {
+            "defaultSessionDirectoryCreated": home.exists(),
+            "modelRequests": 0,
+        },
+        "C": "later_valid_construction_possible",
+    }
+
+
+async def _cancel_atomic_publication(root: Path) -> dict[str, object]:
+    manager = SessionManager.inMemory(
+        os.fspath(root), NewSessionOptions(id="atomic-cancel")
+    )
+    before = (manager.getHeader(), manager.getEntries(), manager.getSessionFile())
+    publication_reached = asyncio.Event()
+    release_publication = asyncio.Event()
+    original = session_module._yield_before_session_publication
+
+    async def hold_publication() -> None:
+        publication_reached.set()
+        await release_publication.wait()
+
+    session_module._yield_before_session_publication = hold_publication
+    carrier = "not_cancelled"
+    operation = asyncio.create_task(
+        createAgentSession(CreateAgentSessionOptions(sessionManager=manager))
+    )
+    try:
+        await publication_reached.wait()
+        operation.cancel()
+        release_publication.set()
+        try:
+            await operation
+        except asyncio.CancelledError:
+            carrier = "CancelledError"
+    finally:
+        session_module._yield_before_session_publication = original
+    current = asyncio.current_task()
+    return {
+        "A": "cancelled_before_publication",
+        "L": "cleanup_before_cancelled_error",
+        "T": {"carrier": carrier, "sessionPublished": False},
+        "E": {
+            "managerUnchanged": before
+            == (manager.getHeader(), manager.getEntries(), manager.getSessionFile())
+        },
+        "C": {
+            "reachableSession": False,
+            "liveOwnedTask": any(
+                task is not current and not task.done() for task in asyncio.all_tasks()
+            ),
+        },
+    }
 async def main() -> None:
     os.environ["DEEPSEEK_API_KEY"] = "omh-conformance-canary"
     with tempfile.TemporaryDirectory() as raw_root:
@@ -136,6 +222,12 @@ async def main() -> None:
             "reference.session-supplied-manager-identity": await _identity(root),
             "reference.session-caller-ids": caller_ids,
             "reference.session-no-continuing-lease": no_lease,
+            "reference.reject-missing-model-at-session-creation": (
+                await _reject_invalid_creation(root)
+            ),
+            "reference.atomic-session-construction": (
+                await _cancel_atomic_publication(root)
+            ),
         }
         print(json.dumps(actual, sort_keys=True, separators=(",", ":")))
 

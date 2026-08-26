@@ -1,14 +1,19 @@
 from __future__ import annotations
 
+import json
 import os
 from pathlib import Path
 import pty
 import select
 import signal
 import subprocess
+import sys
 import termios
+import tempfile
 import time
 from typing import Iterable
+
+sys.path.insert(0, str(Path(__file__).parent))
 
 from ticket_23_scenario import omh_bin
 
@@ -409,3 +414,25 @@ def platform_signal_observations(home: Path, workspace: Path) -> dict[str, objec
         "C": "release_row_posix_terminal_signals",
     }
 
+
+def main() -> None:
+    with tempfile.TemporaryDirectory() as raw_root:
+        root = Path(raw_root)
+        actual = {
+            "reference.repl-control-inputs": control_observations(
+                root / "control-home", root / "control-workspace"
+            ),
+            "reference.repl-signal-status": signal_observations(
+                root / "signal-home", root / "signal-workspace"
+            ),
+            "reference.command-posix-terminal-signals": (
+                platform_signal_observations(
+                    root / "platform-home", root / "platform-workspace"
+                )
+            ),
+        }
+    print(json.dumps(actual, sort_keys=True, separators=(",", ":")))
+
+
+if __name__ == "__main__":
+    main()

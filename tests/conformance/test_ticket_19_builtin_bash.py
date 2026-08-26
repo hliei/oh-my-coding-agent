@@ -957,7 +957,7 @@ def test_ticket_19_matrix_records_bash_obligations() -> None:
     assert set(required.values()) <= cases.keys()
     for obligation, corpus_case in required.items():
         assert rows[obligation]["corpusCase"] == corpus_case
-        assert rows[obligation]["executableCases"] == [
+        assert rows[obligation]["executableRunners"] == [
             "ticket-19-bash",
             "ticket-19-installed",
         ]

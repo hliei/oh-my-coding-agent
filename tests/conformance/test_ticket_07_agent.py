@@ -645,8 +645,14 @@ def test_wait_for_idle_captures_only_the_current_run() -> None:
         await agent.waitForIdle()
         first = asyncio.create_task(agent.prompt("one"))
         await started.wait()
-        waiter = asyncio.create_task(agent.waitForIdle())
-        await asyncio.sleep(0)
+        waiter_started = asyncio.Event()
+
+        async def wait_for_active_run() -> None:
+            waiter_started.set()
+            await agent.waitForIdle()
+
+        waiter = asyncio.create_task(wait_for_active_run())
+        await waiter_started.wait()
         assert not waiter.done()
         release.set()
         await first
@@ -654,4 +660,4 @@ def test_wait_for_idle_captures_only_the_current_run() -> None:
         await agent.prompt("two")
         assert agent.state.messages[-1] == second_response
 
-    asyncio.run(run())
+    asyncio.run(asyncio.wait_for(run(), timeout=10.0))

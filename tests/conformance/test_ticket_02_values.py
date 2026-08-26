@@ -679,7 +679,10 @@ def test_ticket_02_conformance_authorities_are_linked_to_public_observations() -
     assert required.keys() <= rows.keys()
     for obligation, corpus_case in required.items():
         assert rows[obligation]["corpusCase"] == corpus_case
-        assert rows[obligation]["executableCases"] == ["ticket-02-values"]
+        assert rows[obligation]["executableRunners"] == [
+            "ticket-02-values",
+            "ticket-02-installed",
+        ]
 
     record_names = [
         "TextContent",
