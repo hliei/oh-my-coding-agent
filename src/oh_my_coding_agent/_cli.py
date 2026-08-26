@@ -139,24 +139,42 @@ class _Selected:
 
 
 class _Shutdown:
-    def __init__(self) -> None:
+    def __init__(self, *, print_mode: bool) -> None:
+        self.print_mode = print_mode
         self.signum: signal.Signals | None = None
         self.session: AgentSession | None = None
-        self._aborting = False
-        self._requested = asyncio.Event()
+        self._terminating = asyncio.Event()
+        self._interrupt = asyncio.Event()
 
     def request(self, signum: signal.Signals) -> None:
-        if self.signum is None:
-            self.signum = signum
-            self._requested.set()
-        session = self.session
-        if session is None or self._aborting:
+        if self.signum is not None:
+            self._abort()
             return
-        self._aborting = True
-        asyncio.create_task(session.abort())
+        session = self.session
+        if signum == signal.SIGINT and not self.print_mode and session is not None:
+            self._interrupt.set()
+            if not session.isIdle:
+                self._abort()
+            return
+        self.signum = signum
+        self._terminating.set()
+        self._abort()
+
+    def _abort(self) -> None:
+        session = self.session
+        if session is None:
+            return
+        task = asyncio.create_task(session.abort())
+        task.add_done_callback(_consume_task_exception)
 
     async def wait(self) -> None:
-        await self._requested.wait()
+        await self._terminating.wait()
+
+    async def wait_interrupt(self) -> None:
+        await self._interrupt.wait()
+
+    def clear_interrupt(self) -> None:
+        self._interrupt.clear()
 
 
 def main() -> None:
@@ -320,7 +338,7 @@ async def _drive_command_mode(parsed: _Parsed, prompt: str | None) -> int:
     except ValueError as error:
         write_error(_public_value_message(error))
         return 1
-    shutdown = _Shutdown()
+    shutdown = _Shutdown(print_mode=parsed.print_mode)
     loop = asyncio.get_running_loop()
     for signum in _SIGNAL_STATUS:
         try:
@@ -383,7 +401,7 @@ async def _interactive_trust(cwd: str, shutdown: _Shutdown) -> bool | None:
     loop.add_reader(stdin_fd, input_ready)
     try:
         if shutdown.signum is not None:
-            write_stdout("trust cancelled\n")
+            _write_trust_cancel(shutdown.signum)
             return None
         while True:
             write_stdout(
@@ -397,7 +415,7 @@ async def _interactive_trust(cwd: str, shutdown: _Shutdown) -> bool | None:
             if cancelled in done:
                 line.cancel()
                 await asyncio.gather(line, return_exceptions=True)
-                write_stdout("trust cancelled\n")
+                _write_trust_cancel(shutdown.signum)
                 return None
             cancelled.cancel()
             await asyncio.gather(cancelled, return_exceptions=True)
@@ -416,6 +434,13 @@ async def _interactive_trust(cwd: str, shutdown: _Shutdown) -> bool | None:
             write_stdout("Please enter y or n.\n")
     finally:
         loop.remove_reader(stdin_fd)
+
+
+def _write_trust_cancel(signum: signal.Signals | None) -> None:
+    if signum is None or signum == signal.SIGINT:
+        write_stdout("trust cancelled\n")
+        return
+    write_stderr("cancelled\n")
 
 
 def _pre_session_cancel(signum: signal.Signals) -> int:
@@ -545,10 +570,11 @@ async def _drive_published_session(
         write_stderr("I/O error\n")
         return 1
     if shutdown.signum is not None:
-        write_stderr("cancelled\n")
+        if parsed.print_mode:
+            write_stderr("cancelled\n")
         return _SIGNAL_STATUS[shutdown.signum]
     if not parsed.print_mode:
-        return await _drive_interactive(session)
+        return await _drive_interactive(session, shutdown)
     assert prompt is not None
     classification: Literal["completed", "model_error", "cancelled", "unconfirmed"]
     stdout_payload: bytes | None
@@ -614,7 +640,7 @@ async def _drive_published_session(
     return status
 
 
-async def _drive_interactive(session: AgentSession) -> int:
+async def _drive_interactive(session: AgentSession, shutdown: _Shutdown) -> int:
     rendered_text = ""
     busy = False
     input_failure: OSError | None = None
@@ -707,8 +733,15 @@ async def _drive_interactive(session: AgentSession) -> int:
     loop.add_reader(stdin_fd, input_ready)
     try:
         while True:
+            if shutdown.signum is not None:
+                return _shutdown_status(shutdown)
             write_stdout("> ")
-            item = await lines.get()
+            item = await _wait_line_or_control(lines, shutdown)
+            if item == "terminate":
+                return _shutdown_status(shutdown)
+            if item == "interrupt":
+                write_stdout("\n")
+                continue
             if isinstance(item, OSError):
                 raise item
             if item == b"":
@@ -722,9 +755,10 @@ async def _drive_interactive(session: AgentSession) -> int:
             prior_messages = session.messages
             prior_entries = session.sessionManager.getEntries()
             busy = True
+            prompt_task = asyncio.create_task(session.prompt(prompt))
             try:
                 try:
-                    await session.prompt(prompt)
+                    await _join_prompt(prompt_task, session, shutdown)
                 except ValueError as error:
                     if (
                         session.messages != prior_messages
@@ -740,6 +774,10 @@ async def _drive_interactive(session: AgentSession) -> int:
                 if input_failure is not None:
                     raise input_failure
                 classification, _payload = _one_shot_terminal(session)
+                if shutdown.signum is not None:
+                    if classification == "cancelled":
+                        write_stdout("run cancelled\n")
+                    return _shutdown_status(shutdown)
                 if classification == "unconfirmed":
                     raise RuntimeError("AgentSession prompt settlement is unconfirmed")
                 write_stdout(f"run {classification}\n")
@@ -759,6 +797,68 @@ async def _drive_interactive(session: AgentSession) -> int:
         return 1
     finally:
         loop.remove_reader(stdin_fd)
+
+
+def _consume_task_exception(task: asyncio.Task[object]) -> None:
+    if not task.cancelled():
+        task.exception()
+
+
+def _shutdown_status(shutdown: _Shutdown) -> int:
+    assert shutdown.signum is not None
+    return _SIGNAL_STATUS[shutdown.signum]
+
+
+async def _wait_line_or_control(
+    lines: asyncio.Queue[bytes | OSError],
+    shutdown: _Shutdown,
+) -> bytes | OSError | Literal["interrupt", "terminate"]:
+    if shutdown.signum is not None:
+        return "terminate"
+    line = asyncio.create_task(lines.get())
+    interrupt = asyncio.create_task(shutdown.wait_interrupt())
+    terminate = asyncio.create_task(shutdown.wait())
+    done, pending = await asyncio.wait(
+        {line, interrupt, terminate},
+        return_when=asyncio.FIRST_COMPLETED,
+    )
+    for task in pending:
+        task.cancel()
+    await asyncio.gather(*pending, return_exceptions=True)
+    if terminate in done or shutdown.signum is not None:
+        return "terminate"
+    if line in done:
+        return line.result()
+    shutdown.clear_interrupt()
+    return "interrupt"
+
+
+async def _join_prompt(
+    prompt_task: asyncio.Task[None],
+    session: AgentSession,
+    shutdown: _Shutdown,
+) -> None:
+    while not prompt_task.done():
+        if shutdown.signum is not None:
+            await prompt_task
+            return
+        interrupt = asyncio.create_task(shutdown.wait_interrupt())
+        terminate = asyncio.create_task(shutdown.wait())
+        done, pending = await asyncio.wait(
+            {prompt_task, interrupt, terminate},
+            return_when=asyncio.FIRST_COMPLETED,
+        )
+        for task in pending:
+            if task is not prompt_task:
+                task.cancel()
+        await asyncio.gather(
+            *[task for task in pending if task is not prompt_task],
+            return_exceptions=True,
+        )
+        if interrupt in done:
+            shutdown.clear_interrupt()
+            await session.abort()
+    await prompt_task
 
 
 def _decode_interactive_line(raw: bytes, message: str) -> str:

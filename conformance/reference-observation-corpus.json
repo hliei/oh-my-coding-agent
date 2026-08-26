@@ -1204,6 +1204,42 @@
       "comparator": "contrast Reference steering acceptance with omh rejection while preserving the first Run and proving post-settlement reuse",
       "normalization": "ABD:repl-reject-busy-ordinary-message",
       "referenceCitations": ["packages/coding-agent/src/modes/interactive/interactive-mode.ts#L2787-L2807", "packages/agent/src/agent.ts#L334-L345", "packages/coding-agent/src/core/agent-session.ts#L1120-L1126"]
+    },
+    {
+      "id": "reference.repl-control-inputs",
+      "captureCaseId": "capture.repl-control-inputs",
+      "obligation": "omh-v0.repl-control-inputs",
+      "referenceRevision": "0e6909f050eeb15e8f6c05185511f3788357ddb3",
+      "canonicalInput": "idle Ctrl-C, repeated Ctrl-C during settlement, Escape, and empty-line EOF on a real PTY",
+      "observations": {"A": "Escape aborts and restores queues; second Ctrl-C within 500 ms exits", "L": "force-exit timing window", "T": "queued restoration", "E": "double Ctrl-C may skip cleanup", "C": "process may exit 0"},
+      "omhExpectation": {"A": {"idleThenEof": 0, "repeatedThenEof": 0}, "L": {"idleRedrew": true, "repeatedJoined": true}, "T": {"runCancelledOnce": true, "stderrEmpty": true}, "E": {"noRecoveryHint": true}, "C": "abort_and_reuse_without_force_path"},
+      "comparator": "exercise the same blocked, settling, and idle states; compare final settled Agent/Session observations through existing cancellation records, while explicitly comparing the different accepted control action and absence of restored/queued work",
+      "normalization": "ABD:repl-control-inputs",
+      "referenceCitations": ["packages/coding-agent/src/modes/interactive/interactive-mode.ts#L2541-L2575,#L3478-L3539,#L3969-L3987"]
+    },
+    {
+      "id": "reference.repl-signal-status",
+      "captureCaseId": "capture.repl-signal-status",
+      "obligation": "omh-v0.repl-signal-status",
+      "referenceRevision": "0e6909f050eeb15e8f6c05185511f3788357ddb3",
+      "canonicalInput": "interactive SIGHUP/SIGTERM before publication, while idle, and with cleanup failure",
+      "observations": {"A": "interactive signal exits 0", "L": "dispose/drain/stop then exit", "T": "may print a resume command", "E": "status 0 after signal", "C": "ordinary exit may hint"},
+      "omhExpectation": {"A": {"idleHup": 129, "idleTerm": 143, "trustHup": 129, "cleanupHup": 129}, "L": "first_signal_fixes_status", "T": {"idleHupStderr": "", "trustHupStderr": "cancelled\n", "cleanupStderr": "lifecycle cleanup: AgentSession disposal failed\n"}, "E": {"traceback": false, "hint": false, "cause": false}, "C": "conventional_signal_status_without_force_or_hint"},
+      "comparator": "match the settled Session and cleanup facts through their existing owners, but compare Reference status 0/resume hint with omh 129 or 143/no hint",
+      "normalization": "ABD:repl-signal-status",
+      "referenceCitations": ["packages/coding-agent/src/modes/interactive/interactive-mode.ts#L3500-L3519", "packages/coding-agent/src/modes/interactive/interactive-mode.ts#L3522-L3538"]
+    },
+    {
+      "id": "reference.command-posix-terminal-signals",
+      "captureCaseId": "capture.command-posix-terminal-signals",
+      "obligation": "omh-v0.command-posix-terminal-signals",
+      "referenceRevision": "0e6909f050eeb15e8f6c05185511f3788357ddb3",
+      "canonicalInput": "real POSIX PTY and SIGINT/SIGHUP/SIGTERM on the current Release Row",
+      "observations": {"reference": "not_applicable", "reason": "platform"},
+      "omhExpectation": {"A": {"idleHup": 129, "idleTerm": 143, "trustHup": 129, "cleanupHup": 129}, "L": "real_posix_signal_and_pty", "T": {"idleHupStderr": "", "trustHupStderr": "cancelled\n", "cleanupStderr": "lifecycle cleanup: AgentSession disposal failed\n"}, "E": {"usedRealPty": true, "usedRealSignals": true}, "C": "release_row_posix_terminal_signals"},
+      "comparator": "not_applicable: platform",
+      "normalization": "POSIX signal numbers and PTY bytes only",
+      "referenceCitations": ["packages/coding-agent/src/modes/interactive/interactive-mode.ts#L3500-L3519", "packages/coding-agent/src/modes/print-mode.ts#L103-L158"]
     }
   ]
 }

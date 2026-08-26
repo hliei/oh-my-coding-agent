@@ -1181,7 +1181,7 @@
       "normalization": "ABD:deterministic-one-shot-terminal-carrier",
       "evidenceClass": "ABD:deterministic-one-shot-terminal-carrier",
       "corpusCase": "reference.deterministic-one-shot-terminal-carrier",
-      "executableCases": ["ticket-23-one-shot", "ticket-23-installed"]
+      "executableCases": ["ticket-23-one-shot", "ticket-23-installed", "ticket-25-signals"]
     },
     {
       "id": "omh-v0.redacted-command-diagnostics",
@@ -1193,7 +1193,7 @@
       "normalization": "ABD:redacted-command-diagnostics",
       "evidenceClass": "ABD:redacted-command-diagnostics",
       "corpusCase": "reference.redacted-command-diagnostics",
-      "executableCases": ["ticket-23-one-shot", "ticket-23-installed"]
+      "executableCases": ["ticket-23-one-shot", "ticket-23-installed", "ticket-25-signals"]
     },
     {
       "id": "omh-v0.plain-repl-transcript",
@@ -1218,6 +1218,43 @@
       "evidenceClass": "ABD:repl-reject-busy-ordinary-message",
       "corpusCase": "reference.repl-reject-busy-ordinary-message",
       "executableCases": ["ticket-24-repl", "ticket-24-installed"]
+    },
+    {
+      "id": "omh-v0.repl-control-inputs",
+      "authority": ".scratch/omh-v0/issues/11-choose-repl-and-run-modes.md#ABD:repl-control-inputs",
+      "publicInterface": "installed omh interactive Command Mode",
+      "scenario": "exercise idle Ctrl-C redraw, repeated Ctrl-C during settlement, Escape non-control, and empty-line EOF disposal on a real PTY",
+      "observations": {"A": "idle then EOF and repeated-Ctrl-C then EOF complete with status 0", "L": "idle Ctrl-C redraws; repeats join the same abort", "T": "one confirmed run cancelled and empty stderr", "E": "no force-exit or recovery hint", "C": "abort and reuse without a force path"},
+      "comparator": "exercise the same blocked, settling, and idle states; compare final settled Agent/Session observations through existing cancellation records, while explicitly comparing the different accepted control action and absence of restored/queued work",
+      "normalization": "ABD:repl-control-inputs",
+      "evidenceClass": "ABD:repl-control-inputs",
+      "corpusCase": "reference.repl-control-inputs",
+      "executableCases": ["ticket-25-signals", "ticket-25-installed"]
+    },
+    {
+      "id": "omh-v0.repl-signal-status",
+      "authority": ".scratch/omh-v0/issues/11-choose-repl-and-run-modes.md#ABD:repl-signal-status",
+      "publicInterface": "installed omh interactive Command Mode",
+      "scenario": "send SIGHUP and SIGTERM before publication and while idle, including cleanup failure, on a real process",
+      "observations": {"A": "HUP/TERM status 129/143; trust HUP 129; cleanup keeps 129", "L": "first signal fixes status", "T": "idle has no cancelled stderr; trust HUP is cancelled; cleanup uses the cleanup template", "E": "no traceback, resume hint, or cause leakage", "C": "conventional signal status without force or hint"},
+      "comparator": "match the settled Session and cleanup facts through their existing owners, but compare Reference status 0/resume hint with omh 129 or 143/no hint",
+      "normalization": "ABD:repl-signal-status",
+      "evidenceClass": "ABD:repl-signal-status",
+      "corpusCase": "reference.repl-signal-status",
+      "executableCases": ["ticket-25-signals", "ticket-25-installed"]
+    },
+    {
+      "id": "omh-v0.command-posix-terminal-signals",
+      "authority": ".scratch/omh-v0/issues/12-define-v0-conformance-and-release-gate.md#supported-release-rows",
+      "publicInterface": "installed omh Command Mode",
+      "scenario": "prove real POSIX PTY and SIGINT/SIGHUP/SIGTERM handling on the current Release Row",
+      "observations": {"A": "idle HUP/TERM and trust HUP classified", "L": "real POSIX signal and PTY", "T": "stable stderr templates", "E": "real PTY and real signals", "C": "Release Row POSIX terminal signals"},
+      "comparator": "not_applicable: platform",
+      "normalization": "POSIX signal numbers and PTY bytes only",
+      "evidenceClass": "local-release",
+      "referenceApplicability": {"status": "not_applicable", "reason": "platform"},
+      "corpusCase": "reference.command-posix-terminal-signals",
+      "executableCases": ["ticket-25-signals", "ticket-25-installed"]
     }
   ]
 }
