@@ -1180,6 +1180,30 @@
       "comparator": "inject the same failpoint and compare classification and omh template class rather than arbitrary Reference prose",
       "normalization": "ABD:redacted-command-diagnostics",
       "referenceCitations": ["packages/coding-agent/src/main.ts#L228-L260", "packages/coding-agent/src/modes/print-mode.ts#L148-L151"]
+    },
+    {
+      "id": "reference.plain-repl-transcript",
+      "captureCaseId": "capture.plain-repl-transcript",
+      "obligation": "omh-v0.plain-repl-transcript",
+      "referenceRevision": "0e6909f050eeb15e8f6c05185511f3788357ddb3",
+      "canonicalInput": "drive interactive Assistant Text, negative Tool Outcome, Tool Failure, model error, multiple Runs, terminal-control canaries, and renderer failure",
+      "observations": {"A": "interactive messages admitted", "L": "cumulative Assistant, Tool arguments/updates/results, and Agent state redraw", "T": "rich pending/success/error components", "E": "terminal state is rewritten", "C": "interactive Session remains active"},
+      "omhExpectation": {"A": "one normalized idle line per Run", "L": ["session new", "idle", "assistant start", "assistant suffix", "assistant end", "tool start", "tool outcome|failure", "run completed|model_error", "idle"], "T": {"appendOnly": true, "safeEncoding": true, "negativeResult": "outcome", "runtimeError": "failure", "excluded": ["tool update", "turn", "raw agent", "private cause"]}, "E": {"awaitedListener": true, "rendererFailure": "fatal_no_replay_or_terminal_fabrication"}, "C": "ordinary and recoverable Runs reuse one Session"},
+      "comparator": "compare semantic Assistant content/order, Tool identity/arguments/result/classification, and terminal meaning while contrasting TUI state with fixed transcript bytes",
+      "normalization": "ABD:plain-repl-transcript",
+      "referenceCitations": ["packages/coding-agent/src/modes/interactive/interactive-mode.ts#L2823-L3043", "packages/coding-agent/src/modes/interactive/components/tool-execution.ts#L147-L176,#L201-L204,#L253-L258"]
+    },
+    {
+      "id": "reference.repl-reject-busy-ordinary-message",
+      "captureCaseId": "capture.repl-reject-busy-ordinary-message",
+      "obligation": "omh-v0.repl-reject-busy-ordinary-message",
+      "referenceRevision": "0e6909f050eeb15e8f6c05185511f3788357ddb3",
+      "canonicalInput": "submit an ordinary second Enter while a deterministic first interactive Run is blocked, then settle and reuse",
+      "observations": {"A": "second line accepted as steering", "L": "second-message lifecycle follows active Run", "T": "no busy rejection", "E": "steering or queued effect", "C": "first Run and queued work continue"},
+      "omhExpectation": {"A": {"first": "admitted", "second": "discarded", "freshAfterSettlement": "admitted"}, "L": "one Run before reuse", "T": "busy: Product Session has an active Run", "E": {"steering": false, "queue": false, "secondEvent": false, "secondMessage": false, "secondEffect": false}, "C": "original Run completes and returns to idle"},
+      "comparator": "contrast Reference steering acceptance with omh rejection while preserving the first Run and proving post-settlement reuse",
+      "normalization": "ABD:repl-reject-busy-ordinary-message",
+      "referenceCitations": ["packages/coding-agent/src/modes/interactive/interactive-mode.ts#L2787-L2807", "packages/agent/src/agent.ts#L334-L345", "packages/coding-agent/src/core/agent-session.ts#L1120-L1126"]
     }
   ]
 }

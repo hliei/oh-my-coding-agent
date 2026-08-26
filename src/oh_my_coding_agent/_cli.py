@@ -11,6 +11,7 @@ from typing import Literal
 
 from oh_my_coding_agent import (
     AgentSession,
+    AgentSessionEvent,
     CreateAgentSessionOptions,
     NewSessionOptions,
     SessionInfo,
@@ -24,6 +25,7 @@ from ._session_manager import _resolve_path, _session_id
 from ._terminal import (
     encode_body,
     encode_field,
+    encode_json,
     write_cleanup,
     write_error,
     write_identity,
@@ -141,15 +143,20 @@ class _Shutdown:
         self.signum: signal.Signals | None = None
         self.session: AgentSession | None = None
         self._aborting = False
+        self._requested = asyncio.Event()
 
     def request(self, signum: signal.Signals) -> None:
         if self.signum is None:
             self.signum = signum
+            self._requested.set()
         session = self.session
         if session is None or self._aborting:
             return
         self._aborting = True
         asyncio.create_task(session.abort())
+
+    async def wait(self) -> None:
+        await self._requested.wait()
 
 
 def main() -> None:
@@ -345,10 +352,10 @@ async def _drive_command_mode(parsed: _Parsed, prompt: str | None) -> int:
         return 1
     if shutdown.signum is not None:
         return _pre_session_cancel(shutdown.signum)
-    if parsed.print_mode:
+    if parsed.print_mode or parsed.trust_project:
         project_trusted = parsed.trust_project
     else:
-        trusted = _interactive_trust(cwd, shutdown)
+        trusted = await _interactive_trust(cwd, shutdown)
         if trusted is None:
             return 0 if shutdown.signum is None else _SIGNAL_STATUS[shutdown.signum]
         project_trusted = trusted
@@ -357,43 +364,58 @@ async def _drive_command_mode(parsed: _Parsed, prompt: str | None) -> int:
     )
 
 
-def _interactive_trust(cwd: str, shutdown: _Shutdown) -> bool | None:
-    if shutdown.signum is not None:
-        write_stdout("trust cancelled\n")
-        return None
-    while True:
+async def _interactive_trust(cwd: str, shutdown: _Shutdown) -> bool | None:
+    loop = asyncio.get_running_loop()
+    lines: asyncio.Queue[bytes | OSError] = asyncio.Queue()
+    stdin_fd = sys.stdin.buffer.fileno()
+
+    def input_ready() -> None:
+        try:
+            raw = sys.stdin.buffer.readline()
+        except OSError as error:
+            loop.remove_reader(stdin_fd)
+            lines.put_nowait(error)
+            return
+        if raw == b"":
+            loop.remove_reader(stdin_fd)
+        lines.put_nowait(raw)
+
+    loop.add_reader(stdin_fd, input_ready)
+    try:
         if shutdown.signum is not None:
             write_stdout("trust cancelled\n")
             return None
-        try:
+        while True:
             write_stdout(
                 f'Trust project resources in "{encode_field(cwd)}"? [y/n] '
             )
-            raw = sys.stdin.buffer.readline()
-        except OSError:
-            write_stderr("I/O error\n")
-            raise SystemExit(1)
-        if shutdown.signum is not None:
-            write_stdout("trust cancelled\n")
-            return None
-        if raw == b"":
-            write_stdout("trust cancelled\n")
-            return None
-        try:
-            text = raw.decode("utf-8")
-        except UnicodeDecodeError:
-            write_stderr("I/O error\n")
-            raise SystemExit(1)
-        if text.endswith("\n"):
-            text = text[:-1]
-        if text.endswith("\r"):
-            text = text[:-1]
-        lowered = _es_trim(text).lower()
-        if lowered == "y":
-            return True
-        if lowered == "n":
-            return False
-        write_stdout("Please enter y or n.\n")
+            line = asyncio.create_task(lines.get())
+            cancelled = asyncio.create_task(shutdown.wait())
+            done, _pending = await asyncio.wait(
+                (line, cancelled), return_when=asyncio.FIRST_COMPLETED
+            )
+            if cancelled in done:
+                line.cancel()
+                await asyncio.gather(line, return_exceptions=True)
+                write_stdout("trust cancelled\n")
+                return None
+            cancelled.cancel()
+            await asyncio.gather(cancelled, return_exceptions=True)
+            raw = line.result()
+            if isinstance(raw, OSError):
+                raise raw
+            if raw == b"":
+                write_stdout("trust cancelled\n")
+                return None
+            text = _decode_interactive_line(raw, "trust input is not UTF-8")
+            lowered = _es_trim(text).lower()
+            if lowered == "y":
+                return True
+            if lowered == "n":
+                return False
+            write_stdout("Please enter y or n.\n")
+    finally:
+        loop.remove_reader(stdin_fd)
 
 
 def _pre_session_cancel(signum: signal.Signals) -> int:
@@ -526,13 +548,7 @@ async def _drive_published_session(
         write_stderr("cancelled\n")
         return _SIGNAL_STATUS[shutdown.signum]
     if not parsed.print_mode:
-        try:
-            while sys.stdin.buffer.readline():
-                pass
-        except OSError:
-            write_stderr("I/O error\n")
-            return 1
-        return 0
+        return await _drive_interactive(session)
     assert prompt is not None
     classification: Literal["completed", "model_error", "cancelled", "unconfirmed"]
     stdout_payload: bytes | None
@@ -596,6 +612,165 @@ async def _drive_published_session(
     elif primary == "internal":
         write_stderr("internal error\n")
     return status
+
+
+async def _drive_interactive(session: AgentSession) -> int:
+    rendered_text = ""
+    busy = False
+    input_failure: OSError | None = None
+
+    async def render(event: AgentSessionEvent) -> None:
+        nonlocal rendered_text
+        if input_failure is not None:
+            return
+        if isinstance(event, AgentSessionEvent.MessageStart) and isinstance(
+            event.message, AssistantMessage
+        ):
+            rendered_text = ""
+            write_stdout("assistant start\n")
+        elif isinstance(event, AgentSessionEvent.MessageUpdate):
+            text = "".join(
+                block.text
+                for block in event.message.content
+                if isinstance(block, TextContent)
+            )
+            if not text.startswith(rendered_text):
+                raise RuntimeError("Assistant Text update is not cumulative")
+            suffix = text[len(rendered_text) :]
+            if suffix:
+                write_stdout(encode_body(suffix))
+            rendered_text = text
+        elif isinstance(event, AgentSessionEvent.MessageEnd) and isinstance(
+            event.message, AssistantMessage
+        ):
+            if not rendered_text.endswith("\n"):
+                write_stdout("\n")
+            write_stdout("assistant end\n")
+        elif isinstance(event, AgentSessionEvent.ToolExecutionStart):
+            write_stdout(
+                "tool start "
+                f'name="{encode_field(event.toolName)}" '
+                f'id="{encode_field(event.toolCallId)}" '
+                f"arguments={encode_json(event.args)}\n"
+            )
+        elif isinstance(event, AgentSessionEvent.ToolExecutionEnd):
+            kind = "failure" if event.isError else "outcome"
+            result = {
+                "content": tuple(item.text for item in event.result.content),
+                "details": event.result.details,
+                "terminate": event.result.terminate,
+            }
+            write_stdout(
+                f"tool {kind} "
+                f'name="{encode_field(event.toolName)}" '
+                f'id="{encode_field(event.toolCallId)}" '
+                f"result={encode_json(result)}\n"
+            )
+
+    session.subscribe(render)
+    loop = asyncio.get_running_loop()
+    lines: asyncio.Queue[bytes | OSError] = asyncio.Queue()
+    stdin_fd = sys.stdin.buffer.fileno()
+
+    def input_ready() -> None:
+        nonlocal input_failure
+        try:
+            raw = sys.stdin.buffer.readline()
+        except OSError as error:
+            loop.remove_reader(stdin_fd)
+            input_failure = error
+            lines.put_nowait(error)
+            return
+        if raw == b"":
+            loop.remove_reader(stdin_fd)
+            if busy:
+                asyncio.create_task(session.abort())
+            lines.put_nowait(raw)
+            return
+        if busy:
+            try:
+                text = _decode_interactive_line(
+                    raw, "interactive input is not UTF-8"
+                )
+            except OSError as error:
+                input_failure = error
+                asyncio.create_task(session.abort())
+                return
+            if _es_trim(text) and not write_stderr(
+                "busy: Product Session has an active Run\n"
+            ):
+                input_failure = OSError("interactive diagnostic write failed")
+                asyncio.create_task(session.abort())
+            return
+        lines.put_nowait(raw)
+
+    loop.add_reader(stdin_fd, input_ready)
+    try:
+        while True:
+            write_stdout("> ")
+            item = await lines.get()
+            if isinstance(item, OSError):
+                raise item
+            if item == b"":
+                return 0
+            text = _decode_interactive_line(
+                item, "interactive input is not UTF-8"
+            )
+            prompt = _es_trim(text)
+            if not prompt:
+                continue
+            prior_messages = session.messages
+            prior_entries = session.sessionManager.getEntries()
+            busy = True
+            try:
+                try:
+                    await session.prompt(prompt)
+                except ValueError as error:
+                    if (
+                        session.messages != prior_messages
+                        or session.sessionManager.getEntries() != prior_entries
+                        or not session.isIdle
+                    ):
+                        raise RuntimeError(
+                            "AgentSession ValueError changed admitted state"
+                        ) from error
+                    if not write_error(_public_value_message(error)):
+                        raise OSError("interactive diagnostic write failed")
+                    continue
+                if input_failure is not None:
+                    raise input_failure
+                classification, _payload = _one_shot_terminal(session)
+                if classification == "unconfirmed":
+                    raise RuntimeError("AgentSession prompt settlement is unconfirmed")
+                write_stdout(f"run {classification}\n")
+            finally:
+                busy = False
+    except LifecycleError as error:
+        write_lifecycle(error.code, str(error))
+        return 1
+    except OSError:
+        write_stderr("I/O error\n")
+        return 1
+    except ValueError as error:
+        write_error(_public_value_message(error))
+        return 1
+    except Exception:
+        write_stderr("internal error\n")
+        return 1
+    finally:
+        loop.remove_reader(stdin_fd)
+
+
+def _decode_interactive_line(raw: bytes, message: str) -> str:
+    try:
+        text = raw.decode("utf-8")
+    except UnicodeDecodeError as error:
+        raise OSError(message) from error
+    if text.endswith("\n"):
+        text = text[:-1]
+    if text.endswith("\r"):
+        text = text[:-1]
+    return text
 
 
 def _one_shot_terminal(

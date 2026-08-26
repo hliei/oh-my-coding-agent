@@ -3,6 +3,8 @@ from __future__ import annotations
 from typing import BinaryIO
 import sys
 
+from oh_my_llm._canonical import encodeCanonical
+
 
 _BIDI = frozenset(
     {
@@ -31,6 +33,10 @@ def encode_field(value: str) -> str:
     return "".join(_escape(character, field=True) for character in value)
 
 
+def encode_json(value: object) -> str:
+    return encode_body(encodeCanonical(value).decode("utf-8"))
+
+
 def write_stdout(data: bytes | str) -> None:
     _write(sys.stdout.buffer, _payload(data))
 
@@ -47,8 +53,8 @@ def write_usage(reason: str) -> None:
     write_stderr(f"usage: {encode_field(reason)}\n")
 
 
-def write_error(message: str) -> None:
-    write_stderr(f"error: {encode_field(message)}\n")
+def write_error(message: str) -> bool:
+    return write_stderr(f"error: {encode_field(message)}\n")
 
 
 def write_lifecycle(code: str, message: str) -> None:

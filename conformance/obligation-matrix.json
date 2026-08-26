@@ -1194,6 +1194,30 @@
       "evidenceClass": "ABD:redacted-command-diagnostics",
       "corpusCase": "reference.redacted-command-diagnostics",
       "executableCases": ["ticket-23-one-shot", "ticket-23-installed"]
+    },
+    {
+      "id": "omh-v0.plain-repl-transcript",
+      "authority": ".scratch/omh-v0/issues/11-choose-repl-and-run-modes.md#ABD:plain-repl-transcript",
+      "publicInterface": "installed omh interactive Command Mode",
+      "scenario": "drive one real PTY through Assistant Text, negative Tool Outcome, Tool Failure, model error, multiple Runs, safe encoding, and renderer failure",
+      "observations": {"A": "one normalized line per idle Run", "L": "identity, idle chrome, incremental Assistant, final Tool, confirmed Run, then idle", "T": "append-only safe transcript with Outcome distinct from Failure and no excluded events", "E": "one awaited listener; renderer failure stops progression without replay", "C": "ordinary, Tool, and model-error Runs return to the same Session"},
+      "comparator": "compare semantic Assistant content/order, Tool identity/arguments/result/classification, and terminal meaning while contrasting Reference TUI state with fixed omh bytes",
+      "normalization": "ABD:plain-repl-transcript",
+      "evidenceClass": "ABD:plain-repl-transcript",
+      "corpusCase": "reference.plain-repl-transcript",
+      "executableCases": ["ticket-24-repl", "ticket-24-installed"]
+    },
+    {
+      "id": "omh-v0.repl-reject-busy-ordinary-message",
+      "authority": ".scratch/omh-v0/issues/02-choose-v0-parity-policy.md#ABD:repl-reject-busy-ordinary-message",
+      "publicInterface": "installed omh interactive Command Mode",
+      "scenario": "submit a second nonempty PTY line while the first Model request is held at a public transport boundary, then release and reuse",
+      "observations": {"A": "first line admitted and second discarded", "L": "one Run only", "T": "exact busy diagnostic", "E": "one Provider request and no steering, queue, event, Message, or Tool effect", "C": "original Run completes and the Session returns to idle"},
+      "comparator": "contrast Reference steering acceptance with omh rejection while preserving the first Run and proving post-settlement reuse",
+      "normalization": "ABD:repl-reject-busy-ordinary-message",
+      "evidenceClass": "ABD:repl-reject-busy-ordinary-message",
+      "corpusCase": "reference.repl-reject-busy-ordinary-message",
+      "executableCases": ["ticket-24-repl", "ticket-24-installed"]
     }
   ]
 }
