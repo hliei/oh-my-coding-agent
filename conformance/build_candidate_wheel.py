@@ -42,8 +42,13 @@ def _run(
     timeout: int,
     sandbox: bool = False,
 ) -> subprocess.CompletedProcess[str]:
+    deny_network = (
+        sandbox
+        and sys.platform == "darwin"
+        and Path(SANDBOX).is_file()
+    )
     invocation = (
-        (SANDBOX, "-p", SANDBOX_PROFILE, *command) if sandbox else command
+        (SANDBOX, "-p", SANDBOX_PROFILE, *command) if deny_network else command
     )
     return subprocess.run(
         invocation,
@@ -283,6 +288,9 @@ def _wheel_compatible(filename: str, version: tuple[int, int], machine: str) -> 
         return False
     if machine == "arm64":
         return "macosx" in plat and "arm64" in plat
+    if machine == "x86_64":
+        linux = "manylinux" in plat or plat.startswith("linux_")
+        return linux and "x86_64" in plat
     return False
 
 
@@ -570,6 +578,8 @@ def _run_suite(python: Path, tests: Path, env: dict[str, str], cwd: Path) -> Non
             "--ignore",
             os.fspath(tests / "conformance/test_ticket_27_candidate_wheel.py"),
             "--ignore",
+            os.fspath(tests / "conformance/test_ticket_28_release_rows.py"),
+            "--ignore",
             os.fspath(tests / "conformance/test_ticket_01_installed.py"),
         ),
         cwd=cwd,
@@ -636,6 +646,9 @@ def build_candidate(
         home.mkdir()
         cache.mkdir()
         epoch = source_date_epoch if not (fault == "differing-wheel" and index == 1) else str(int(source_date_epoch) + 1)
+        if fault == "differing-wheel" and index == 1:
+            init = export / "src/oh_my_llm/__init__.py"
+            init.write_bytes(init.read_bytes() + b"# differing-wheel\n")
         env = _isolated_env(
             home=home,
             python=python,

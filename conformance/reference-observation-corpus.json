@@ -5439,6 +5439,133 @@
       "referenceCitations": [
         ".scratch/omh-v0/issues/12-define-v0-conformance-and-release-gate.md#candidate-build-and-clean-installation"
       ]
+    },
+    {
+      "id": "reference.release-row-identical-candidate-and-wheelhouse",
+      "captureCaseId": "capture.release-row-identical-candidate-and-wheelhouse",
+      "obligation": "omh-v0.release-row-identical-candidate-and-wheelhouse",
+      "referenceRevision": "0e6909f050eeb15e8f6c05185511f3788357ddb3",
+      "canonicalInput": "resolve the identical Candidate Wheel and four lock-bound row wheelhouses",
+      "observations": {
+        "reference": "not_applicable",
+        "reason": "packaging"
+      },
+      "omhExpectation": {
+        "A": "identical_candidate_four_wheelhouses",
+        "L": [],
+        "T": {
+          "wheel": "omh-<version>-py3-none-any.whl",
+          "rows": [
+            "macOS 26|arm64|CPython 3.12",
+            "macOS 26|arm64|CPython 3.13",
+            "Ubuntu 24.04|x86_64|CPython 3.12",
+            "Ubuntu 24.04|x86_64|CPython 3.13"
+          ]
+        },
+        "E": {
+          "sourceFallback": false
+        },
+        "C": "row_specific_lock_bound_wheelhouse"
+      },
+      "comparator": "not_applicable: packaging",
+      "normalization": "wheel filename/SHA-256 and per-row wheel filenames/SHA-256",
+      "referenceCitations": [
+        ".scratch/omh-v0/issues/12-define-v0-conformance-and-release-gate.md#candidate-build-and-clean-installation"
+      ]
+    },
+    {
+      "id": "reference.release-row-offline-clean-install-and-suite",
+      "captureCaseId": "capture.release-row-offline-clean-install-and-suite",
+      "obligation": "omh-v0.release-row-offline-clean-install-and-suite",
+      "referenceRevision": "0e6909f050eeb15e8f6c05185511f3788357ddb3",
+      "canonicalInput": "install the Candidate Wheel offline on a matching Release Row and run the Deterministic Conformance Suite",
+      "observations": {
+        "reference": "not_applicable",
+        "reason": "packaging"
+      },
+      "omhExpectation": {
+        "A": "offline_locked_row_install",
+        "L": [],
+        "T": {
+          "publicImports": true,
+          "consoleCommand": "omh"
+        },
+        "E": {
+          "network": false,
+          "sourceFallback": false,
+          "checkoutImport": false
+        },
+        "C": "source_tree_cannot_replace_row"
+      },
+      "comparator": "not_applicable: packaging",
+      "normalization": "wheel filename/SHA-256, lock hash, and installed import paths",
+      "referenceCitations": [
+        ".scratch/omh-v0/issues/12-define-v0-conformance-and-release-gate.md#candidate-build-and-clean-installation"
+      ]
+    },
+    {
+      "id": "reference.release-row-platform-resources",
+      "captureCaseId": "capture.release-row-platform-resources",
+      "obligation": "omh-v0.release-row-platform-resources",
+      "referenceRevision": "0e6909f050eeb15e8f6c05185511f3788357ddb3",
+      "canonicalInput": "exercise real JSONL, concurrent managers, PTY/signals, and bash subprocess trees on a Release Row",
+      "observations": {
+        "reference": "not_applicable",
+        "reason": "platform"
+      },
+      "omhExpectation": {
+        "A": "platform_obligations",
+        "L": {
+          "realFilesystem": true,
+          "realPtySignals": true,
+          "realProcessTrees": true
+        },
+        "T": {
+          "lazyJsonl": true,
+          "parsedPrefixRecovery": true,
+          "inMemory": true,
+          "noExclusiveLease": true
+        },
+        "E": {
+          "fakes": false
+        },
+        "C": "no_inferred_platform_evidence"
+      },
+      "comparator": "not_applicable: platform",
+      "normalization": "public SessionManager and Command Mode effects on real OS resources",
+      "referenceCitations": [
+        ".scratch/omh-v0/issues/12-define-v0-conformance-and-release-gate.md#supported-release-rows"
+      ]
+    },
+    {
+      "id": "reference.release-row-evidence-binding-and-fail-closed",
+      "captureCaseId": "capture.release-row-evidence-binding-and-fail-closed",
+      "obligation": "omh-v0.release-row-evidence-binding-and-fail-closed",
+      "referenceRevision": "0e6909f050eeb15e8f6c05185511f3788357ddb3",
+      "canonicalInput": "bind four Release Row results to one candidate, Matrix, corpus, and lock",
+      "observations": {
+        "reference": "not_applicable",
+        "reason": "release-process"
+      },
+      "omhExpectation": {
+        "A": "four_bound_rows",
+        "L": [],
+        "T": {
+          "identicalWheel": true,
+          "identicalCommit": true
+        },
+        "E": {
+          "skippedSuite": false,
+          "sourceTree": false,
+          "waiver": false
+        },
+        "C": "ready_for_release_evidence_bundle"
+      },
+      "comparator": "not_applicable: release-process",
+      "normalization": "row id, wheel SHA-256, commit, authority hashes, and fail-closed flags",
+      "referenceCitations": [
+        ".scratch/omh-v0/issues/12-define-v0-conformance-and-release-gate.md#release-authorization-and-publication"
+      ]
     }
   ]
 }

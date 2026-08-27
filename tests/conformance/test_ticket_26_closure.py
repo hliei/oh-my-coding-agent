@@ -263,6 +263,7 @@ _SOURCE_RUNNERS = {
     "ticket-25-signals": "test_ticket_25_command_signals.py",
     "ticket-26-closure": "test_ticket_26_closure.py",
     "ticket-27-candidate-wheel": "test_ticket_27_candidate_wheel.py",
+    "ticket-28-release-rows": "test_ticket_28_release_rows.py",
 }
 
 
@@ -571,6 +572,18 @@ def test_dependency_packaging_platform_and_release_policy_are_indexed_once() -> 
     assert rows["omh-v0.offline-candidate-install-and-conformance"][
         "referenceApplicability"
     ] == {"status": "not_applicable", "reason": "packaging"}
+    assert rows["omh-v0.release-row-identical-candidate-and-wheelhouse"][
+        "executableRunners"
+    ] == ["ticket-28-release-rows"]
+    assert rows["omh-v0.release-row-offline-clean-install-and-suite"][
+        "referenceApplicability"
+    ] == {"status": "not_applicable", "reason": "packaging"}
+    assert rows["omh-v0.release-row-platform-resources"][
+        "referenceApplicability"
+    ] == {"status": "not_applicable", "reason": "platform"}
+    assert rows["omh-v0.release-row-evidence-binding-and-fail-closed"][
+        "referenceApplicability"
+    ] == {"status": "not_applicable", "reason": "release-process"}
 
 
 def test_reference_corpus_generator_is_closed_without_omh_output() -> None:

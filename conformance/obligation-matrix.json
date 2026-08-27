@@ -23,7 +23,11 @@
       "omh-v0.reference-corpus-reproducibility",
       "omh-v0.candidate-build-row-toolchain",
       "omh-v0.reproducible-universal-candidate-wheel",
-      "omh-v0.offline-candidate-install-and-conformance"
+      "omh-v0.offline-candidate-install-and-conformance",
+      "omh-v0.release-row-identical-candidate-and-wheelhouse",
+      "omh-v0.release-row-offline-clean-install-and-suite",
+      "omh-v0.release-row-platform-resources",
+      "omh-v0.release-row-evidence-binding-and-fail-closed"
     ]
   },
   "obligations": [
@@ -1473,7 +1477,7 @@
       "referenceApplicability": {"status": "not_applicable", "reason": "platform"},
       "corpusCase": "reference.closed-release-row-selection",
       "executableCases": ["reference.closed-release-row-selection"],
-      "executableRunners": ["ticket-26-closure"],
+      "executableRunners": ["ticket-26-closure", "ticket-28-release-rows"],
       "coverage": {"releaseRows": ["macOS 26|arm64|CPython 3.12", "macOS 26|arm64|CPython 3.13", "Ubuntu 24.04|x86_64|CPython 3.12", "Ubuntu 24.04|x86_64|CPython 3.13"]}
     },
     {
@@ -1545,6 +1549,62 @@
       "corpusCase": "reference.offline-candidate-install-and-conformance",
       "executableCases": ["reference.offline-candidate-install-and-conformance"],
       "executableRunners": ["ticket-27-candidate-wheel"]
+    },
+    {
+      "id": "omh-v0.release-row-identical-candidate-and-wheelhouse",
+      "authority": ".scratch/omh-v0/issues/12-define-v0-conformance-and-release-gate.md#candidate-build-and-clean-installation",
+      "publicInterface": "identical Candidate Wheel and lock-resolved row wheelhouse",
+      "scenario": "give every selected Release Row the same Candidate Wheel filename/SHA-256 plus a row-specific offline prebuilt wheelhouse resolved exactly from the committed lock",
+      "observations": {"A": "one candidate and four wheelhouses admitted", "L": "not_applicable", "T": "identical omh-<version>-py3-none-any.whl SHA-256; macOS arm64 and Ubuntu x86_64 native wheels from uv.lock", "E": "missing binary artifact or source fallback fails", "C": "wheelhouse identity is row-specific and lock-bound"},
+      "comparator": "not_applicable: packaging",
+      "normalization": "wheel filename/SHA-256 and per-row wheel filenames/SHA-256",
+      "evidenceClass": "local-release",
+      "referenceApplicability": {"status": "not_applicable", "reason": "packaging"},
+      "corpusCase": "reference.release-row-identical-candidate-and-wheelhouse",
+      "executableCases": ["reference.release-row-identical-candidate-and-wheelhouse"],
+      "executableRunners": ["ticket-28-release-rows"]
+    },
+    {
+      "id": "omh-v0.release-row-offline-clean-install-and-suite",
+      "authority": ".scratch/omh-v0/issues/12-define-v0-conformance-and-release-gate.md#candidate-build-and-clean-installation",
+      "publicInterface": "installed Candidate Wheel on a matching Release Row",
+      "scenario": "install the exact Candidate Wheel into a fresh environment outside the checkout with network disabled, then run the complete no-skip Deterministic Conformance Suite against the installed artifact",
+      "observations": {"A": "offline locked row install admitted", "L": "not_applicable", "T": "installed metadata, imports, and omh command match the candidate", "E": "resolver drift, missing prebuilt, source fallback, undeclared dependency, checkout import, or a different wheel fail", "C": "a source-tree result cannot replace the row"},
+      "comparator": "not_applicable: packaging",
+      "normalization": "wheel filename/SHA-256, lock hash, and installed import paths",
+      "evidenceClass": "local-release",
+      "referenceApplicability": {"status": "not_applicable", "reason": "packaging"},
+      "corpusCase": "reference.release-row-offline-clean-install-and-suite",
+      "executableCases": ["reference.release-row-offline-clean-install-and-suite"],
+      "executableRunners": ["ticket-28-release-rows"]
+    },
+    {
+      "id": "omh-v0.release-row-platform-resources",
+      "authority": ".scratch/omh-v0/issues/12-define-v0-conformance-and-release-gate.md#supported-release-rows",
+      "publicInterface": "real OS JSONL, concurrent managers, PTY/signals, and bash subprocess trees",
+      "scenario": "prove JSONL lazy creation, append/direct-rewrite failure effects, parsed-prefix recovery, in-memory mode, and multiple managers without an exclusive lease, plus filesystem, REPL terminal/signal, and bash subprocess-tree cancellation/cleanup on the current Release Row",
+      "observations": {"A": "platform obligations admitted", "L": "real filesystem, PTY, signals, and process trees", "T": "lazy JSONL, parsed-prefix recovery, in-memory mode, no exclusive lease", "E": "append/rewrite failures, cancellation, and cleanup use actual OS resources", "C": "no fake, skip, or inferred platform evidence"},
+      "comparator": "not_applicable: platform",
+      "normalization": "public SessionManager and Command Mode effects on real OS resources",
+      "evidenceClass": "local-release",
+      "referenceApplicability": {"status": "not_applicable", "reason": "platform"},
+      "corpusCase": "reference.release-row-platform-resources",
+      "executableCases": ["reference.release-row-platform-resources"],
+      "executableRunners": ["ticket-28-release-rows"]
+    },
+    {
+      "id": "omh-v0.release-row-evidence-binding-and-fail-closed",
+      "authority": ".scratch/omh-v0/issues/12-define-v0-conformance-and-release-gate.md#release-authorization-and-publication",
+      "publicInterface": "four Release Row evidence records bound for the Release Evidence Bundle",
+      "scenario": "bind all four row results to the same Matrix, corpus, lock, Candidate Wheel, and release-candidate commit, recording actual OS point release/build, architecture, CPython patch, runner, wheelhouse identity, and wheel hash, with no inferred support and no waived failure",
+      "observations": {"A": "four bound row results admitted", "L": "not_applicable", "T": "identical wheel, commit, Matrix, corpus, and lock hashes", "E": "missing row, skipped suite, source-tree result, or waiver fails", "C": "unselected environments remain outside v0 and no Publish Right is granted"},
+      "comparator": "not_applicable: release-process",
+      "normalization": "row id, wheel SHA-256, commit, authority hashes, and fail-closed flags",
+      "evidenceClass": "local-release",
+      "referenceApplicability": {"status": "not_applicable", "reason": "release-process"},
+      "corpusCase": "reference.release-row-evidence-binding-and-fail-closed",
+      "executableCases": ["reference.release-row-evidence-binding-and-fail-closed"],
+      "executableRunners": ["ticket-28-release-rows"]
     }
   ]
 }

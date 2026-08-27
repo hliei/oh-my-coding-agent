@@ -1,0 +1,45 @@
+{
+  "schemaVersion": 1,
+  "rows": [
+    {
+      "id": "macOS 26|arm64|CPython 3.12",
+      "osFamily": "macOS 26",
+      "architecture": "arm64",
+      "cpythonMinor": "3.12"
+    },
+    {
+      "id": "macOS 26|arm64|CPython 3.13",
+      "osFamily": "macOS 26",
+      "architecture": "arm64",
+      "cpythonMinor": "3.13"
+    },
+    {
+      "id": "Ubuntu 24.04|x86_64|CPython 3.12",
+      "osFamily": "Ubuntu 24.04",
+      "architecture": "x86_64",
+      "cpythonMinor": "3.12"
+    },
+    {
+      "id": "Ubuntu 24.04|x86_64|CPython 3.13",
+      "osFamily": "Ubuntu 24.04",
+      "architecture": "x86_64",
+      "cpythonMinor": "3.13"
+    }
+  ],
+  "unselected": {
+    "inferredSupport": false,
+    "outsideV0": [
+      "older or newer macOS",
+      "other Ubuntu releases",
+      "Windows",
+      "macOS x86_64",
+      "Linux arm64",
+      "other operating systems and architectures",
+      "PyPy",
+      "free-threaded CPython",
+      "WebAssembly",
+      "mobile Python",
+      "every other unselected interpreter row"
+    ]
+  }
+}
