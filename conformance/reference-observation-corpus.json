@@ -5252,13 +5252,11 @@
         "reason": "platform"
       },
       "omhExpectation": {
-        "A": "four_rows",
+        "A": "two_rows",
         "L": [],
         "T": [
           "macOS 26|arm64|CPython 3.12",
-          "macOS 26|arm64|CPython 3.13",
-          "Ubuntu 24.04|x86_64|CPython 3.12",
-          "Ubuntu 24.04|x86_64|CPython 3.13"
+          "macOS 26|arm64|CPython 3.13"
         ],
         "E": {
           "inferredSupport": false
@@ -5445,21 +5443,19 @@
       "captureCaseId": "capture.release-row-identical-candidate-and-wheelhouse",
       "obligation": "omh-v0.release-row-identical-candidate-and-wheelhouse",
       "referenceRevision": "0e6909f050eeb15e8f6c05185511f3788357ddb3",
-      "canonicalInput": "resolve the identical Candidate Wheel and four lock-bound row wheelhouses",
+      "canonicalInput": "resolve the identical Candidate Wheel and two lock-bound row wheelhouses",
       "observations": {
         "reference": "not_applicable",
         "reason": "packaging"
       },
       "omhExpectation": {
-        "A": "identical_candidate_four_wheelhouses",
+        "A": "identical_candidate_two_wheelhouses",
         "L": [],
         "T": {
           "wheel": "omh-<version>-py3-none-any.whl",
           "rows": [
             "macOS 26|arm64|CPython 3.12",
-            "macOS 26|arm64|CPython 3.13",
-            "Ubuntu 24.04|x86_64|CPython 3.12",
-            "Ubuntu 24.04|x86_64|CPython 3.13"
+            "macOS 26|arm64|CPython 3.13"
           ]
         },
         "E": {
@@ -5542,13 +5538,13 @@
       "captureCaseId": "capture.release-row-evidence-binding-and-fail-closed",
       "obligation": "omh-v0.release-row-evidence-binding-and-fail-closed",
       "referenceRevision": "0e6909f050eeb15e8f6c05185511f3788357ddb3",
-      "canonicalInput": "bind four Release Row results to one candidate, Matrix, corpus, and lock",
+      "canonicalInput": "bind both Release Row results to one candidate, Matrix, corpus, and lock",
       "observations": {
         "reference": "not_applicable",
         "reason": "release-process"
       },
       "omhExpectation": {
-        "A": "four_bound_rows",
+        "A": "two_bound_rows",
         "L": [],
         "T": {
           "identicalWheel": true,

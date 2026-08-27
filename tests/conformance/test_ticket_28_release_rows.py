@@ -34,30 +34,24 @@ def _run_prover(*args: str, timeout: int = 240) -> subprocess.CompletedProcess[s
 SELECTED_ROWS = [
     "macOS 26|arm64|CPython 3.12",
     "macOS 26|arm64|CPython 3.13",
-    "Ubuntu 24.04|x86_64|CPython 3.12",
-    "Ubuntu 24.04|x86_64|CPython 3.13",
 ]
 
 
-def test_release_matrix_contains_exactly_the_four_selected_rows() -> None:
+def test_release_matrix_contains_exactly_both_selected_rows() -> None:
     matrix = json.loads(MATRIX.read_text())
     assert matrix["schemaVersion"] == 1
     rows = matrix["rows"]
     assert [row["id"] for row in rows] == SELECTED_ROWS
-    assert len(rows) == 4
+    assert len(rows) == 2
     assert [row["osFamily"] for row in rows] == [
         "macOS 26",
         "macOS 26",
-        "Ubuntu 24.04",
-        "Ubuntu 24.04",
     ]
     assert [row["architecture"] for row in rows] == [
         "arm64",
         "arm64",
-        "x86_64",
-        "x86_64",
     ]
-    assert [row["cpythonMinor"] for row in rows] == ["3.12", "3.13", "3.12", "3.13"]
+    assert [row["cpythonMinor"] for row in rows] == ["3.12", "3.13"]
     assert matrix["unselected"]["inferredSupport"] is False
 
 
@@ -67,8 +61,8 @@ def test_identify_accepts_only_a_selected_release_row() -> None:
     observed = json.loads(completed.stdout)
     assert observed["selected"] is True
     assert observed["row"] in SELECTED_ROWS
-    assert observed["osFamily"] in {"macOS 26", "Ubuntu 24.04"}
-    assert observed["architecture"] in {"arm64", "x86_64"}
+    assert observed["osFamily"] == "macOS 26"
+    assert observed["architecture"] == "arm64"
     assert observed["cpythonMinor"] in {"3.12", "3.13"}
     assert observed["cpythonImplementation"] == "CPython"
     assert observed["osPointRelease"]
@@ -84,6 +78,7 @@ def test_identify_accepts_only_a_selected_release_row() -> None:
         ("macos-15", "outside v0"),
         ("macos-x86_64", "outside v0"),
         ("ubuntu-22.04", "outside v0"),
+        ("ubuntu-24.04", "outside v0"),
         ("linux-arm64", "outside v0"),
         ("pypy", "outside v0"),
         ("cpython-3.11", "outside v0"),
@@ -120,18 +115,11 @@ def test_row_wheelhouses_are_lock_resolved_and_platform_specific() -> None:
 
     macos_312 = houses[SELECTED_ROWS[0]]
     macos_313 = houses[SELECTED_ROWS[1]]
-    ubuntu_312 = houses[SELECTED_ROWS[2]]
-    ubuntu_313 = houses[SELECTED_ROWS[3]]
     assert any("macosx" in name and "arm64" in name for name in macos_312)
     assert any("macosx" in name and "arm64" in name for name in macos_313)
-    assert any("manylinux" in name and "x86_64" in name for name in ubuntu_312)
-    assert any("manylinux" in name and "x86_64" in name for name in ubuntu_313)
     assert not any("manylinux" in name for name in macos_312)
-    assert not any("macosx" in name for name in ubuntu_312)
     assert any("cp312" in name for name in macos_312 if "google_re2" in name)
     assert any("cp313" in name for name in macos_313 if "google_re2" in name)
-    assert any("cp312" in name for name in ubuntu_312 if "google_re2" in name)
-    assert any("cp313" in name for name in ubuntu_313 if "google_re2" in name)
 
 
 @pytest.fixture(scope="session")
@@ -162,13 +150,13 @@ def candidate_wheel(tmp_path_factory: pytest.TempPathFactory) -> tuple[Path, str
     return wheel, evidence["wheelSha256"], evidence["candidateCommit"]
 
 
-def test_ubuntu_row_cannot_be_proven_on_a_mismatched_host(tmp_path: Path) -> None:
+def test_removed_ubuntu_row_cannot_be_proven(tmp_path: Path) -> None:
     dummy = tmp_path / "omh-0.1.0-py3-none-any.whl"
     dummy.write_bytes(b"not-the-candidate")
     completed = _run_prover(
         "prove",
         "--row",
-        SELECTED_ROWS[2],
+        "Ubuntu 24.04|x86_64|CPython 3.12",
         "--repository",
         os.fspath(ROOT),
         "--work-root",
@@ -405,7 +393,7 @@ def _row_evidence(
     }
 
 
-def test_bind_requires_all_four_matching_results(tmp_path: Path) -> None:
+def test_bind_requires_both_matching_results(tmp_path: Path) -> None:
     digest = "a" * 64
     commit = "candidate"
     matrix_sha = sha256_file(OBLIGATION_MATRIX)
@@ -435,16 +423,16 @@ def test_bind_requires_all_four_matching_results(tmp_path: Path) -> None:
         "bind",
         "--repository",
         os.fspath(ROOT),
-        *[os.fspath(path) for path in paths[:3]],
+        *[os.fspath(path) for path in paths[:1]],
     )
     assert missing.returncode != 0
-    assert "four" in missing.stderr.lower()
+    assert "two" in missing.stderr.lower()
 
     skipped = tmp_path / "skipped.json"
     skipped.write_text(
         json.dumps(
             _row_evidence(
-                SELECTED_ROWS[3],
+                SELECTED_ROWS[1],
                 digest=digest,
                 commit=commit,
                 matrix_sha=matrix_sha,
@@ -458,7 +446,7 @@ def test_bind_requires_all_four_matching_results(tmp_path: Path) -> None:
         "bind",
         "--repository",
         os.fspath(ROOT),
-        *[os.fspath(path) for path in paths[:3]],
+        *[os.fspath(path) for path in paths[:1]],
         os.fspath(skipped),
     )
     assert waived.returncode != 0
@@ -468,7 +456,7 @@ def test_bind_requires_all_four_matching_results(tmp_path: Path) -> None:
     source_tree.write_text(
         json.dumps(
             _row_evidence(
-                SELECTED_ROWS[3],
+                SELECTED_ROWS[1],
                 digest=digest,
                 commit=commit,
                 matrix_sha=matrix_sha,
@@ -482,7 +470,7 @@ def test_bind_requires_all_four_matching_results(tmp_path: Path) -> None:
         "bind",
         "--repository",
         os.fspath(ROOT),
-        *[os.fspath(path) for path in paths[:3]],
+        *[os.fspath(path) for path in paths[:1]],
         os.fspath(source_tree),
     )
     assert checkout.returncode != 0
@@ -492,7 +480,7 @@ def test_bind_requires_all_four_matching_results(tmp_path: Path) -> None:
     waived_row.write_text(
         json.dumps(
             _row_evidence(
-                SELECTED_ROWS[3],
+                SELECTED_ROWS[1],
                 digest=digest,
                 commit=commit,
                 matrix_sha=matrix_sha,
@@ -506,7 +494,7 @@ def test_bind_requires_all_four_matching_results(tmp_path: Path) -> None:
         "bind",
         "--repository",
         os.fspath(ROOT),
-        *[os.fspath(path) for path in paths[:3]],
+        *[os.fspath(path) for path in paths[:1]],
         os.fspath(waived_row),
     )
     assert waiver.returncode != 0

@@ -2,7 +2,7 @@
 
 **What to build:** Perform the human-owned final release gate for the exact Candidate Wheel. A named human knowingly injects a newly issued revocable real DeepSeek credential on the selected host, reviews three live cases and secret handling, revokes the credential, completes the immutable Release Evidence Bundle, and grants the Publish Right only for the already verified wheel through the bound annotated tag.
 
-**Blocked by:** 28 — Prove all four Release Rows.
+**Blocked by:** 28 — Prove both Release Rows.
 
 **Status:** ready-for-human
 
@@ -14,5 +14,5 @@
 - [ ] Each Model operation makes no automatic retry; Provider/account/rate/service failure blocks release and cannot be replaced by Faux, deterministic fixtures, or prior live evidence.
 - [ ] The credential is absent from every event, Tool output, transcript, error, log, persistent JSONL or in-memory Session entry, raw retained response, and evidence record; any disclosure fails the gate.
 - [ ] The named human revokes the credential, deletes the disposable repository, and signs the redacted candidate-bound live evidence.
-- [ ] The Release Evidence Bundle binds candidate commit/version, exact wheel filename/hash, lock, Matrix/corpus hashes, reproducible build, all four Release Rows, live evidence, zero unresolved gaps/orphans, and named approval.
+- [ ] The Release Evidence Bundle binds candidate commit/version, exact wheel filename/hash, lock, Matrix/corpus hashes, reproducible build, both Release Rows, live evidence, zero unresolved gaps/orphans, and named approval.
 - [ ] After successful review, the named human creates the bound annotated release tag and publication uploads only the already verified wheel; any changed commit, wheel, lock, authority, contract, or evidence requires the complete gate again.

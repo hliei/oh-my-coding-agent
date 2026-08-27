@@ -1469,8 +1469,8 @@
       "id": "omh-v0.closed-release-row-selection",
       "authority": ".scratch/omh-v0/issues/12-define-v0-conformance-and-release-gate.md#supported-release-rows",
       "publicInterface": "release Matrix selection",
-      "scenario": "enumerate exactly the four selected operating-system, architecture, and CPython-minor rows without inferring any other support",
-      "observations": {"A": "four rows selected", "L": "not_applicable", "T": "macOS 26 arm64 and Ubuntu 24.04 x86_64, each on CPython 3.12 and 3.13", "E": "no support inferred from artifact or dependency availability", "C": "unselected environments remain outside v0"},
+      "scenario": "enumerate exactly the two selected macOS 26 arm64 and CPython-minor rows without inferring any other support",
+      "observations": {"A": "two rows selected", "L": "not_applicable", "T": "macOS 26 arm64 on CPython 3.12 and 3.13", "E": "no support inferred from artifact or dependency availability", "C": "Ubuntu, every other Linux row, and all other unselected environments remain outside v0"},
       "comparator": "not_applicable: platform",
       "normalization": "OS family/release, architecture, and CPython minor tuples",
       "evidenceClass": "local-release",
@@ -1478,7 +1478,7 @@
       "corpusCase": "reference.closed-release-row-selection",
       "executableCases": ["reference.closed-release-row-selection"],
       "executableRunners": ["ticket-26-closure", "ticket-28-release-rows"],
-      "coverage": {"releaseRows": ["macOS 26|arm64|CPython 3.12", "macOS 26|arm64|CPython 3.13", "Ubuntu 24.04|x86_64|CPython 3.12", "Ubuntu 24.04|x86_64|CPython 3.13"]}
+      "coverage": {"releaseRows": ["macOS 26|arm64|CPython 3.12", "macOS 26|arm64|CPython 3.13"]}
     },
     {
       "id": "omh-v0.deterministic-conformance-policy",
@@ -1555,7 +1555,7 @@
       "authority": ".scratch/omh-v0/issues/12-define-v0-conformance-and-release-gate.md#candidate-build-and-clean-installation",
       "publicInterface": "identical Candidate Wheel and lock-resolved row wheelhouse",
       "scenario": "give every selected Release Row the same Candidate Wheel filename/SHA-256 plus a row-specific offline prebuilt wheelhouse resolved exactly from the committed lock",
-      "observations": {"A": "one candidate and four wheelhouses admitted", "L": "not_applicable", "T": "identical omh-<version>-py3-none-any.whl SHA-256; macOS arm64 and Ubuntu x86_64 native wheels from uv.lock", "E": "missing binary artifact or source fallback fails", "C": "wheelhouse identity is row-specific and lock-bound"},
+      "observations": {"A": "one candidate and two wheelhouses admitted", "L": "not_applicable", "T": "identical omh-<version>-py3-none-any.whl SHA-256; macOS arm64 CPython 3.12 and 3.13 native wheels from uv.lock", "E": "missing binary artifact or source fallback fails", "C": "wheelhouse identity is row-specific and lock-bound"},
       "comparator": "not_applicable: packaging",
       "normalization": "wheel filename/SHA-256 and per-row wheel filenames/SHA-256",
       "evidenceClass": "local-release",
@@ -1595,9 +1595,9 @@
     {
       "id": "omh-v0.release-row-evidence-binding-and-fail-closed",
       "authority": ".scratch/omh-v0/issues/12-define-v0-conformance-and-release-gate.md#release-authorization-and-publication",
-      "publicInterface": "four Release Row evidence records bound for the Release Evidence Bundle",
-      "scenario": "bind all four row results to the same Matrix, corpus, lock, Candidate Wheel, and release-candidate commit, recording actual OS point release/build, architecture, CPython patch, runner, wheelhouse identity, and wheel hash, with no inferred support and no waived failure",
-      "observations": {"A": "four bound row results admitted", "L": "not_applicable", "T": "identical wheel, commit, Matrix, corpus, and lock hashes", "E": "missing row, skipped suite, source-tree result, or waiver fails", "C": "unselected environments remain outside v0 and no Publish Right is granted"},
+      "publicInterface": "two Release Row evidence records bound for the Release Evidence Bundle",
+      "scenario": "bind both row results to the same Matrix, corpus, lock, Candidate Wheel, and release-candidate commit, recording actual OS point release/build, architecture, CPython patch, runner, wheelhouse identity, and wheel hash, with no inferred support and no waived failure",
+      "observations": {"A": "two bound row results admitted", "L": "not_applicable", "T": "identical wheel, commit, Matrix, corpus, and lock hashes", "E": "missing row, skipped suite, source-tree result, or waiver fails", "C": "unselected environments remain outside v0 and no Publish Right is granted"},
       "comparator": "not_applicable: release-process",
       "normalization": "row id, wheel SHA-256, commit, authority hashes, and fail-closed flags",
       "evidenceClass": "local-release",

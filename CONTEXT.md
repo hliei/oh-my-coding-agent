@@ -109,7 +109,7 @@ The immutable manifest and evidence set binding one release-candidate commit, Ca
 _Avoid_: CI summary, mutable release checklist, rebuilt publication artifact
 
 **Release Row**:
-One selected operating-system release family, architecture, and CPython-minor combination on which the omh Distribution independently proves locked clean installation and every platform-relevant release obligation. Evidence records the actual OS point release/build; an available artifact or an unselected environment that happens to work creates no support promise.
+One selected operating-system release family, architecture, and CPython-minor combination on which the omh Distribution independently proves locked clean installation and every platform-relevant release obligation; v0 selects only macOS 26 arm64 on CPython 3.12 and 3.13. Evidence records the actual OS point release/build; an available artifact or an unselected environment that happens to work creates no support promise.
 _Avoid_: Dependency wheel, broad platform family, inferred compatibility
 
 **Public Import Package**:

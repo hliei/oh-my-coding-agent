@@ -557,8 +557,6 @@ def test_dependency_packaging_platform_and_release_policy_are_indexed_once() -> 
     ] == [
         "macOS 26|arm64|CPython 3.12",
         "macOS 26|arm64|CPython 3.13",
-        "Ubuntu 24.04|x86_64|CPython 3.12",
-        "Ubuntu 24.04|x86_64|CPython 3.13",
     ]
     assert rows["omh-v0.deterministic-conformance-policy"][
         "referenceApplicability"

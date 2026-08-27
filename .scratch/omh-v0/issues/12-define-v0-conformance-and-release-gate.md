@@ -33,9 +33,11 @@ What deterministic and human-owned evidence proves v0 Behavioral Parity at every
 - 2026-08-20 — [Choose the Python Extension lifecycle](09-choose-extension-lifecycle.md) adds authoritative `PA:python-extension-entrypoint` plus `ABD:explicit-project-resource-trust`, `ABD:deterministic-extension-discovery`, `ABD:fixed-extension-registration`, `ABD:snapshot-extension-context`, `ABD:fail-closed-extension-handlers`, `ABD:session-scoped-extension-modules`, and `ABD:atomic-extension-initialization`. The gate must cover zero-enumeration untrusted construction, deterministic whole-set loading, the closed API/event/context surface, Tool contribution, handler/effect cutoff, reverse retryable shutdown, independent fresh/recovery module generations, exact failure carriers, no partial Session, and the explicit no-sandbox/arbitrary-side-effect boundary.
 - 2026-08-20 — [Choose the Agent loop and Tool lifecycle](07-choose-agent-loop-and-tool-lifecycle.md) adds five authoritative ABD records and exact Run/Turn, event, state, Tool, cancellation, callback, error, and continuity traces. This gate must execute every specified verification row, including absence of leaked secrets/effects, AgentEnd/result identity, post-failure reuse, and non-idle behavior for unconfirmed work.
 
+- 2026-08-27 — Superseded the prior four-row selection with exactly two v0 Release Rows: macOS 26 arm64 on CPython 3.12 and 3.13. Ubuntu and every other Linux row are outside v0 because no accepted matching execution resource exists; artifact or dependency availability does not create support. The live Answer, specification, implementation tickets, release Matrix, corpus, and executable gate use only these two rows, while the dated 2026-08-21 Comments remain historical evidence of the superseded decision.
+
 ## Answer
 
-v0 has one fail-closed release gate. A release is authorized only for one exact Candidate Wheel after its closed evidence inventory, fixed-Reference oracle, installed-artifact conformance, four supported platform rows, real DeepSeek evidence, and human publication approval all bind to the same release-candidate commit. Passing a subset, running from a checkout, obtaining an available dependency artifact, or observing that an unsupported environment happens to work creates no release claim.
+v0 has one fail-closed release gate. A release is authorized only for one exact Candidate Wheel after its closed evidence inventory, fixed-Reference oracle, installed-artifact conformance, both supported platform rows, real DeepSeek evidence, and human publication approval all bind to the same release-candidate commit. Passing a subset, running from a checkout, obtaining an available dependency artifact, or observing that an unsupported environment happens to work creates no release claim.
 
 ### Evidence authority and coverage
 
@@ -79,16 +81,14 @@ The mandatory deterministic evidence includes:
 
 ### Supported Release Rows
 
-v0 supports exactly four rows:
+v0 supports exactly two rows:
 
 - macOS 26 arm64 with CPython 3.12;
-- macOS 26 arm64 with CPython 3.13;
-- Ubuntu 24.04 x86_64 with CPython 3.12; and
-- Ubuntu 24.04 x86_64 with CPython 3.13.
+- macOS 26 arm64 with CPython 3.13.
 
 Every row independently proves a drift-free locked clean installation from prebuilt wheels, the complete Deterministic Conformance Suite, and its real platform-specific JSONL Session, concurrent-manager, REPL signal/terminal, subprocess-tree, cancellation, and cleanup behavior. Evidence records the actual OS point release/build, architecture, interpreter patch, and runner identity; the support promise remains bounded by the named OS major/release family and Python minor.
 
-Older or newer macOS, other Ubuntu releases, Windows, macOS x86_64, Linux arm64, other operating systems/architectures, PyPy, free-threaded CPython, WebAssembly, mobile Python, and every other unselected row receive no v0 promise. An installable universal wheel or available dependency wheel never expands support. Windows in particular remains excluded until its signal, terminal, subprocess-tree, and JSONL/concurrent-manager semantics receive an explicit compatible decision and complete evidence.
+Older or newer macOS, Ubuntu and every other Linux release, Windows, macOS x86_64, other operating systems/architectures, PyPy, free-threaded CPython, WebAssembly, mobile Python, and every other unselected row receive no v0 promise. An installable universal wheel or available dependency wheel never expands support. Windows in particular remains excluded until its signal, terminal, subprocess-tree, and JSONL/concurrent-manager semantics receive an explicit compatible decision and complete evidence.
 
 ### Candidate build and clean installation
 
@@ -100,7 +100,7 @@ Every Release Row receives that identical Candidate Wheel by filename and SHA-25
 
 ### Human-owned real Provider evidence
 
-All four Release Rows prove both product-entry core journeys deterministically with nominal `deepseek-v4-flash`, a non-secret `DEEPSEEK_API_KEY=omh-conformance-canary`, and the private local transport fixture. Faux separately proves its selected public `oh_my_llm` and low-level Agent seams, but it is never accepted as a Product Session Model. A distinct missing-key case proves that absent authentication rejects Session publication with zero downstream effects. None of this substitutes for the separate **Live Provider Gate**. A named human runs that gate on the current macOS 26 arm64 host with isolated CPython 3.12, the exact Candidate Wheel, and the locked wheelhouse. The evidence records the actual macOS point release/build without creating a different support row.
+Both Release Rows prove both product-entry core journeys deterministically with nominal `deepseek-v4-flash`, a non-secret `DEEPSEEK_API_KEY=omh-conformance-canary`, and the private local transport fixture. Faux separately proves its selected public `oh_my_llm` and low-level Agent seams, but it is never accepted as a Product Session Model. A distinct missing-key case proves that absent authentication rejects Session publication with zero downstream effects. None of this substitutes for the separate **Live Provider Gate**. A named human runs that gate on the current macOS 26 arm64 host with isolated CPython 3.12, the exact Candidate Wheel, and the locked wheelhouse. The evidence records the actual macOS point release/build without creating a different support row.
 
 The live gate has three independent real-DeepSeek cases:
 
@@ -122,7 +122,7 @@ One immutable **Release Evidence Bundle** binds:
 - Candidate Wheel filename and SHA-256;
 - Release Toolchain Manifest, `uv.lock`, Conformance Obligation Matrix, Reference Observation Corpus, and capture-harness hashes;
 - clean double-build and fixed-Reference double-recapture results;
-- all four Release Row environment, wheelhouse, clean-install, and deterministic-conformance results;
+- both Release Row environment, wheelhouse, clean-install, and deterministic-conformance results;
 - redacted Live Provider Gate evidence and named-human approval; and
 - machine-checked closure of every selected public surface, required journey, local release obligation, and `PA:*`/`ABD:*`, with zero known unresolved Parity Gaps and zero orphan cases.
 

@@ -55,6 +55,16 @@ INJECTED_IDENTITIES = {
         "cpythonPatch": "3.12.0",
         "freeThreaded": False,
     },
+    "ubuntu-24.04": {
+        "osFamily": "Ubuntu 24.04",
+        "architecture": "x86_64",
+        "osPointRelease": "24.04",
+        "osBuild": "injected",
+        "cpythonImplementation": "CPython",
+        "cpythonMinor": "3.12",
+        "cpythonPatch": "3.12.0",
+        "freeThreaded": False,
+    },
     "linux-arm64": {
         "osFamily": "Ubuntu 24.04",
         "architecture": "arm64",
@@ -212,14 +222,12 @@ def _row_id(os_family: str, architecture: str, cpython_minor: str) -> str:
 def load_matrix(path: Path) -> dict[str, Any]:
     matrix = _load_json(path)
     rows = matrix.get("rows")
-    if not isinstance(rows, list) or len(rows) != 4:
-        raise RuntimeError("Release Row matrix must contain exactly four rows")
+    if not isinstance(rows, list) or len(rows) != 2:
+        raise RuntimeError("Release Row matrix must contain exactly two rows")
     ids = [row["id"] for row in rows]
     expected = [
         "macOS 26|arm64|CPython 3.12",
         "macOS 26|arm64|CPython 3.13",
-        "Ubuntu 24.04|x86_64|CPython 3.12",
-        "Ubuntu 24.04|x86_64|CPython 3.13",
     ]
     if ids != expected:
         raise RuntimeError("Release Row matrix rows are not the closed v0 selection")
@@ -530,15 +538,15 @@ def prove_row(
 def bind_rows(*, matrix_path: Path, repository: Path, evidence_paths: list[Path]) -> dict[str, Any]:
     matrix = load_matrix(matrix_path)
     expected = [row["id"] for row in matrix["rows"]]
-    if len(evidence_paths) != 4:
-        raise RuntimeError("bind requires exactly four Release Row results")
+    if len(evidence_paths) != 2:
+        raise RuntimeError("bind requires exactly two Release Row results")
     loaded: list[dict[str, Any]] = []
     for path in evidence_paths:
         payload = _load_json(path)
         loaded.append(payload)
     observed_rows = [item["row"] for item in loaded]
     if sorted(observed_rows) != sorted(expected):
-        raise RuntimeError("bind requires exactly the four selected Release Rows")
+        raise RuntimeError("bind requires exactly the two selected Release Rows")
     by_row = {item["row"]: item for item in loaded}
     ordered = [by_row[row_id] for row_id in expected]
     identities: list[str] = []
@@ -592,7 +600,7 @@ def bind_rows(*, matrix_path: Path, repository: Path, evidence_paths: list[Path]
         if not identity:
             raise RuntimeError("Release Row evidence must record wheelhouse identity")
         identities.append(str(identity))
-    if len(set(identities)) != 4:
+    if len(set(identities)) != len(expected):
         raise RuntimeError("row-specific wheelhouse identity is required")
     return {
         "schemaVersion": 1,
