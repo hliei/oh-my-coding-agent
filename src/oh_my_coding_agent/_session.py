@@ -454,6 +454,8 @@ class AgentSession:
             except asyncio.CancelledError as cancellation:
                 lifecycle_failure = cancellation.__cause__
                 if isinstance(lifecycle_failure, LifecycleError):
+                    if lifecycle_failure.code == "cleanup":
+                        self._closing = True
                     settlement_failure = lifecycle_failure
                 elif agent_run_started:
                     try:
@@ -467,6 +469,8 @@ class AgentSession:
                         cancellation.__cause__ = error
                 raise
             except BaseException as error:
+                if isinstance(error, LifecycleError) and error.code == "cleanup":
+                    self._closing = True
                 manager_failure = self._manager_failure
                 settlement_failure = (
                     error if manager_failure is None else manager_failure

@@ -264,6 +264,7 @@ _SOURCE_RUNNERS = {
     "ticket-26-closure": "test_ticket_26_closure.py",
     "ticket-27-candidate-wheel": "test_ticket_27_candidate_wheel.py",
     "ticket-28-release-rows": "test_ticket_28_release_rows.py",
+    "ticket-31-deepseek-cleanup": "test_ticket_31_deepseek_nested_cleanup.py",
 }
 
 

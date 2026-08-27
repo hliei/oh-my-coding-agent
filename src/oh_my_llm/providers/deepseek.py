@@ -541,7 +541,16 @@ async def _owned_resource(resource: _ClosableT) -> _AsyncIterator[_ClosableT]:
     except BaseException as failure:
         pending = failure
     try:
-        await resource.aclose()
+        close_task = _asyncio.create_task(resource.aclose())
+        while not close_task.done():
+            try:
+                await _asyncio.shield(close_task)
+            except _asyncio.CancelledError as cancellation:
+                if pending is None:
+                    pending = cancellation
+            except BaseException:
+                break
+        close_task.result()
     except BaseException as failure:
         _raise_cleanup_failure(pending, failure)
     if pending is not None:
@@ -560,6 +569,20 @@ async def _deepseek_client() -> _AsyncIterator[_httpx.AsyncClient]:
         yield client
 
 
+class _ShieldedResponseStream(_httpx.AsyncByteStream):
+    def __init__(self, stream: _httpx.AsyncByteStream) -> None:
+        self._stream = stream
+
+    async def __aiter__(self) -> _AsyncIterator[bytes]:
+        async for chunk in self._stream:
+            yield chunk
+
+    async def aclose(self) -> None:
+        # HTTPX also closes this stream inside aread(), before context exit.
+        async with _owned_resource(self._stream):
+            pass
+
+
 @_asynccontextmanager
 async def _deepseek_response(
     client: _httpx.AsyncClient,
@@ -574,6 +597,8 @@ async def _deepseek_response(
         content=body,
     )
     response = await client.send(request, stream=True)
+    assert isinstance(response.stream, _httpx.AsyncByteStream)
+    response.stream = _ShieldedResponseStream(response.stream)
     async with _owned_resource(response):
         yield response
 

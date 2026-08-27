@@ -5562,6 +5562,57 @@
       "referenceCitations": [
         ".scratch/omh-v0/issues/12-define-v0-conformance-and-release-gate.md#release-authorization-and-publication"
       ]
+    },
+    {
+      "id": "reference.deepseek-nested-cancellation-cleanup",
+      "captureCaseId": "capture.deepseek-nested-cancellation-cleanup",
+      "obligation": "omh-v0.deepseek-nested-cancellation-cleanup",
+      "referenceRevision": "0e6909f050eeb15e8f6c05185511f3788357ddb3",
+      "canonicalInput": "cancel one active installed Product Session and redeliver cancellation across response, client, transport, and TLS-equivalent close cutoffs",
+      "observations": {
+        "reference": "not_applicable",
+        "reason": "product-scope"
+      },
+      "omhExpectation": {
+        "A": "public_product_session_active_stream_abort",
+        "L": {
+          "cancellationBeforeCleanup": true,
+          "closed": [
+            "response",
+            "client",
+            "transport",
+            "tls"
+          ]
+        },
+        "T": {
+          "stopReason": "aborted",
+          "errorMessage": "Operation aborted",
+          "lifecycleError": false
+        },
+        "E": {
+          "closeCounts": {
+            "response": 1,
+            "client": 1,
+            "transport": 1,
+            "tls": 1
+          },
+          "requestCount": 2,
+          "retries": [
+            0,
+            0
+          ]
+        },
+        "C": {
+          "cancelledWaiters": 2,
+          "idleBeforeReuse": true,
+          "reuseStopReason": "stop"
+        }
+      },
+      "comparator": "not_applicable: product-scope",
+      "normalization": "deterministic asyncio barriers and TLS-equivalent nested resource identity",
+      "referenceCitations": [
+        ".scratch/omh-v0/tickets/31-shield-nested-deepseek-cancellation-cleanup.md"
+      ]
     }
   ]
 }

@@ -27,7 +27,8 @@
       "omh-v0.release-row-identical-candidate-and-wheelhouse",
       "omh-v0.release-row-offline-clean-install-and-suite",
       "omh-v0.release-row-platform-resources",
-      "omh-v0.release-row-evidence-binding-and-fail-closed"
+      "omh-v0.release-row-evidence-binding-and-fail-closed",
+      "omh-v0.deepseek-nested-cancellation-cleanup"
     ]
   },
   "obligations": [
@@ -1605,6 +1606,20 @@
       "corpusCase": "reference.release-row-evidence-binding-and-fail-closed",
       "executableCases": ["reference.release-row-evidence-binding-and-fail-closed"],
       "executableRunners": ["ticket-28-release-rows"]
+    },
+    {
+      "id": "omh-v0.deepseek-nested-cancellation-cleanup",
+      "authority": ".scratch/omh-v0/issues/12-define-v0-conformance-and-release-gate.md#deterministic-conformance and .scratch/omh-v0/tickets/31-shield-nested-deepseek-cancellation-cleanup.md",
+      "publicInterface": "installed oh_my_coding_agent.AgentSession prompt, abort, waitForIdle, and dispose",
+      "scenario": "cancel one active DeepSeek Product Session while response, client, transport, and TLS-equivalent cleanup remain nested, then deliver later cancellation at every close cutoff and reuse the same Session",
+      "observations": {"A": "active Product Session cancellation admitted", "L": "cancellation visible before four nested resources close once", "T": "one aborted terminal and no lifecycle failure after clean settlement", "E": "one cancelled request, one reuse request, zero retries or replacement operations", "C": "cancelled waiters cannot abandon cleanup and the same Session becomes idle and reusable"},
+      "comparator": "not_applicable: product-scope",
+      "normalization": "deterministic asyncio barriers and TLS-equivalent nested resource identity",
+      "evidenceClass": "local-release",
+      "referenceApplicability": {"status": "not_applicable", "reason": "product-scope"},
+      "corpusCase": "reference.deepseek-nested-cancellation-cleanup",
+      "executableCases": ["reference.deepseek-nested-cancellation-cleanup"],
+      "executableRunners": ["ticket-31-deepseek-cleanup", "ticket-31-installed"]
     }
   ]
 }
