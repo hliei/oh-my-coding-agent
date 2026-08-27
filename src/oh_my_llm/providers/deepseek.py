@@ -650,11 +650,12 @@ async def _stream_simple_operation(
                     )
                 if "usage" in payload:
                     raw_usage = payload["usage"]
-                    if not isinstance(raw_usage, _Mapping):
-                        raise _ModelsError("stream", "DeepSeek usage is invalid")
-                    usage = _usage_from_payload(raw_usage)
-                    usage_seen = True
-                    operation.remember(_replace(partial, usage=usage))
+                    if raw_usage is not None:
+                        if not isinstance(raw_usage, _Mapping):
+                            raise _ModelsError("stream", "DeepSeek usage is invalid")
+                        usage = _usage_from_payload(raw_usage)
+                        usage_seen = True
+                        operation.remember(_replace(partial, usage=usage))
                 choices = payload.get("choices")
                 if not isinstance(choices, list) or not choices:
                     continue

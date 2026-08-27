@@ -19,6 +19,9 @@ from oh_my_llm import (
     AssistantMessageDoneEvent,
     AssistantMessageErrorEvent,
     AssistantMessageStartEvent,
+    AssistantMessageTextDeltaEvent,
+    AssistantMessageTextEndEvent,
+    AssistantMessageTextStartEvent,
     AssistantMessageToolCallDeltaEvent,
     AssistantMessageToolCallEndEvent,
     AssistantMessageToolCallStartEvent,
@@ -55,6 +58,47 @@ _STOP_SSE = _sse(
             "completion_tokens": 1,
             "total_tokens": 2,
             "prompt_cache_hit_tokens": 0,
+        },
+    },
+    "[DONE]",
+)
+
+_NULLABLE_USAGE_SSE = _sse(
+    {
+        "id": "chatcmpl-nullable-usage",
+        "model": "deepseek-v4-flash",
+        "choices": [
+            {
+                "index": 0,
+                "delta": {"role": "assistant", "content": ""},
+                "finish_reason": None,
+            }
+        ],
+        "usage": None,
+    },
+    {
+        "id": "chatcmpl-nullable-usage",
+        "model": "deepseek-v4-flash",
+        "choices": [
+            {"index": 0, "delta": {"content": "Hello"}, "finish_reason": None}
+        ],
+        "usage": None,
+    },
+    {
+        "id": "chatcmpl-nullable-usage",
+        "model": "deepseek-v4-flash",
+        "choices": [{"index": 0, "delta": {}, "finish_reason": "stop"}],
+        "usage": None,
+    },
+    {
+        "id": "chatcmpl-nullable-usage",
+        "model": "deepseek-v4-flash",
+        "choices": [],
+        "usage": {
+            "prompt_tokens": 12,
+            "completion_tokens": 2,
+            "total_tokens": 14,
+            "prompt_cache_hit_tokens": 4,
         },
     },
     "[DONE]",
@@ -254,6 +298,69 @@ def test_all_four_models_helpers_share_identical_deepseek_request_semantics(
         2.0,
         384_000,
     )
+
+
+def test_all_helpers_accept_null_usage_until_one_usage_only_terminal(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    secret = "SECRET_NULLABLE_USAGE_CANARY"
+    spy = _HttpSpy(*(_NULLABLE_USAGE_SSE for _ in range(4)))
+    spy.install(monkeypatch)
+    monkeypatch.setenv("DEEPSEEK_API_KEY", secret)
+    models, model = _deepseek()
+    context = Context(messages=(UserMessage(content="Hello", timestamp=0),))
+
+    async def invoke_all() -> tuple[list[list[Any]], list[Any]]:
+        observed_events: list[list[Any]] = []
+        terminals: list[Any] = []
+        simple_events = await _collect(models.streamSimple(model, context))
+        observed_events.append(simple_events)
+        simple_done = simple_events[-1]
+        assert isinstance(simple_done, AssistantMessageDoneEvent)
+        terminals.append(simple_done.message)
+
+        terminals.append(await models.completeSimple(model, context))
+
+        stream = models.stream(model, context)
+        terminals.append(await stream.result())
+        observed_events.append([event async for event in stream])
+
+        terminals.append(await models.complete(model, context))
+        return observed_events, terminals
+
+    observed_events, terminals = asyncio.run(invoke_all())
+
+    assert len(spy.requests) == 4
+    assert len({request.content for request in spy.requests}) == 1
+    assert [type(event) for event in observed_events[0]] == [
+        AssistantMessageStartEvent,
+        AssistantMessageTextStartEvent,
+        AssistantMessageTextDeltaEvent,
+        AssistantMessageTextEndEvent,
+        AssistantMessageDoneEvent,
+    ]
+    assert [type(event) for event in observed_events[1]] == [
+        AssistantMessageStartEvent,
+        AssistantMessageTextStartEvent,
+        AssistantMessageTextDeltaEvent,
+        AssistantMessageTextEndEvent,
+        AssistantMessageDoneEvent,
+    ]
+    for events, terminal in zip(observed_events, terminals[::2], strict=True):
+        assert all(event.partial.usage.totalTokens == 0 for event in events[:-1])
+        done = events[-1]
+        assert isinstance(done, AssistantMessageDoneEvent)
+        assert done.message is terminal
+    assert all(terminal == terminals[0] for terminal in terminals)
+    message = terminals[0]
+    assert message.content == (TextContent(text="Hello"),)
+    assert message.stopReason == "stop"
+    assert message.usage.input == 8
+    assert message.usage.output == 2
+    assert message.usage.cacheRead == 4
+    assert message.usage.totalTokens == 14
+    assert message.usage.cost.total == 1.6912e-6
+    assert secret not in f"{observed_events!s}{observed_events!r}{terminals!s}{terminals!r}"
 
 
 _TOOL_SSE = _sse(
@@ -466,13 +573,16 @@ def test_missing_or_incomplete_tool_arguments_fail_without_default_or_repair(
     assert terminal.error.errorMessage == "DeepSeek stream failed"
 
 
-def _usage_sse(usage: object = None) -> bytes:
+_MISSING_USAGE = object()
+
+
+def _usage_sse(usage: object = _MISSING_USAGE) -> bytes:
     payload: dict[str, Any] = {
         "id": "chatcmpl-usage",
         "model": "deepseek-v4-flash",
         "choices": [{"index": 0, "delta": {}, "finish_reason": "stop"}],
     }
-    if usage is not None:
+    if usage is not _MISSING_USAGE:
         payload["usage"] = usage
     return _sse(payload, "[DONE]")
 
@@ -480,6 +590,7 @@ def _usage_sse(usage: object = None) -> bytes:
 @pytest.mark.parametrize(
     "usage",
     (
+        _MISSING_USAGE,
         None,
         {"prompt_tokens": 1, "completion_tokens": 1, "total_tokens": 2},
         {
