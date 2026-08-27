@@ -261,39 +261,75 @@ def _empty_partial(model: _Model) -> _AssistantMessage:
     )
 
 
+def _pop_complete_sse_event(buffer: bytearray) -> bytes | None:
+    newline = buffer.find(b"\n\n")
+    crlf = buffer.find(b"\r\n\r\n")
+    if newline < 0 and crlf < 0:
+        return None
+    if crlf >= 0 and (newline < 0 or crlf < newline):
+        event = bytes(buffer[:crlf])
+        del buffer[: crlf + 4]
+        return event
+    event = bytes(buffer[:newline])
+    del buffer[: newline + 2]
+    return event
+
+
+def _payloads_from_sse_event(event: bytes) -> tuple[dict[str, _Any], ...] | None:
+    payloads: list[dict[str, _Any]] = []
+    for line in event.replace(b"\r\n", b"\n").split(b"\n"):
+        if not line.startswith(b"data:"):
+            continue
+        data = line[5:].strip()
+        if data == b"[DONE]":
+            return None
+        try:
+            payload = _json.loads(
+                data.decode("utf-8"),
+                object_pairs_hook=_wire_object,
+                parse_constant=_reject_json_constant,
+            )
+        except (UnicodeDecodeError, ValueError) as error:
+            raise _ModelsError("stream", "DeepSeek stream is invalid") from error
+        if type(payload) is not dict:
+            raise _ModelsError("stream", "DeepSeek stream is invalid")
+        payloads.append(_cast(dict[str, _Any], payload))
+    return tuple(payloads)
+
+
+async def _iter_response_bytes(response: _httpx.Response) -> _AsyncIterator[bytes]:
+    if response.is_stream_consumed:
+        yield response.content
+        return
+    async for chunk in response.aiter_raw():
+        yield chunk
+
+
 async def _iter_sse_payloads(response: _httpx.Response) -> _AsyncIterator[dict[str, _Any]]:
-    buffer = bytearray(await response.aread())
-    while True:
-        newline = buffer.find(b"\n\n")
-        crlf = buffer.find(b"\r\n\r\n")
-        if newline < 0 and crlf < 0:
-            break
-        if crlf >= 0 and (newline < 0 or crlf < newline):
-            event = bytes(buffer[:crlf])
-            del buffer[: crlf + 4]
-        else:
-            event = bytes(buffer[:newline])
-            del buffer[: newline + 2]
-        for line in event.replace(b"\r\n", b"\n").split(b"\n"):
-            if not line.startswith(b"data:"):
-                continue
-            data = line[5:].strip()
-            if data == b"[DONE]":
+    buffer = bytearray()
+    finished = False
+    async for chunk in _iter_response_bytes(response):
+        buffer.extend(chunk)
+        if finished:
+            if bytes(buffer).strip():
+                raise _ModelsError("stream", "DeepSeek stream is invalid")
+            continue
+        while True:
+            event = _pop_complete_sse_event(buffer)
+            if event is None:
+                break
+            parsed = _payloads_from_sse_event(event)
+            if parsed is None:
                 if bytes(buffer).strip():
                     raise _ModelsError("stream", "DeepSeek stream is invalid")
-                return
-            try:
-                payload = _json.loads(
-                    data.decode("utf-8"),
-                    object_pairs_hook=_wire_object,
-                    parse_constant=_reject_json_constant,
-                )
-            except (UnicodeDecodeError, ValueError) as error:
-                raise _ModelsError("stream", "DeepSeek stream is invalid") from error
-            if type(payload) is not dict:
-                raise _ModelsError("stream", "DeepSeek stream is invalid")
-            yield _cast(dict[str, _Any], payload)
-    raise _ModelsError("stream", "DeepSeek stream ended without terminal data")
+                finished = True
+                break
+            for payload in parsed:
+                yield payload
+    if not finished:
+        raise _ModelsError("stream", "DeepSeek stream ended without terminal data")
+    if bytes(buffer).strip():
+        raise _ModelsError("stream", "DeepSeek stream is invalid")
 
 
 def _wire_object(pairs: list[tuple[str, _Any]]) -> dict[str, _Any]:
@@ -578,7 +614,7 @@ class _ShieldedResponseStream(_httpx.AsyncByteStream):
             yield chunk
 
     async def aclose(self) -> None:
-        # HTTPX also closes this stream inside aread(), before context exit.
+        # HTTPX also closes this stream when aiter_raw() completes, before context exit.
         async with _owned_resource(self._stream):
             pass
 

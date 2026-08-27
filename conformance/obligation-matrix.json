@@ -28,7 +28,9 @@
       "omh-v0.release-row-offline-clean-install-and-suite",
       "omh-v0.release-row-platform-resources",
       "omh-v0.release-row-evidence-binding-and-fail-closed",
-      "omh-v0.deepseek-nested-cancellation-cleanup"
+      "omh-v0.deepseek-nested-cancellation-cleanup",
+      "omh-v0.deepseek-incremental-sse-delivery",
+      "omh-v0.deepseek-active-stream-abort-after-delta"
     ]
   },
   "obligations": [
@@ -1620,6 +1622,34 @@
       "corpusCase": "reference.deepseek-nested-cancellation-cleanup",
       "executableCases": ["reference.deepseek-nested-cancellation-cleanup"],
       "executableRunners": ["ticket-31-deepseek-cleanup", "ticket-31-installed"]
+    },
+    {
+      "id": "omh-v0.deepseek-incremental-sse-delivery",
+      "authority": ".scratch/omh-v0/issues/12-define-v0-conformance-and-release-gate.md#deterministic-conformance and .scratch/omh-v0/tickets/32-stream-deepseek-sse-incrementally.md",
+      "publicInterface": "installed oh_my_llm.Models.streamSimple",
+      "scenario": "deliver one complete DeepSeek text SSE event, hold a later transport read, and observe the public text delta before HTTP EOF",
+      "observations": {"A": "incremental Models stream admitted", "L": "start, text_start, and text_delta before EOF", "T": "text delta Hel and later Hello stop terminal", "E": "one request, zero retries, no secret leakage", "C": "later read pending and EOF unreleased until after the delta"},
+      "comparator": "not_applicable: product-scope",
+      "normalization": "deterministic asyncio barriers over a gated HTTP body",
+      "evidenceClass": "local-release",
+      "referenceApplicability": {"status": "not_applicable", "reason": "product-scope"},
+      "corpusCase": "reference.deepseek-incremental-sse-delivery",
+      "executableCases": ["reference.deepseek-incremental-sse-delivery"],
+      "executableRunners": ["ticket-32-deepseek-sse", "ticket-32-installed"]
+    },
+    {
+      "id": "omh-v0.deepseek-active-stream-abort-after-delta",
+      "authority": ".scratch/omh-v0/issues/12-define-v0-conformance-and-release-gate.md#deterministic-conformance and .scratch/omh-v0/tickets/32-stream-deepseek-sse-incrementally.md",
+      "publicInterface": "installed oh_my_coding_agent.AgentSession prompt, abort, waitForIdle, and dispose",
+      "scenario": "observe a Product Session text delta while the DeepSeek response is still open, abort that Run, drain cleanup, and reuse the same Session",
+      "observations": {"A": "active Product Session abort after incremental delta admitted", "L": "one aborted Assistant MessageEnd and one AgentEnd", "T": "aborted terminal with Operation aborted and no lifecycle failure", "E": "one cancelled request, one reuse request, zero retries", "C": "idle only after cleanup and a fresh successful Run in the same Session"},
+      "comparator": "not_applicable: product-scope",
+      "normalization": "deterministic asyncio barriers over a still-active HTTP response",
+      "evidenceClass": "local-release",
+      "referenceApplicability": {"status": "not_applicable", "reason": "product-scope"},
+      "corpusCase": "reference.deepseek-active-stream-abort-after-delta",
+      "executableCases": ["reference.deepseek-active-stream-abort-after-delta"],
+      "executableRunners": ["ticket-32-deepseek-sse", "ticket-32-installed"]
     }
   ]
 }

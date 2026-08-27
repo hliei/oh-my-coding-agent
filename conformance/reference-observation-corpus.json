@@ -5613,6 +5613,91 @@
       "referenceCitations": [
         ".scratch/omh-v0/tickets/31-shield-nested-deepseek-cancellation-cleanup.md"
       ]
+    },
+    {
+      "id": "reference.deepseek-incremental-sse-delivery",
+      "captureCaseId": "capture.deepseek-incremental-sse-delivery",
+      "obligation": "omh-v0.deepseek-incremental-sse-delivery",
+      "referenceRevision": "0e6909f050eeb15e8f6c05185511f3788357ddb3",
+      "canonicalInput": "deliver one complete text SSE event and withhold HTTP EOF until the public text delta is observed",
+      "observations": {
+        "reference": "not_applicable",
+        "reason": "product-scope"
+      },
+      "omhExpectation": {
+        "A": "public_models_pre_eof_text_delta",
+        "L": [
+          "start",
+          "text_start",
+          "text_delta"
+        ],
+        "T": {
+          "delta": "Hel",
+          "stopReason": "stop",
+          "text": "Hello"
+        },
+        "E": {
+          "requestCount": 1,
+          "retries": [
+            0
+          ],
+          "secretLeaked": false
+        },
+        "C": {
+          "laterReadPending": true,
+          "releasedBeforeDelta": false,
+          "closed": true
+        }
+      },
+      "comparator": "not_applicable: product-scope",
+      "normalization": "deterministic asyncio barriers over a gated HTTP body",
+      "referenceCitations": [
+        ".scratch/omh-v0/tickets/32-stream-deepseek-sse-incrementally.md"
+      ]
+    },
+    {
+      "id": "reference.deepseek-active-stream-abort-after-delta",
+      "captureCaseId": "capture.deepseek-active-stream-abort-after-delta",
+      "obligation": "omh-v0.deepseek-active-stream-abort-after-delta",
+      "referenceRevision": "0e6909f050eeb15e8f6c05185511f3788357ddb3",
+      "canonicalInput": "abort one active installed Product Session after a text delta while a later transport read is pending, then reuse the same Session",
+      "observations": {
+        "reference": "not_applicable",
+        "reason": "product-scope"
+      },
+      "omhExpectation": {
+        "A": "public_product_session_abort_after_delta",
+        "L": {
+          "deltaBeforeEof": true,
+          "laterReadPending": true,
+          "abortedMessageEnds": 1,
+          "agentEnds": 1
+        },
+        "T": {
+          "stopReason": "aborted",
+          "errorMessage": "Operation aborted",
+          "lifecycleError": false
+        },
+        "E": {
+          "requestCount": 2,
+          "retries": [
+            0,
+            0
+          ],
+          "secretLeaked": false
+        },
+        "C": {
+          "releasedBeforeAbort": false,
+          "idleDuringCleanup": false,
+          "idleBeforeReuse": true,
+          "reuseStopReason": "stop"
+        }
+      },
+      "comparator": "not_applicable: product-scope",
+      "normalization": "deterministic asyncio barriers over a still-active HTTP response",
+      "referenceCitations": [
+        ".scratch/omh-v0/tickets/32-stream-deepseek-sse-incrementally.md"
+      ]
     }
   ]
 }

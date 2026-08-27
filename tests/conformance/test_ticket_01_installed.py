@@ -192,6 +192,12 @@ def test_installed_wheel_shields_nested_deepseek_cancellation_cleanup(
     _assert_installed_scenario(installed_python, "ticket_31_scenario.py")
 
 
+def test_installed_wheel_streams_deepseek_sse_incrementally(
+    installed_python: Path,
+) -> None:
+    _assert_installed_scenario(installed_python, "ticket_32_scenario.py")
+
+
 def test_installed_wheel_registers_builtins_and_inspects_with_read(
     installed_python: Path,
 ) -> None:
