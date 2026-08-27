@@ -4251,6 +4251,116 @@
           ".scratch/omh-v0/issues/12-define-v0-conformance-and-release-gate.md#fixed-reference-oracle"
         ]
       }
+    },
+    {
+      "origin": "local-release",
+      "localCase": {
+        "id": "reference.candidate-build-row-toolchain",
+        "captureCaseId": "capture.candidate-build-row-toolchain",
+        "obligation": "omh-v0.candidate-build-row-toolchain",
+        "referenceRevision": "0e6909f050eeb15e8f6c05185511f3788357ddb3",
+        "canonicalInput": "inspect the Candidate Build Row Release Toolchain Manifest",
+        "observations": {
+          "reference": "not_applicable",
+          "reason": "release-process"
+        },
+        "omhExpectation": {
+          "A": "toolchain_manifest",
+          "L": [],
+          "T": {
+            "osFamily": "macOS 26",
+            "architecture": "arm64",
+            "cpython": "3.12",
+            "hatchling": "1.32.0"
+          },
+          "E": {
+            "unpinnedBinary": false,
+            "prefetchedBuildWheels": true
+          },
+          "C": {
+            "platformSupportClaim": false
+          }
+        },
+        "comparator": "not_applicable: release-process",
+        "normalization": "OS point release/build, binary SHA-256, and exact Hatchling pin",
+        "referenceCitations": [
+          ".scratch/omh-v0/issues/12-define-v0-conformance-and-release-gate.md#candidate-build-and-clean-installation"
+        ]
+      }
+    },
+    {
+      "origin": "local-release",
+      "localCase": {
+        "id": "reference.reproducible-universal-candidate-wheel",
+        "captureCaseId": "capture.reproducible-universal-candidate-wheel",
+        "obligation": "omh-v0.reproducible-universal-candidate-wheel",
+        "referenceRevision": "0e6909f050eeb15e8f6c05185511f3788357ddb3",
+        "canonicalInput": "build the Candidate Wheel twice from one clean release-candidate export",
+        "observations": {
+          "reference": "not_applicable",
+          "reason": "packaging"
+        },
+        "omhExpectation": {
+          "A": "universal_wheel",
+          "L": [],
+          "T": {
+            "tag": "py3-none-any",
+            "byteIdentical": true,
+            "passes": 2
+          },
+          "E": {
+            "packages": [
+              "oh_my_llm",
+              "oh_my_core",
+              "oh_my_coding_agent"
+            ],
+            "consoleScript": "omh",
+            "sdist": false
+          },
+          "C": "differing_rebuild_is_not_the_candidate"
+        },
+        "comparator": "not_applicable: packaging",
+        "normalization": "complete wheel bytes and SHA-256",
+        "referenceCitations": [
+          ".scratch/omh-v0/issues/12-define-v0-conformance-and-release-gate.md#candidate-build-and-clean-installation"
+        ]
+      }
+    },
+    {
+      "origin": "local-release",
+      "localCase": {
+        "id": "reference.offline-candidate-install-and-conformance",
+        "captureCaseId": "capture.offline-candidate-install-and-conformance",
+        "obligation": "omh-v0.offline-candidate-install-and-conformance",
+        "referenceRevision": "0e6909f050eeb15e8f6c05185511f3788357ddb3",
+        "canonicalInput": "install the exact Candidate Wheel and lock-resolved wheelhouse offline outside the checkout",
+        "observations": {
+          "reference": "not_applicable",
+          "reason": "packaging"
+        },
+        "omhExpectation": {
+          "A": "offline_locked_install",
+          "L": [],
+          "T": {
+            "publicImports": true,
+            "consoleCommand": "omh"
+          },
+          "E": {
+            "network": false,
+            "sourceFallback": false,
+            "checkoutImport": false
+          },
+          "C": {
+            "publishRight": false,
+            "evidenceBoundToCandidate": true
+          }
+        },
+        "comparator": "not_applicable: packaging",
+        "normalization": "wheel filename/SHA-256, lock hash, and wheelhouse inventory",
+        "referenceCitations": [
+          ".scratch/omh-v0/issues/12-define-v0-conformance-and-release-gate.md#candidate-build-and-clean-installation"
+        ]
+      }
     }
   ]
 }

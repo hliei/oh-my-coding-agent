@@ -262,6 +262,7 @@ _SOURCE_RUNNERS = {
     "ticket-24-repl": "test_ticket_24_interactive_repl.py",
     "ticket-25-signals": "test_ticket_25_command_signals.py",
     "ticket-26-closure": "test_ticket_26_closure.py",
+    "ticket-27-candidate-wheel": "test_ticket_27_candidate_wheel.py",
 }
 
 
@@ -561,6 +562,15 @@ def test_dependency_packaging_platform_and_release_policy_are_indexed_once() -> 
     assert rows["omh-v0.deterministic-conformance-policy"][
         "referenceApplicability"
     ] == {"status": "not_applicable", "reason": "release-process"}
+    assert rows["omh-v0.candidate-build-row-toolchain"][
+        "executableRunners"
+    ] == ["ticket-27-candidate-wheel"]
+    assert rows["omh-v0.reproducible-universal-candidate-wheel"][
+        "referenceApplicability"
+    ] == {"status": "not_applicable", "reason": "packaging"}
+    assert rows["omh-v0.offline-candidate-install-and-conformance"][
+        "referenceApplicability"
+    ] == {"status": "not_applicable", "reason": "packaging"}
 
 
 def test_reference_corpus_generator_is_closed_without_omh_output() -> None:

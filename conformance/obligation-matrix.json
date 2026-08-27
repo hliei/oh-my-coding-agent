@@ -20,7 +20,10 @@
       "omh-v0.locked-dependency-packaging-contract",
       "omh-v0.closed-release-row-selection",
       "omh-v0.deterministic-conformance-policy",
-      "omh-v0.reference-corpus-reproducibility"
+      "omh-v0.reference-corpus-reproducibility",
+      "omh-v0.candidate-build-row-toolchain",
+      "omh-v0.reproducible-universal-candidate-wheel",
+      "omh-v0.offline-candidate-install-and-conformance"
     ]
   },
   "obligations": [
@@ -1500,6 +1503,48 @@
       "corpusCase": "reference.reference-corpus-reproducibility",
       "executableCases": ["reference.reference-corpus-reproducibility"],
       "executableRunners": ["ticket-26-closure"]
+    },
+    {
+      "id": "omh-v0.candidate-build-row-toolchain",
+      "authority": ".scratch/omh-v0/issues/12-define-v0-conformance-and-release-gate.md#candidate-build-and-clean-installation",
+      "publicInterface": "Candidate Build Row Release Toolchain Manifest",
+      "scenario": "pin the actual macOS point release/build, CPython 3.12 binary/hash, uv binary/hash, locked Hatchling, and every prefetched build artifact before the candidate commit",
+      "observations": {"A": "one toolchain manifest admitted", "L": "not_applicable", "T": "macOS 26 arm64, CPython 3.12, uv, hatchling==1.32.0, hashed build wheels", "E": "no unpinned interpreter, uv, or Hatchling artifact", "C": "the Build Row creates no platform support claim"},
+      "comparator": "not_applicable: release-process",
+      "normalization": "OS point release/build, binary SHA-256, and exact Hatchling pin",
+      "evidenceClass": "local-release",
+      "referenceApplicability": {"status": "not_applicable", "reason": "release-process"},
+      "corpusCase": "reference.candidate-build-row-toolchain",
+      "executableCases": ["reference.candidate-build-row-toolchain"],
+      "executableRunners": ["ticket-27-candidate-wheel"]
+    },
+    {
+      "id": "omh-v0.reproducible-universal-candidate-wheel",
+      "authority": ".scratch/omh-v0/issues/12-define-v0-conformance-and-release-gate.md#candidate-build-and-clean-installation",
+      "publicInterface": "Candidate Wheel bytes from a clean release-candidate export",
+      "scenario": "build twice in independent clean directories from one Git export with SOURCE_DATE_EPOCH, TZ=UTC, LC_ALL=C.UTF-8, no user/VCS state, and no build-time network",
+      "observations": {"A": "one universal wheel admitted", "L": "not_applicable", "T": "omh-<version>-py3-none-any.whl with identical bytes, inventory, metadata, RECORD, and SHA-256", "E": "three public packages and the omh command; no sdist or alternative wheel", "C": "a differing rebuild is not the candidate"},
+      "comparator": "not_applicable: packaging",
+      "normalization": "complete wheel bytes and SHA-256",
+      "evidenceClass": "local-release",
+      "referenceApplicability": {"status": "not_applicable", "reason": "packaging"},
+      "corpusCase": "reference.reproducible-universal-candidate-wheel",
+      "executableCases": ["reference.reproducible-universal-candidate-wheel"],
+      "executableRunners": ["ticket-27-candidate-wheel"]
+    },
+    {
+      "id": "omh-v0.offline-candidate-install-and-conformance",
+      "authority": ".scratch/omh-v0/issues/12-define-v0-conformance-and-release-gate.md#candidate-build-and-clean-installation",
+      "publicInterface": "installed Candidate Wheel and locked row wheelhouse",
+      "scenario": "install only the exact Candidate Wheel plus a lock-resolved prebuilt wheelhouse into a fresh environment outside the checkout with network disabled, then execute public metadata, imports, the omh command, and the Deterministic Conformance Suite",
+      "observations": {"A": "offline locked install admitted", "L": "not_applicable", "T": "installed metadata, closed imports, and omh command match the candidate", "E": "resolver drift, missing prebuilt, source fallback, undeclared dependency, checkout import, or a different wheel fail", "C": "evidence records commit, toolchain, wheel, lock, wheelhouse, and authority hashes; no Publish Right"},
+      "comparator": "not_applicable: packaging",
+      "normalization": "wheel filename/SHA-256, lock hash, and wheelhouse inventory",
+      "evidenceClass": "local-release",
+      "referenceApplicability": {"status": "not_applicable", "reason": "packaging"},
+      "corpusCase": "reference.offline-candidate-install-and-conformance",
+      "executableCases": ["reference.offline-candidate-install-and-conformance"],
+      "executableRunners": ["ticket-27-candidate-wheel"]
     }
   ]
 }

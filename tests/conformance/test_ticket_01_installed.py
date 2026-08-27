@@ -45,9 +45,14 @@ def installed_python(tmp_path_factory: pytest.TempPathFactory) -> Path:
     _run("uv", "lock", "--check", cwd=clean_checkout)
     _run(
         "uv",
-        "build",
         "--offline",
+        "--no-config",
+        "build",
         "--wheel",
+        "--no-index",
+        "--find-links",
+        os.fspath(ROOT / "conformance/build-artifacts"),
+        "--no-create-gitignore",
         "--out-dir",
         os.fspath(distribution),
         cwd=clean_checkout,
