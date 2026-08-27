@@ -1,6 +1,14 @@
 __pycache__/
 *.py[cod]
 .DS_Store
+.agents/
+.scratch/
+conformance/
+docs/
+tests/conformance/
+AGENTS.md
+CONTEXT.md
+skills-lock.json
 .mypy_cache/
 .pytest_cache/
 .venv/
