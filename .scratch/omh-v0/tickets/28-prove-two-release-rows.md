@@ -4,16 +4,16 @@
 
 **Blocked by:** 27 — Build the reproducible Candidate Wheel.
 
-**Status:** ready-for-agent
+**Status:** resolved
 
 - [x] The release matrix contains exactly macOS 26 arm64 on CPython 3.12 and 3.13; Ubuntu and every other Linux row remain outside v0.
-- [ ] Both rows receive the identical Candidate Wheel filename/SHA-256 and a row-specific offline prebuilt wheelhouse resolved exactly from the committed lock.
-- [ ] Each fresh environment installs outside the checkout with network disabled and fails on resolver drift, missing binary artifact, native/source build, or wheel substitution.
-- [ ] Both rows run the complete no-skip Deterministic Conformance Suite against the installed artifact.
+- [x] Both rows receive the identical Candidate Wheel filename/SHA-256 and a row-specific offline prebuilt wheelhouse resolved exactly from the committed lock.
+- [x] Each fresh environment installs outside the checkout with network disabled and fails on resolver drift, missing binary artifact, native/source build, or wheel substitution.
+- [x] Both rows run the complete no-skip Deterministic Conformance Suite against the installed artifact.
 - [x] Each row uses real OS resources to prove JSONL lazy creation, append/direct-rewrite failure effects, parsed-prefix recovery, in-memory mode, and multiple managers without an exclusive lease, plus filesystem, REPL terminal/signal, and bash subprocess-tree cancellation/cleanup semantics.
-- [ ] Evidence records actual OS point release/build, architecture, CPython patch, runner identity, wheelhouse identity, candidate commit, and exact wheel hash.
+- [x] Evidence records actual OS point release/build, architecture, CPython patch, runner identity, wheelhouse identity, candidate commit, and exact wheel hash.
 - [x] Success on an unselected environment or availability of a dependency artifact creates no support promise; every unselected OS/architecture/interpreter remains explicitly outside v0.
-- [ ] Both results bind to the same Matrix, corpus, lock, Candidate Wheel, and release-candidate commit and are ready to enter the Release Evidence Bundle.
+- [x] Both results bind to the same Matrix, corpus, lock, Candidate Wheel, and release-candidate commit and are ready to enter the Release Evidence Bundle.
 - [x] Failure on any row blocks release and cannot be waived, skipped, retried into acceptance, or replaced by a source-tree result.
 
 ## Comments
@@ -23,3 +23,4 @@
 - This workstation proved macOS 26.3.1 (25D771280a) arm64 CPython 3.12.13 with the complete installed suite (`suiteRan: true`) and CPython 3.13.8 with real JSONL/PTY/bash platform tests. Ubuntu 24.04 x86_64 is rejected here (`host does not match`); those two rows are proven by running the same `conformance/prove_release_row.py prove --row ...` on matching hosts, then `bind` of all four `suiteRan` results.
 - Verification: focused ticket-28 tests passed (23); full locked suite passed (560); locked mypy passed; compileall, lock validation, and `git diff --check` passed. `bind` grants no Publish Right.
 - 2026-08-27 — Superseded the four-row scope with exactly two macOS 26 arm64 rows on CPython 3.12 and 3.13; Ubuntu is outside v0. The earlier Comments remain historical execution evidence. The ticket returned to `ready-for-agent` because CPython 3.13 still lacks a complete no-skip suite result and the two real row results are not yet bound.
+- 2026-08-27 — This workstation proved both remaining rows against identical Candidate Wheel `omh-0.1.0-py3-none-any.whl` SHA-256 `13254467a3787519f7e5343801de642da83689b0adb98aa1381b3a9e39c71124` on macOS 26.3.1 (25D771280a) arm64. CPython 3.12.13 and CPython 3.13.8 each installed offline outside the checkout from a distinct lock-resolved wheelhouse and ran the complete no-skip installed suite (`suiteRan: true`, `platformEvidence: true`). The 3.13 suite initially failed named-check `python -m unittest -q` with exit 127 because the prove host PATH had no `python` binary; prove now puts the installed venv `bin` first on PATH and fails closed unless that `python` is the venv interpreter. `bind` of both results set `readyForReleaseEvidenceBundle: true` with `publishRight: false`. Verification: focused ticket-28 tests passed (24); full locked suite passed (561); locked mypy passed; compileall, lock validation, and `git diff --check` passed. This ticket grants no Publish Right.

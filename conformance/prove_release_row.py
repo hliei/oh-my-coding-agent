@@ -461,6 +461,13 @@ def prove_row(
         fault=fault,
         allowed={item["name"] for item in with_urls},
     )
+    env = {
+        **env,
+        "PATH": os.pathsep.join((os.fspath(installed_python.parent), env["PATH"])),
+    }
+    resolved_python = shutil.which("python", path=env["PATH"])
+    if resolved_python is None or Path(resolved_python).resolve() != installed_python.resolve():
+        raise RuntimeError("row environment must resolve python to the installed venv")
     suite_ran = False
     platform_ran = False
     if not skip_suite:
