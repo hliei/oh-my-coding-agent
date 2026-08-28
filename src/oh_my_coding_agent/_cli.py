@@ -646,6 +646,7 @@ async def _drive_published_session(
 async def _drive_interactive(session: AgentSession, shutdown: _Shutdown) -> int:
     rendered_text = ""
     busy = False
+    queued_nonempty = False
     input_failure: OSError | None = None
 
     async def render(event: AgentSessionEvent) -> None:
@@ -713,25 +714,28 @@ async def _drive_interactive(session: AgentSession, shutdown: _Shutdown) -> int:
         lines.put_nowait(error)
 
     def deliver(raw: bytes) -> None:
+        nonlocal queued_nonempty
         if raw == b"":
             loop.remove_reader(stdin_fd)
             if busy:
                 asyncio.create_task(session.abort())
             lines.put_nowait(raw)
             return
-        if busy:
-            try:
-                text = _decode_interactive_line(
-                    raw, "interactive input is not UTF-8"
-                )
-            except OSError as error:
-                fail_input(error)
-                return
-            if _es_trim(text) and not write_stderr(
+        try:
+            text = _decode_interactive_line(
+                raw, "interactive input is not UTF-8"
+            )
+        except OSError as error:
+            fail_input(error)
+            return
+        prompt = _es_trim(text)
+        if busy or queued_nonempty:
+            if prompt and not write_stderr(
                 "busy: Product Session has an active Run\n"
             ):
                 fail_input(OSError("interactive diagnostic write failed"))
             return
+        queued_nonempty = bool(prompt)
         lines.put_nowait(raw)
 
     def input_ready() -> None:
@@ -753,8 +757,10 @@ async def _drive_interactive(session: AgentSession, shutdown: _Shutdown) -> int:
             if item == b"":
                 return
 
-    loop.add_reader(stdin_fd, input_ready)
+    reader_registered = False
     try:
+        loop.add_reader(stdin_fd, input_ready)
+        reader_registered = True
         while True:
             if shutdown.signum is not None:
                 return _shutdown_status(shutdown)
@@ -776,6 +782,7 @@ async def _drive_interactive(session: AgentSession, shutdown: _Shutdown) -> int:
             prompt = _es_trim(text)
             if not prompt:
                 continue
+            queued_nonempty = False
             prior_messages = session.messages
             prior_entries = session.sessionManager.getEntries()
             busy = True
@@ -820,8 +827,16 @@ async def _drive_interactive(session: AgentSession, shutdown: _Shutdown) -> int:
         write_stderr("internal error\n")
         return 1
     finally:
-        loop.remove_reader(stdin_fd)
-        _restore_tty(stdin_fd, saved_tty)
+        if reader_registered:
+            loop.remove_reader(stdin_fd)
+        try:
+            _restore_tty(stdin_fd, saved_tty)
+        except OSError:
+            if shutdown.signum is not None:
+                write_cleanup("terminal restore failed")
+            else:
+                write_stderr("I/O error\n")
+                return 1
 
 
 def _consume_task_exception(task: asyncio.Task[object]) -> None:

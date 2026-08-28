@@ -117,10 +117,7 @@ def _acquire_end_of_line_editing(fd: int) -> tuple[list[Any], bool]:
 
 
 def _restore_tty(fd: int, saved: list[Any]) -> None:
-    try:
-        termios.tcsetattr(fd, termios.TCSANOW, saved)
-    except OSError:
-        return
+    termios.tcsetattr(fd, termios.TCSANOW, saved)
 
 
 class _EndOfLineEditor:
