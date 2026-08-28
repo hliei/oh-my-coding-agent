@@ -9,7 +9,7 @@ import oh_my_llm
 
 def test_distribution_metadata_and_public_packages_are_available() -> None:
     distribution = metadata.distribution("omh")
-    assert distribution.version == "0.1.0"
+    assert distribution.version == "0.1.1"
     assert distribution.metadata["License-Expression"] == "MIT"
     assert distribution.metadata["Description-Content-Type"] == "text/markdown"
     assert oh_my_llm.__all__
