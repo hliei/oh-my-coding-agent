@@ -137,6 +137,10 @@ class _EndOfLineEditor:
         completed: list[bytes] = []
         while self._pending:
             first = self._pending[0]
+            if first == 0x1B:
+                if _take_escape(self._pending):
+                    break
+                continue
             if first < 0x20 or first == 0x7F:
                 del self._pending[0]
                 event = self._control(first)
@@ -173,9 +177,42 @@ class _EndOfLineEditor:
                 self._chars.clear()
                 return (line + "\n").encode("utf-8")
             return b""
-        character = chr(first)
-        self._chars.append(character)
         return None
+
+
+def _take_escape(buffer: bytearray) -> bool:
+    """Return True if the leading ESC still needs more bytes."""
+    if len(buffer) == 1:
+        return True
+    second = buffer[1]
+    if second == 0x5B:
+        return _take_csi(buffer)
+    if second == 0x4F:
+        if len(buffer) == 2:
+            return True
+        if 0x20 <= buffer[2] <= 0x7E:
+            del buffer[:3]
+            return False
+        del buffer[:2]
+        return False
+    del buffer[0]
+    return False
+
+
+def _take_csi(buffer: bytearray) -> bool:
+    """Return True if the CSI sequence still needs more bytes."""
+    index = 2
+    while index < len(buffer) and 0x30 <= buffer[index] <= 0x3F:
+        index += 1
+    while index < len(buffer) and 0x20 <= buffer[index] <= 0x2F:
+        index += 1
+    if index >= len(buffer):
+        return True
+    if 0x40 <= buffer[index] <= 0x7E:
+        del buffer[: index + 1]
+        return False
+    del buffer[:index]
+    return False
 
 
 def _display_columns(character: str) -> int:
