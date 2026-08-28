@@ -23,6 +23,9 @@ from oh_my_llm import AssistantMessage, LifecycleError, ModelsError, TextContent
 from ._prompt_resources import _es_trim
 from ._session_manager import _resolve_path, _session_id
 from ._terminal import (
+    _EndOfLineEditor,
+    _acquire_end_of_line_editing,
+    _restore_tty,
     encode_body,
     encode_field,
     encode_json,
@@ -697,16 +700,19 @@ async def _drive_interactive(session: AgentSession, shutdown: _Shutdown) -> int:
     loop = asyncio.get_running_loop()
     lines: asyncio.Queue[bytes | OSError] = asyncio.Queue()
     stdin_fd = sys.stdin.buffer.fileno()
+    saved_tty, echo = _acquire_end_of_line_editing(stdin_fd)
+    editor = _EndOfLineEditor(echo=echo)
 
-    def input_ready() -> None:
+    def fail_input(error: OSError) -> None:
         nonlocal input_failure
-        try:
-            raw = sys.stdin.buffer.readline()
-        except OSError as error:
-            loop.remove_reader(stdin_fd)
-            input_failure = error
-            lines.put_nowait(error)
+        loop.remove_reader(stdin_fd)
+        input_failure = error
+        if busy:
+            asyncio.create_task(session.abort())
             return
+        lines.put_nowait(error)
+
+    def deliver(raw: bytes) -> None:
         if raw == b"":
             loop.remove_reader(stdin_fd)
             if busy:
@@ -719,16 +725,33 @@ async def _drive_interactive(session: AgentSession, shutdown: _Shutdown) -> int:
                     raw, "interactive input is not UTF-8"
                 )
             except OSError as error:
-                input_failure = error
-                asyncio.create_task(session.abort())
+                fail_input(error)
                 return
             if _es_trim(text) and not write_stderr(
                 "busy: Product Session has an active Run\n"
             ):
-                input_failure = OSError("interactive diagnostic write failed")
-                asyncio.create_task(session.abort())
+                fail_input(OSError("interactive diagnostic write failed"))
             return
         lines.put_nowait(raw)
+
+    def input_ready() -> None:
+        try:
+            raw = os.read(stdin_fd, 4096)
+        except OSError as error:
+            fail_input(error)
+            return
+        if raw == b"":
+            deliver(b"")
+            return
+        try:
+            completed = editor.feed(raw)
+        except OSError as error:
+            fail_input(error)
+            return
+        for item in completed:
+            deliver(item)
+            if item == b"":
+                return
 
     loop.add_reader(stdin_fd, input_ready)
     try:
@@ -740,6 +763,7 @@ async def _drive_interactive(session: AgentSession, shutdown: _Shutdown) -> int:
             if item == "terminate":
                 return _shutdown_status(shutdown)
             if item == "interrupt":
+                editor.reset()
                 write_stdout("\n")
                 continue
             if isinstance(item, OSError):
@@ -797,6 +821,7 @@ async def _drive_interactive(session: AgentSession, shutdown: _Shutdown) -> int:
         return 1
     finally:
         loop.remove_reader(stdin_fd)
+        _restore_tty(stdin_fd, saved_tty)
 
 
 def _consume_task_exception(task: asyncio.Task[object]) -> None:
