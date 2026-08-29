@@ -4,12 +4,14 @@ version = "0.1.1"
 description = "A small Python coding-agent product"
 readme = "README.md"
 license = "MIT"
-license-files = ["LICENSE"]
+license-files = ["LICENSE", "docs/licenses/ICU-77.1-LICENSE.txt"]
 requires-python = ">=3.12,<3.14"
 dependencies = [
   "httpx==0.28.1",
   "google-re2==1.1.20251105",
   "PyYAML==6.0.3",
+  "pyicu-wheels==2.15.2",
+  "wcwidth==0.8.2",
 ]
 
 [project.scripts]

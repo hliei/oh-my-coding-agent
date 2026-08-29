@@ -1,12 +1,18 @@
 from __future__ import annotations
 
-from typing import Any, BinaryIO
+from dataclasses import dataclass
+from typing import Any, BinaryIO, Literal
+import os
+import string
 import sys
 import termios
 import tty
-import unicodedata
 
+import icu  # type: ignore[import-untyped]
+import wcwidth
 from oh_my_llm._canonical import encodeCanonical
+
+from ._prompt_resources import _es_trim
 
 
 _BIDI = frozenset(
@@ -26,8 +32,11 @@ _BIDI = frozenset(
     }
 )
 _FIELD_EXTRA = frozenset({'\t', '\n', '"', '\\'})
-_ERASE_COLUMN = b"\x08 \x08"
 _UTF8_ERROR = "interactive input is not UTF-8"
+_WIDTH_ERROR = "interactive input width is invalid"
+_WIDTH_UNICODE = "17.0.0"
+_ICU_ROOT = icu.Locale.getRoot()
+_INTERRUPT = b"\x03"
 
 
 def encode_body(value: str) -> str:
@@ -120,17 +129,84 @@ def _restore_tty(fd: int, saved: list[Any]) -> None:
     termios.tcsetattr(fd, termios.TCSANOW, saved)
 
 
-class _EndOfLineEditor:
-    __slots__ = ("_echo", "_chars", "_pending")
+@dataclass(frozen=True, slots=True)
+class _VisualRow:
+    text: str
+    start: int
+    cells: int
 
-    def __init__(self, *, echo: bool) -> None:
+
+class _CommandInput:
+    __slots__ = (
+        "_echo",
+        "_output_fd",
+        "_text",
+        "_cursor",
+        "_busy_text",
+        "_pending",
+        "_consumed_cr",
+        "_mode",
+        "_paused",
+        "_width",
+        "_height",
+        "_origin",
+        "_owned_rows",
+        "_grapheme_iter",
+        "_word_iter",
+    )
+
+    def __init__(self, *, echo: bool, output_fd: int) -> None:
         self._echo = echo
-        self._chars: list[str] = []
+        self._output_fd = output_fd
+        self._text = ""
+        self._cursor = 0
+        self._busy_text = ""
         self._pending = bytearray()
+        self._consumed_cr = False
+        self._mode: Literal["idle", "busy"] = "idle"
+        self._paused = False
+        self._width = 0
+        self._height = 0
+        self._origin = 0
+        self._owned_rows = 0
+        self._grapheme_iter = icu.BreakIterator.createCharacterInstance(_ICU_ROOT)
+        self._word_iter = icu.BreakIterator.createWordInstance(_ICU_ROOT)
 
-    def reset(self) -> None:
-        self._chars.clear()
+    def begin(self) -> None:
+        self._read_size()
+        self._paint()
+
+    def resize(self) -> None:
+        width, height = self._query_size()
+        if width < 3 or height < 1:
+            self._enter_pause()
+            return
+        self._width = width
+        self._height = height
+        recovering = self._paused
+        self._paused = False
+        if self._mode == "idle" and (recovering or self._echo or self._owned_rows):
+            self._paint()
+
+    def handle_idle_interrupt(self) -> None:
+        self._text = ""
+        self._cursor = 0
         self._pending.clear()
+        self._consumed_cr = False
+        self._origin = 0
+        if not self._paused:
+            self._paint()
+
+    def reopen_idle(self) -> None:
+        self._busy_text = ""
+        self._pending.clear()
+        self._text = ""
+        self._cursor = 0
+        self._origin = 0
+        self._owned_rows = 0
+        self._mode = "idle"
+        if not self._paused:
+            self._paint()
 
     def feed(self, data: bytes) -> list[bytes]:
         self._pending.extend(data)
@@ -138,85 +214,468 @@ class _EndOfLineEditor:
         while self._pending:
             first = self._pending[0]
             if first == 0x1B:
-                if _take_escape(self._pending):
+                action = _take_escape(self._pending)
+                if action is None:
                     break
+                if action == "reprocess":
+                    continue
+                event = self._navigation(action)
+                if event is not None:
+                    completed.append(event)
                 continue
             if first < 0x20 or first == 0x7F:
                 del self._pending[0]
                 event = self._control(first)
                 if event is not None:
                     completed.append(event)
+                    if event == b"":
+                        return completed
+                continue
+            if self._paused:
+                self._consume_paused_utf8()
                 continue
             character = _take_complete_character(self._pending)
             if character is None:
                 break
-            self._chars.append(character)
-            if self._echo:
-                write_stdout(character)
+            self._note_raw(None)
+            self._insert(character)
         return completed
 
     def _control(self, first: int) -> bytes | None:
-        if first in {0x0A, 0x0D}:
-            if first == 0x0D and self._pending[:1] == b"\n":
-                del self._pending[0]
-            line = "".join(self._chars)
-            self._chars.clear()
-            if self._echo:
-                write_stdout("\n")
-            return (line + "\n").encode("utf-8")
+        if first == 0x0A and self._consumed_cr:
+            self._consumed_cr = False
+            return None
+        if first == 0x0D:
+            self._consumed_cr = True
+            return self._enter()
+        self._consumed_cr = False
+        if first == 0x0A:
+            return self._enter()
+        if first == 0x03:
+            return self._interrupt()
         if first in {0x08, 0x7F}:
-            if not self._chars:
-                return None
-            character = self._chars.pop()
-            if self._echo:
-                write_stdout(_ERASE_COLUMN * _display_columns(character))
+            self._backward_delete()
             return None
         if first == 0x04:
-            if self._chars:
-                line = "".join(self._chars)
-                self._chars.clear()
-                return (line + "\n").encode("utf-8")
-            return b""
+            return self._ctrl_d()
         return None
 
+    def _navigation(self, action: str) -> bytes | None:
+        self._note_raw(None)
+        if self._paused or self._mode == "busy" or not action:
+            return None
+        before = self._cursor
+        if action == "left":
+            self._cursor = _move_grapheme(
+                self._text, self._cursor, -1, self._grapheme_iter
+            )
+        elif action == "right":
+            self._cursor = _move_grapheme(
+                self._text, self._cursor, 1, self._grapheme_iter
+            )
+        elif action == "word_left":
+            self._cursor = _word_move(
+                self._text, self._cursor, -1, self._word_iter
+            )
+        elif action == "word_right":
+            self._cursor = _word_move(
+                self._text, self._cursor, 1, self._word_iter
+            )
+        elif action == "forward_delete":
+            self._forward_delete()
+            return None
+        else:
+            return None
+        if self._cursor != before and self._echo:
+            self._paint()
+        return None
 
-def _take_escape(buffer: bytearray) -> bool:
-    """Return True if the leading ESC still needs more bytes."""
+    def _insert(self, character: str) -> None:
+        if self._mode == "busy":
+            self._busy_text += character
+            return
+        self._text = self._text[: self._cursor] + character + self._text[self._cursor :]
+        self._cursor += len(character)
+        if self._echo:
+            self._paint()
+
+    def _backward_delete(self) -> None:
+        if self._paused:
+            return
+        if self._mode == "busy":
+            if not self._busy_text:
+                return
+            start = _move_grapheme(
+                self._busy_text, len(self._busy_text), -1, self._grapheme_iter
+            )
+            self._busy_text = self._busy_text[:start]
+            return
+        if self._cursor == 0:
+            return
+        start = _move_grapheme(self._text, self._cursor, -1, self._grapheme_iter)
+        self._text = self._text[:start] + self._text[self._cursor :]
+        self._cursor = start
+        if self._echo:
+            self._paint()
+
+    def _forward_delete(self) -> None:
+        if self._paused or self._mode == "busy":
+            return
+        if self._cursor >= len(self._text):
+            return
+        end = _move_grapheme(self._text, self._cursor, 1, self._grapheme_iter)
+        self._text = self._text[: self._cursor] + self._text[end:]
+        if self._echo:
+            self._paint()
+
+    def _enter(self) -> bytes | None:
+        if self._paused:
+            return None
+        if self._mode == "busy":
+            line = self._busy_text
+            self._busy_text = ""
+            if not _es_trim(line):
+                return None
+            return (line + "\n").encode("utf-8")
+        line = self._text
+        if not _es_trim(line):
+            self._text = ""
+            self._cursor = 0
+            self._origin = 0
+            self._paint()
+            return None
+        self._finalize()
+        self._text = ""
+        self._cursor = 0
+        self._origin = 0
+        self._busy_text = ""
+        self._mode = "busy"
+        return (line + "\n").encode("utf-8")
+
+    def _ctrl_d(self) -> bytes | None:
+        if self._mode == "busy":
+            return b"" if not self._busy_text else None
+        if self._paused:
+            return b"" if not self._text else None
+        if not self._text:
+            return b""
+        self._forward_delete()
+        return None
+
+    def _interrupt(self) -> bytes | None:
+        if self._mode == "busy":
+            return _INTERRUPT
+        self.handle_idle_interrupt()
+        return None
+
+    def _consume_paused_utf8(self) -> None:
+        first = self._pending[0]
+        length = _utf8_length(first)
+        if length is None or any(
+            (byte & 0xC0) != 0x80 for byte in self._pending[1 : min(len(self._pending), length)]
+        ):
+            del self._pending[0]
+            self._note_raw(None)
+            return
+        if len(self._pending) < length:
+            self._pending.clear()
+            self._note_raw(None)
+            return
+        try:
+            bytes(self._pending[:length]).decode("utf-8")
+        except UnicodeDecodeError:
+            del self._pending[0]
+            self._note_raw(None)
+            return
+        del self._pending[:length]
+        self._note_raw(None)
+
+    def _note_raw(self, first: int | None) -> None:
+        if first == 0x0D:
+            return
+        if first == 0x0A and self._consumed_cr:
+            return
+        self._consumed_cr = False
+
+    def _enter_pause(self) -> None:
+        self._paused = True
+        self._pending.clear()
+
+    def _read_size(self) -> None:
+        width, height = self._query_size()
+        if width < 3 or height < 1:
+            raise OSError("terminal geometry is unusable")
+        self._width = width
+        self._height = height
+        self._paused = False
+
+    def _query_size(self) -> tuple[int, int]:
+        size = os.get_terminal_size(self._output_fd)
+        return size.columns, size.lines
+
+    def _viewport_cap(self) -> int:
+        return min(self._height, max(5, self._height * 30 // 100))
+
+    def _layout(self) -> list[_VisualRow]:
+        if not self._text:
+            return [_VisualRow("", 0, 0)]
+        rows: list[_VisualRow] = []
+        capacity = self._width - 3
+        start = 0
+        text = ""
+        cells = 0
+        for begin, end in _grapheme_bounds(self._text, self._grapheme_iter):
+            grapheme = self._text[begin:end]
+            width = _grapheme_width(grapheme)
+            overflow = cells + width > capacity
+            if text and overflow:
+                rows.append(_VisualRow(text, start, cells))
+                start = begin
+                text = grapheme
+                cells = width
+                capacity = self._width - 1
+            elif not text and overflow:
+                rows.append(_VisualRow("", start, 0))
+                start = begin
+                text = grapheme
+                cells = width
+                capacity = self._width - 1
+                if width > capacity:
+                    raise RuntimeError(_WIDTH_ERROR)
+            else:
+                text += grapheme
+                cells += width
+        rows.append(_VisualRow(text, start, cells))
+        return rows
+
+    def _cursor_row_col(self, rows: list[_VisualRow]) -> tuple[int, int]:
+        for index, row in enumerate(rows):
+            end = rows[index + 1].start if index + 1 < len(rows) else len(self._text)
+            if self._cursor > end:
+                continue
+            if self._cursor < end or index == len(rows) - 1:
+                prefix = self._width_of(self._text[row.start : self._cursor])
+                prompt = 2 if index == 0 else 0
+                return index, prompt + prefix
+        return 0, 2
+
+    def _width_of(self, text: str) -> int:
+        total = 0
+        for begin, end in _grapheme_bounds(text, self._grapheme_iter):
+            total += _grapheme_width(text[begin:end])
+        return total
+
+    def _follow(self, cursor_row: int, row_count: int) -> int:
+        cap = self._viewport_cap()
+        if row_count <= cap:
+            self._origin = 0
+            return 0
+        origin = self._origin
+        if cursor_row < origin:
+            origin = cursor_row
+        elif cursor_row >= origin + cap:
+            origin = cursor_row - cap + 1
+        origin = max(0, min(origin, row_count - cap))
+        self._origin = origin
+        return origin
+
+    def _home(self) -> None:
+        if self._owned_rows > 1:
+            write_stdout(f"\x1b[{self._owned_rows - 1}A")
+        if self._owned_rows >= 1:
+            write_stdout("\r")
+
+    def _paint(self) -> None:
+        if self._paused or self._mode == "busy":
+            return
+        if not self._text and self._owned_rows == 0:
+            write_stdout("> ")
+            self._owned_rows = 1
+            return
+        self._home()
+        if not self._echo:
+            write_stdout("> \x1b[K")
+            extra = self._owned_rows - 1
+            if extra > 0:
+                for _ in range(extra):
+                    write_stdout("\n\x1b[K")
+                write_stdout(f"\x1b[{extra}A")
+            self._owned_rows = 1
+            return
+        rows = self._layout()
+        cursor_row, cursor_col = self._cursor_row_col(rows)
+        origin = self._follow(cursor_row, len(rows))
+        visible = rows[origin : origin + self._viewport_cap()]
+        for index, row in enumerate(visible):
+            prefix = "> " if origin == 0 and index == 0 else ""
+            write_stdout(prefix + row.text)
+            write_stdout("\x1b[K")
+            if index < len(visible) - 1:
+                write_stdout("\n")
+        extra = self._owned_rows - len(visible)
+        if extra > 0:
+            for _ in range(extra):
+                write_stdout("\n\x1b[K")
+            write_stdout(f"\x1b[{extra}A")
+        self._owned_rows = max(len(visible), 1)
+        last = len(visible) - 1
+        target = cursor_row - origin
+        up = last - target
+        if up > 0:
+            write_stdout(f"\x1b[{up}A")
+        write_stdout(f"\x1b[{cursor_col + 1}G")
+
+    def _finalize(self) -> None:
+        if not self._echo:
+            write_stdout("\n")
+            self._owned_rows = 0
+            return
+        rows = self._layout()
+        cursor_row, _cursor_col = self._cursor_row_col(rows)
+        origin = self._origin if len(rows) > self._viewport_cap() else 0
+        visible_count = min(len(rows) - origin, self._viewport_cap())
+        last_row = origin + visible_count - 1
+        down = last_row - cursor_row
+        if down > 0:
+            write_stdout(f"\x1b[{down}B")
+        write_stdout("\n")
+        self._owned_rows = 0
+
+
+def _grapheme_bounds(text: str, iterator: icu.BreakIterator) -> list[tuple[int, int]]:
+    return [(start, end) for start, end, _status in _segments(text, iterator)]
+
+
+def _segments(
+    text: str, iterator: icu.BreakIterator
+) -> list[tuple[int, int, int]]:
+    utf16_to_cp = {0: 0}
+    units = 0
+    for index, character in enumerate(text, 1):
+        units += len(character.encode("utf-16-le")) // 2
+        utf16_to_cp[units] = index
+    iterator.setText(text)
+    start = 0
+    result: list[tuple[int, int, int]] = []
+    for end_units in iterator:
+        end = utf16_to_cp[end_units]
+        result.append((start, end, iterator.getRuleStatus()))
+        start = end
+    return result
+
+
+def _move_grapheme(
+    text: str, cursor: int, direction: int, iterator: icu.BreakIterator
+) -> int:
+    bounds = [0, *[end for _start, end in _grapheme_bounds(text, iterator)]]
+    if direction < 0:
+        previous = [bound for bound in bounds if bound < cursor]
+        return previous[-1] if previous else 0
+    following = [bound for bound in bounds if bound > cursor]
+    return following[0] if following else len(text)
+
+
+def _word_move(
+    text: str, cursor: int, direction: int, iterator: icu.BreakIterator
+) -> int:
+    side = text[cursor:] if direction == 1 else text[:cursor]
+    spans = _segments(side, iterator)
+    if direction == -1:
+        spans.reverse()
+    consumed = 0
+    while spans and side[spans[0][0] : spans[0][1]].isspace():
+        start, end, _status = spans.pop(0)
+        consumed += end - start
+    if not spans:
+        return cursor + direction * consumed
+    start, end, status = spans[0]
+    fragment = side[start:end]
+    if status >= 100:
+        punctuation = [
+            index
+            for index, character in enumerate(fragment)
+            if character in string.punctuation
+        ]
+        if punctuation:
+            consumed += (
+                punctuation[0]
+                if direction == 1
+                else len(fragment) - punctuation[-1] - 1
+            )
+        else:
+            consumed += len(fragment)
+    else:
+        for start, end, status in spans:
+            if status >= 100 or side[start:end].isspace():
+                break
+            consumed += end - start
+    return cursor + direction * consumed
+
+
+def _grapheme_width(grapheme: str) -> int:
+    cells = wcwidth.wcswidth(
+        grapheme, ambiguous_width=1, unicode_version=_WIDTH_UNICODE
+    )
+    if cells < 0:
+        raise OSError(_WIDTH_ERROR)
+    return cells
+
+
+def _take_escape(buffer: bytearray) -> str | None:
     if len(buffer) == 1:
-        return True
+        return None
     second = buffer[1]
     if second == 0x5B:
         return _take_csi(buffer)
     if second == 0x4F:
         if len(buffer) == 2:
-            return True
-        if 0x20 <= buffer[2] <= 0x7E:
-            del buffer[:3]
-            return False
+            return None
+        final = buffer[2]
+        if not (0x20 <= final <= 0x7E):
+            del buffer[:2]
+            return "reprocess"
+        del buffer[:3]
+        if final == 0x44:
+            return "left"
+        if final == 0x43:
+            return "right"
+        return ""
+    if second in {0x62, 0x66}:
         del buffer[:2]
-        return False
+        return "word_left" if second == 0x62 else "word_right"
     del buffer[0]
-    return False
+    return "reprocess"
 
 
-def _take_csi(buffer: bytearray) -> bool:
-    """Return True if the CSI sequence still needs more bytes."""
+def _take_csi(buffer: bytearray) -> str | None:
     index = 2
     while index < len(buffer) and 0x30 <= buffer[index] <= 0x3F:
         index += 1
     while index < len(buffer) and 0x20 <= buffer[index] <= 0x2F:
         index += 1
     if index >= len(buffer):
-        return True
+        return None
     if 0x40 <= buffer[index] <= 0x7E:
+        parameter = bytes(buffer[2:index])
+        final = buffer[index]
         del buffer[: index + 1]
-        return False
+        return _csi_action(parameter, final)
     del buffer[:index]
-    return False
+    return ""
 
 
-def _display_columns(character: str) -> int:
-    return 2 if unicodedata.east_asian_width(character) in {"W", "F"} else 1
+def _csi_action(parameter: bytes, final: int) -> str:
+    if parameter == b"" and final == 0x44:
+        return "left"
+    if parameter == b"" and final == 0x43:
+        return "right"
+    if parameter == b"1;3" and final == 0x44:
+        return "word_left"
+    if parameter == b"1;3" and final == 0x43:
+        return "word_right"
+    if parameter == b"3" and final == 0x7E:
+        return "forward_delete"
+    return ""
 
 
 def _take_complete_character(buffer: bytearray) -> str | None:

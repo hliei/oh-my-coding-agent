@@ -23,7 +23,8 @@ from oh_my_llm import AssistantMessage, LifecycleError, ModelsError, TextContent
 from ._prompt_resources import _es_trim
 from ._session_manager import _resolve_path, _session_id
 from ._terminal import (
-    _EndOfLineEditor,
+    _INTERRUPT,
+    _CommandInput,
     _acquire_end_of_line_editing,
     _restore_tty,
     encode_body,
@@ -647,7 +648,7 @@ async def _drive_interactive(session: AgentSession, shutdown: _Shutdown) -> int:
     rendered_text = ""
     busy = False
     queued_nonempty = False
-    input_failure: OSError | None = None
+    input_failure: Exception | None = None
 
     async def render(event: AgentSessionEvent) -> None:
         nonlocal rendered_text
@@ -699,12 +700,13 @@ async def _drive_interactive(session: AgentSession, shutdown: _Shutdown) -> int:
 
     session.subscribe(render)
     loop = asyncio.get_running_loop()
-    lines: asyncio.Queue[bytes | OSError] = asyncio.Queue()
+    lines: asyncio.Queue[bytes | Exception] = asyncio.Queue()
     stdin_fd = sys.stdin.buffer.fileno()
     saved_tty, echo = _acquire_end_of_line_editing(stdin_fd)
-    editor = _EndOfLineEditor(echo=echo)
+    output_fd = sys.stdout.buffer.fileno()
+    editor = _CommandInput(echo=echo, output_fd=output_fd)
 
-    def fail_input(error: OSError) -> None:
+    def fail_input(error: Exception) -> None:
         nonlocal input_failure
         loop.remove_reader(stdin_fd)
         input_failure = error
@@ -713,12 +715,26 @@ async def _drive_interactive(session: AgentSession, shutdown: _Shutdown) -> int:
             return
         lines.put_nowait(error)
 
+    def on_resize() -> None:
+        if input_failure is not None:
+            return
+        try:
+            editor.resize()
+        except Exception as error:
+            fail_input(error)
+
     def deliver(raw: bytes) -> None:
         nonlocal queued_nonempty
         if raw == b"":
             loop.remove_reader(stdin_fd)
             if busy:
                 asyncio.create_task(session.abort())
+            lines.put_nowait(raw)
+            return
+        if raw == _INTERRUPT:
+            if busy:
+                asyncio.create_task(session.abort())
+                return
             lines.put_nowait(raw)
             return
         try:
@@ -749,7 +765,7 @@ async def _drive_interactive(session: AgentSession, shutdown: _Shutdown) -> int:
             return
         try:
             completed = editor.feed(raw)
-        except OSError as error:
+        except Exception as error:
             fail_input(error)
             return
         for item in completed:
@@ -758,21 +774,27 @@ async def _drive_interactive(session: AgentSession, shutdown: _Shutdown) -> int:
                 return
 
     reader_registered = False
+    winch_registered = False
     try:
+        editor.begin()
         loop.add_reader(stdin_fd, input_ready)
         reader_registered = True
+        try:
+            loop.add_signal_handler(signal.SIGWINCH, on_resize)
+            winch_registered = True
+        except (NotImplementedError, RuntimeError):
+            signal.signal(signal.SIGWINCH, lambda _num, _frame: on_resize())
+            winch_registered = True
         while True:
             if shutdown.signum is not None:
                 return _shutdown_status(shutdown)
-            write_stdout("> ")
             item = await _wait_line_or_control(lines, shutdown)
             if item == "terminate":
                 return _shutdown_status(shutdown)
-            if item == "interrupt":
-                editor.reset()
-                write_stdout("\n")
+            if item == "interrupt" or item == _INTERRUPT:
+                editor.handle_idle_interrupt()
                 continue
-            if isinstance(item, OSError):
+            if isinstance(item, Exception):
                 raise item
             if item == b"":
                 return 0
@@ -814,6 +836,7 @@ async def _drive_interactive(session: AgentSession, shutdown: _Shutdown) -> int:
                 write_stdout(f"run {classification}\n")
             finally:
                 busy = False
+                editor.reopen_idle()
     except LifecycleError as error:
         write_lifecycle(error.code, str(error))
         return 1
@@ -829,6 +852,11 @@ async def _drive_interactive(session: AgentSession, shutdown: _Shutdown) -> int:
     finally:
         if reader_registered:
             loop.remove_reader(stdin_fd)
+        if winch_registered:
+            try:
+                loop.remove_signal_handler(signal.SIGWINCH)
+            except (NotImplementedError, RuntimeError, OSError):
+                signal.signal(signal.SIGWINCH, signal.SIG_DFL)
         try:
             _restore_tty(stdin_fd, saved_tty)
         except OSError:
@@ -850,9 +878,9 @@ def _shutdown_status(shutdown: _Shutdown) -> int:
 
 
 async def _wait_line_or_control(
-    lines: asyncio.Queue[bytes | OSError],
+    lines: asyncio.Queue[bytes | Exception],
     shutdown: _Shutdown,
-) -> bytes | OSError | Literal["interrupt", "terminate"]:
+) -> bytes | Exception | Literal["interrupt", "terminate"]:
     if shutdown.signum is not None:
         return "terminate"
     line = asyncio.create_task(lines.get())
