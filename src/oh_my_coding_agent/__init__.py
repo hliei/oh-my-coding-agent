@@ -8,6 +8,14 @@ from ._session import (
     createAgentSession,
 )
 from ._extensions import ExtensionAPI, ExtensionContext
+from ._resource_state import (
+    ExtensionDiagnostic,
+    ProjectResourceState,
+    ProjectRuleResolution,
+    PromptResourceCandidate,
+    PromptResourceResolution,
+    ResourceResolutionReport,
+)
 from ._session_manager import (
     CURRENT_SESSION_VERSION,
     BranchSummaryEntry,
@@ -46,11 +54,17 @@ __all__ = (
     "CustomMessageEntry",
     "ExtensionAPI",
     "ExtensionContext",
+    "ExtensionDiagnostic",
     "FileEntry",
     "LabelEntry",
     "ModelChangeEntry",
     "NewSessionOptions",
+    "ProjectResourceState",
+    "ProjectRuleResolution",
     "PromptOptions",
+    "PromptResourceCandidate",
+    "PromptResourceResolution",
+    "ResourceResolutionReport",
     "SessionContext",
     "SessionEntry",
     "SessionEntryBase",

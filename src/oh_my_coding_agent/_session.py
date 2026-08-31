@@ -51,6 +51,8 @@ from ._prompt_resources import (
     expand_prompt,
     load_prompt_resources,
 )
+from ._project_rules import ProjectRuleSnapshot, load_project_rules
+from ._resource_state import ProjectResourceState
 from ._system_prompt import build_system_prompt
 from ._tools import product_session_tools
 from ._compaction import (
@@ -300,6 +302,8 @@ class AgentSession:
         "_prompt_cancel_requested",
         "_prompt_settlement",
         "_prompt_resources",
+        "_project_rules",
+        "_project_resource_state",
         "_prompt_terminal_projection_truncated",
         "_session_manager",
         "_system_prompt",
@@ -314,6 +318,7 @@ class AgentSession:
         operational_cwd: str,
         agent: Agent,
         prompt_resources: PromptResourceSnapshot,
+        project_rules: ProjectRuleSnapshot,
         extensions: ExtensionRuntime,
         _token: object,
     ) -> None:
@@ -324,6 +329,8 @@ class AgentSession:
         self._session_manager = session_manager
         self._operational_cwd = operational_cwd
         self._prompt_resources = prompt_resources
+        self._project_rules = project_rules
+        self._project_resource_state = project_rules.state()
         self._extensions = extensions
         self._overflow_recovery_attempted = False
         self._pending_agent_end: AgentEvent | None = None
@@ -371,6 +378,10 @@ class AgentSession:
     @property
     def systemPrompt(self) -> str:
         return self._system_prompt
+
+    @property
+    def projectResourceState(self) -> ProjectResourceState:
+        return self._project_resource_state
 
     @property
     def messages(self) -> tuple[AgentMessage, ...]:
@@ -1382,6 +1393,7 @@ async def createAgentSession(
         raise ModelsError("auth", "DeepSeek authentication is required")
 
     prompt_resources = load_prompt_resources(operational_cwd, selected.projectTrusted)
+    project_rules = load_project_rules(operational_cwd, selected.projectTrusted)
     extensions = await load_extensions(operational_cwd, selected.projectTrusted)
 
     manager = (
@@ -1411,7 +1423,10 @@ async def createAgentSession(
                 yield event
 
         system_prompt = build_system_prompt(
-            operational_cwd, prompt_resources, extensions.tool_summaries()
+            operational_cwd,
+            prompt_resources,
+            project_rules,
+            extensions.tool_summaries(),
         )
         agent = Agent(
             AgentOptions(
@@ -1435,6 +1450,7 @@ async def createAgentSession(
             operational_cwd=operational_cwd,
             agent=agent,
             prompt_resources=prompt_resources,
+            project_rules=project_rules,
             extensions=extensions,
             _token=_SESSION_TOKEN,
         )

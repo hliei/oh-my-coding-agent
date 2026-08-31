@@ -3,6 +3,7 @@ from __future__ import annotations
 from datetime import datetime
 
 from ._prompt_resources import PromptResourceSnapshot
+from ._project_rules import ProjectRuleSnapshot
 from ._tools.registry import BUILTIN_TOOLS
 
 
@@ -38,6 +39,7 @@ def _local_date() -> str:
 def build_system_prompt(
     cwd: str,
     snapshot: PromptResourceSnapshot,
+    project_rules: ProjectRuleSnapshot,
     extension_tools: tuple[tuple[str, str], ...] = (),
 ) -> str:
     tools = "\n".join(
@@ -53,10 +55,26 @@ def build_system_prompt(
         f"Guidelines:\n"
         f"{_GUIDELINES}"
     )
+    prompt += _format_project_rules(project_rules)
     prompt += _format_skills(snapshot)
     prompt += f"\nCurrent date: {_local_date()}"
     prompt += f"\nCurrent working directory: {cwd}"
     return prompt
+
+
+def _format_project_rules(snapshot: ProjectRuleSnapshot) -> str:
+    if not snapshot.rules:
+        return ""
+    lines = [
+        "\n\n<project_context>\n",
+        "Project-specific instructions and guidelines:\n",
+    ]
+    for rule in snapshot.rules:
+        lines.append(f'<project_instructions path="{rule.path}">')
+        lines.append(rule.content)
+        lines.append("</project_instructions>\n")
+    lines.append("</project_context>\n")
+    return "\n".join(lines)
 
 
 def _format_skills(snapshot: PromptResourceSnapshot) -> str:
