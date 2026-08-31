@@ -330,7 +330,10 @@ class AgentSession:
         self._operational_cwd = operational_cwd
         self._prompt_resources = prompt_resources
         self._project_rules = project_rules
-        self._project_resource_state = project_rules.state()
+        self._project_resource_state = project_rules.state(
+            skills=prompt_resources.skill_resolutions,
+            prompt_templates=prompt_resources.template_resolutions,
+        )
         self._extensions = extensions
         self._overflow_recovery_attempted = False
         self._pending_agent_end: AgentEvent | None = None

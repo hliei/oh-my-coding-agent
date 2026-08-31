@@ -4,7 +4,7 @@ from dataclasses import dataclass
 import os
 import re
 import stat
-from typing import Final
+from typing import Final, Literal
 
 from oh_my_llm import LifecycleError
 
@@ -14,6 +14,8 @@ from ._frontmatter import (
     parse_frontmatter_mapping,
     split_frontmatter,
 )
+from ._project_rules import _discovery_chain
+from ._resource_state import PromptResourceCandidate, PromptResourceResolution
 
 
 _NAME_PATTERN: Final[re.Pattern[str]] = re.compile(r"^[a-z0-9]+(?:-[a-z0-9]+)*$")
@@ -66,6 +68,8 @@ class TemplateResource:
 class PromptResourceSnapshot:
     skills: tuple[SkillResource, ...]
     templates: tuple[TemplateResource, ...]
+    skill_resolutions: tuple[PromptResourceResolution, ...] = ()
+    template_resolutions: tuple[PromptResourceResolution, ...] = ()
 
     def skill(self, name: str) -> SkillResource | None:
         for resource in self.skills:
@@ -94,15 +98,53 @@ def is_resource_name(name: str) -> bool:
 def load_prompt_resources(cwd: str, project_trusted: bool) -> PromptResourceSnapshot:
     if not project_trusted:
         return EMPTY_SNAPSHOT
-    omh = os.path.join(cwd, ".omh")
-    kind = _lstat_kind(omh, label='Project configuration ".omh"')
-    if kind is None:
-        return EMPTY_SNAPSHOT
-    if kind != "dir":
-        raise ValueError('Project configuration ".omh" is invalid')
-    skills = _load_skills(os.path.join(omh, "skills"))
-    templates = _load_templates(os.path.join(omh, "prompts"))
-    return PromptResourceSnapshot(skills=skills, templates=templates)
+    skills: list[SkillResource] = []
+    templates: list[TemplateResource] = []
+    skill_resolutions: list[PromptResourceResolution] = []
+    template_resolutions: list[PromptResourceResolution] = []
+    for directory in _discovery_chain(cwd):
+        omh = _admit_dir(
+            os.path.join(directory, ".omh"),
+            'Project configuration ".omh"',
+        )
+        if omh is not None:
+            loaded_skills, loaded_skill_groups = _load_skills(
+                os.path.join(omh, "skills"),
+                source="omh",
+                prefix=".omh/skills",
+                cwd=cwd,
+            )
+            loaded_templates, loaded_template_groups = _load_templates(
+                os.path.join(omh, "prompts"),
+                cwd=cwd,
+            )
+            skills.extend(loaded_skills)
+            templates.extend(loaded_templates)
+            skill_resolutions.extend(loaded_skill_groups)
+            template_resolutions.extend(loaded_template_groups)
+        agents = _admit_dir(
+            os.path.join(directory, ".agents"),
+            'Skill namespace ".agents"',
+        )
+        if agents is not None:
+            loaded_skills, loaded_skill_groups = _load_skills(
+                os.path.join(agents, "skills"),
+                source="agents",
+                prefix=".agents/skills",
+                cwd=cwd,
+            )
+            skills.extend(loaded_skills)
+            skill_resolutions.extend(loaded_skill_groups)
+    skills.sort(key=lambda item: item.name)
+    templates.sort(key=lambda item: item.name)
+    skill_resolutions.sort(key=lambda item: item.name)
+    template_resolutions.sort(key=lambda item: item.name)
+    return PromptResourceSnapshot(
+        skills=tuple(skills),
+        templates=tuple(templates),
+        skill_resolutions=tuple(skill_resolutions),
+        template_resolutions=tuple(template_resolutions),
+    )
 
 
 def expand_prompt(
@@ -122,9 +164,10 @@ def _expand_skill(rest: str, snapshot: PromptResourceSnapshot) -> str:
     skill = snapshot.skill(name)
     if skill is None:
         raise ValueError(f'Skill "{name}" was not found')
+    skill_directory = skill.location.rsplit("/", 1)[0]
     block = (
         f'<skill name="{skill.name}" location="{skill.location}">\n'
-        f"References are relative to .omh/skills/{skill.name}.\n"
+        f"References are relative to {skill_directory}.\n"
         f"\n"
         f"{skill.body}\n"
         f"</skill>"
@@ -204,17 +247,24 @@ def substitute_args(content: str, args: list[str]) -> str:
     return _TEMPLATE_SUB.sub(replace, content)
 
 
-def _load_skills(skills_dir: str) -> tuple[SkillResource, ...]:
-    kind = _lstat_kind(skills_dir, label='Skill directory ".omh/skills"')
+def _load_skills(
+    skills_dir: str,
+    *,
+    source: Literal["omh", "agents"],
+    prefix: str,
+    cwd: str,
+) -> tuple[tuple[SkillResource, ...], tuple[PromptResourceResolution, ...]]:
+    label = f'Skill directory "{prefix}"'
+    kind = _lstat_kind(skills_dir, label=label)
     if kind is None:
-        return ()
+        return (), ()
     if kind != "dir":
-        raise ValueError('Skill directory ".omh/skills" is invalid')
-    names = _direct_names(skills_dir, 'Skill directory ".omh/skills"')
+        raise ValueError(f"{label} is invalid")
+    names = _direct_names(skills_dir, label)
     selected: list[tuple[str, str]] = []
     for name in names:
         entry = os.path.join(skills_dir, name)
-        relative = f".omh/skills/{name}/SKILL.md"
+        relative = f"{prefix}/{name}/SKILL.md"
         entry_kind = _lstat_kind(entry, label=f'Skill "{relative}"')
         if entry_kind == "symlink":
             raise ValueError(f'Skill "{relative}" is invalid')
@@ -229,17 +279,34 @@ def _load_skills(skills_dir: str) -> tuple[SkillResource, ...]:
         selected.append((name, skill_file))
     selected.sort(key=lambda item: item[0])
     skills: list[SkillResource] = []
+    resolutions: list[PromptResourceResolution] = []
     for name, path in selected:
-        relative = f".omh/skills/{name}/SKILL.md"
+        relative = f"{prefix}/{name}/SKILL.md"
         text = _read_utf8(path, relative, "Skill")
-        skills.append(_parse_skill(name, text, relative))
-    return tuple(skills)
+        location = _cwd_relative(path, cwd)
+        skills.append(_parse_skill(name, text, relative, location))
+        resolutions.append(
+            PromptResourceResolution(
+                kind="skill",
+                name=name,
+                candidates=(
+                    PromptResourceCandidate(
+                        source=source,
+                        path=os.path.abspath(path),
+                        disposition="effective",
+                    ),
+                ),
+            )
+        )
+    return tuple(skills), tuple(resolutions)
 
 
-def _load_templates(prompts_dir: str) -> tuple[TemplateResource, ...]:
+def _load_templates(
+    prompts_dir: str, *, cwd: str
+) -> tuple[tuple[TemplateResource, ...], tuple[PromptResourceResolution, ...]]:
     kind = _lstat_kind(prompts_dir, label='Prompt Template directory ".omh/prompts"')
     if kind is None:
-        return ()
+        return (), ()
     if kind != "dir":
         raise ValueError('Prompt Template directory ".omh/prompts" is invalid')
     names = _direct_names(prompts_dir, 'Prompt Template directory ".omh/prompts"')
@@ -256,14 +323,30 @@ def _load_templates(prompts_dir: str) -> tuple[TemplateResource, ...]:
         selected.append((stem, path))
     selected.sort(key=lambda item: item[0])
     templates: list[TemplateResource] = []
+    resolutions: list[PromptResourceResolution] = []
     for name, path in selected:
         relative = f".omh/prompts/{name}.md"
         text = _read_utf8(path, relative, "Prompt Template")
         templates.append(_parse_template(name, text, relative))
-    return tuple(templates)
+        resolutions.append(
+            PromptResourceResolution(
+                kind="prompt_template",
+                name=name,
+                candidates=(
+                    PromptResourceCandidate(
+                        source="omh",
+                        path=os.path.abspath(path),
+                        disposition="effective",
+                    ),
+                ),
+            )
+        )
+    return tuple(templates), tuple(resolutions)
 
 
-def _parse_skill(directory_name: str, text: str, relative: str) -> SkillResource:
+def _parse_skill(
+    directory_name: str, text: str, relative: str, location: str
+) -> SkillResource:
     mapping, body = _document_fields(text, relative, "Skill")
     allowed = {"name", "description", "disable-model-invocation"}
     if set(mapping) - allowed:
@@ -285,7 +368,7 @@ def _parse_skill(directory_name: str, text: str, relative: str) -> SkillResource
         name=name_scalar.text,
         description=description,
         body=body,
-        location=relative,
+        location=location,
         disable_model_invocation=disable,
     )
 
@@ -406,6 +489,19 @@ def _lstat_kind(path: str, *, label: str) -> str | None:
     if stat.S_ISREG(info.st_mode):
         return "file"
     return "other"
+
+
+def _admit_dir(path: str, label: str) -> str | None:
+    kind = _lstat_kind(path, label=label)
+    if kind is None:
+        return None
+    if kind != "dir":
+        raise ValueError(f"{label} is invalid")
+    return path
+
+
+def _cwd_relative(path: str, cwd: str) -> str:
+    return os.path.relpath(path, cwd).replace(os.sep, "/")
 
 
 def _es_trim(value: str) -> str:

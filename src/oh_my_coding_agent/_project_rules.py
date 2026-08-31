@@ -8,6 +8,7 @@ from typing import Literal
 from ._resource_state import (
     ProjectResourceState,
     ProjectRuleResolution,
+    PromptResourceResolution,
     ResourceAdmissionError,
     ResourceResolutionReport,
 )
@@ -39,7 +40,11 @@ class ProjectRuleSnapshot:
             if item.content is not None
         )
 
-    def state(self) -> ProjectResourceState:
+    def state(
+        self,
+        skills: tuple[PromptResourceResolution, ...] = (),
+        prompt_templates: tuple[PromptResourceResolution, ...] = (),
+    ) -> ProjectResourceState:
         if not self.trusted:
             report = ResourceResolutionReport(
                 discovery="disabled",
@@ -60,8 +65,8 @@ class ProjectRuleSnapshot:
                     )
                     for item in self.observations
                 ),
-                skills=(),
-                promptTemplates=(),
+                skills=skills,
+                promptTemplates=prompt_templates,
             )
         return ProjectResourceState(
             status="current",
