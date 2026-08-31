@@ -65,6 +65,15 @@ class TemplateResource:
 
 
 @dataclass(frozen=True, slots=True)
+class _PromptResourceSource:
+    name: str
+    source: Literal["omh", "agents"]
+    path: str
+    relative: str
+    directory_rank: int
+
+
+@dataclass(frozen=True, slots=True)
 class PromptResourceSnapshot:
     skills: tuple[SkillResource, ...]
     templates: tuple[TemplateResource, ...]
@@ -98,52 +107,48 @@ def is_resource_name(name: str) -> bool:
 def load_prompt_resources(cwd: str, project_trusted: bool) -> PromptResourceSnapshot:
     if not project_trusted:
         return EMPTY_SNAPSHOT
-    skills: list[SkillResource] = []
-    templates: list[TemplateResource] = []
-    skill_resolutions: list[PromptResourceResolution] = []
-    template_resolutions: list[PromptResourceResolution] = []
-    for directory in _discovery_chain(cwd):
+    skill_sources: list[_PromptResourceSource] = []
+    template_sources: list[_PromptResourceSource] = []
+    for directory_rank, directory in enumerate(_discovery_chain(cwd)):
         omh = _admit_dir(
             os.path.join(directory, ".omh"),
             'Project configuration ".omh"',
         )
         if omh is not None:
-            loaded_skills, loaded_skill_groups = _load_skills(
-                os.path.join(omh, "skills"),
-                source="omh",
-                prefix=".omh/skills",
-                cwd=cwd,
+            skill_sources.extend(
+                _discover_skills(
+                    os.path.join(omh, "skills"),
+                    source="omh",
+                    prefix=".omh/skills",
+                    directory_rank=directory_rank,
+                )
             )
-            loaded_templates, loaded_template_groups = _load_templates(
-                os.path.join(omh, "prompts"),
-                cwd=cwd,
+            template_sources.extend(
+                _discover_templates(
+                    os.path.join(omh, "prompts"),
+                    directory_rank=directory_rank,
+                )
             )
-            skills.extend(loaded_skills)
-            templates.extend(loaded_templates)
-            skill_resolutions.extend(loaded_skill_groups)
-            template_resolutions.extend(loaded_template_groups)
         agents = _admit_dir(
             os.path.join(directory, ".agents"),
             'Skill namespace ".agents"',
         )
         if agents is not None:
-            loaded_skills, loaded_skill_groups = _load_skills(
-                os.path.join(agents, "skills"),
-                source="agents",
-                prefix=".agents/skills",
-                cwd=cwd,
+            skill_sources.extend(
+                _discover_skills(
+                    os.path.join(agents, "skills"),
+                    source="agents",
+                    prefix=".agents/skills",
+                    directory_rank=directory_rank,
+                )
             )
-            skills.extend(loaded_skills)
-            skill_resolutions.extend(loaded_skill_groups)
-    skills.sort(key=lambda item: item.name)
-    templates.sort(key=lambda item: item.name)
-    skill_resolutions.sort(key=lambda item: item.name)
-    template_resolutions.sort(key=lambda item: item.name)
+    skills, skill_resolutions = _select_skills(skill_sources, cwd=cwd)
+    templates, template_resolutions = _select_templates(template_sources)
     return PromptResourceSnapshot(
-        skills=tuple(skills),
-        templates=tuple(templates),
-        skill_resolutions=tuple(skill_resolutions),
-        template_resolutions=tuple(template_resolutions),
+        skills=skills,
+        templates=templates,
+        skill_resolutions=skill_resolutions,
+        template_resolutions=template_resolutions,
     )
 
 
@@ -153,17 +158,19 @@ def expand_prompt(
     if not enabled or not text.startswith("/"):
         return text
     if text.startswith(_SKILL_PREFIX):
-        return _expand_skill(text[len(_SKILL_PREFIX) :], snapshot)
-    return _expand_template(text[1:], snapshot)
+        expanded = _expand_skill(text[len(_SKILL_PREFIX) :], snapshot)
+    else:
+        expanded = _expand_template(text[1:], snapshot)
+    return text if expanded is None else expanded
 
 
-def _expand_skill(rest: str, snapshot: PromptResourceSnapshot) -> str:
+def _expand_skill(rest: str, snapshot: PromptResourceSnapshot) -> str | None:
     name, suffix = _split_name(rest)
     if not is_resource_name(name):
-        raise ValueError("Invalid Skill invocation")
+        return None
     skill = snapshot.skill(name)
     if skill is None:
-        raise ValueError(f'Skill "{name}" was not found')
+        return None
     skill_directory = skill.location.rsplit("/", 1)[0]
     block = (
         f'<skill name="{skill.name}" location="{skill.location}">\n'
@@ -178,13 +185,13 @@ def _expand_skill(rest: str, snapshot: PromptResourceSnapshot) -> str:
     return block
 
 
-def _expand_template(rest: str, snapshot: PromptResourceSnapshot) -> str:
+def _expand_template(rest: str, snapshot: PromptResourceSnapshot) -> str | None:
     name, suffix = _split_name(rest)
     if not is_resource_name(name):
-        return "/" + rest
+        return None
     template = snapshot.template(name)
     if template is None:
-        raise ValueError(f'Prompt Template "{name}" was not found')
+        return None
     return substitute_args(template.body, parse_command_args(suffix))
 
 
@@ -247,21 +254,21 @@ def substitute_args(content: str, args: list[str]) -> str:
     return _TEMPLATE_SUB.sub(replace, content)
 
 
-def _load_skills(
+def _discover_skills(
     skills_dir: str,
     *,
     source: Literal["omh", "agents"],
     prefix: str,
-    cwd: str,
-) -> tuple[tuple[SkillResource, ...], tuple[PromptResourceResolution, ...]]:
+    directory_rank: int,
+) -> tuple[_PromptResourceSource, ...]:
     label = f'Skill directory "{prefix}"'
     kind = _lstat_kind(skills_dir, label=label)
     if kind is None:
-        return (), ()
+        return ()
     if kind != "dir":
         raise ValueError(f"{label} is invalid")
     names = _direct_names(skills_dir, label)
-    selected: list[tuple[str, str]] = []
+    selected: list[_PromptResourceSource] = []
     for name in names:
         entry = os.path.join(skills_dir, name)
         relative = f"{prefix}/{name}/SKILL.md"
@@ -276,41 +283,28 @@ def _load_skills(
             continue
         if file_kind != "file":
             raise ValueError(f'Skill "{relative}" is invalid')
-        selected.append((name, skill_file))
-    selected.sort(key=lambda item: item[0])
-    skills: list[SkillResource] = []
-    resolutions: list[PromptResourceResolution] = []
-    for name, path in selected:
-        relative = f"{prefix}/{name}/SKILL.md"
-        text = _read_utf8(path, relative, "Skill")
-        location = _cwd_relative(path, cwd)
-        skills.append(_parse_skill(name, text, relative, location))
-        resolutions.append(
-            PromptResourceResolution(
-                kind="skill",
+        selected.append(
+            _PromptResourceSource(
                 name=name,
-                candidates=(
-                    PromptResourceCandidate(
-                        source=source,
-                        path=os.path.abspath(path),
-                        disposition="effective",
-                    ),
-                ),
+                source=source,
+                path=skill_file,
+                relative=relative,
+                directory_rank=directory_rank,
             )
         )
-    return tuple(skills), tuple(resolutions)
+    return tuple(selected)
 
 
-def _load_templates(
-    prompts_dir: str, *, cwd: str
-) -> tuple[tuple[TemplateResource, ...], tuple[PromptResourceResolution, ...]]:
+def _discover_templates(
+    prompts_dir: str, *, directory_rank: int
+) -> tuple[_PromptResourceSource, ...]:
     kind = _lstat_kind(prompts_dir, label='Prompt Template directory ".omh/prompts"')
     if kind is None:
-        return (), ()
+        return ()
     if kind != "dir":
         raise ValueError('Prompt Template directory ".omh/prompts" is invalid')
     names = _direct_names(prompts_dir, 'Prompt Template directory ".omh/prompts"')
-    selected: list[tuple[str, str]] = []
+    selected: list[_PromptResourceSource] = []
     for filename in names:
         if not filename.endswith(".md"):
             continue
@@ -320,28 +314,89 @@ def _load_templates(
         file_kind = _lstat_kind(path, label=f'Prompt Template "{relative}"')
         if file_kind != "file":
             raise ValueError(f'Prompt Template "{relative}" is invalid')
-        selected.append((stem, path))
-    selected.sort(key=lambda item: item[0])
-    templates: list[TemplateResource] = []
-    resolutions: list[PromptResourceResolution] = []
-    for name, path in selected:
-        relative = f".omh/prompts/{name}.md"
-        text = _read_utf8(path, relative, "Prompt Template")
-        templates.append(_parse_template(name, text, relative))
-        resolutions.append(
-            PromptResourceResolution(
-                kind="prompt_template",
-                name=name,
-                candidates=(
-                    PromptResourceCandidate(
-                        source="omh",
-                        path=os.path.abspath(path),
-                        disposition="effective",
-                    ),
-                ),
+        selected.append(
+            _PromptResourceSource(
+                name=stem,
+                source="omh",
+                path=path,
+                relative=relative,
+                directory_rank=directory_rank,
             )
         )
+    return tuple(selected)
+
+
+def _select_skills(
+    sources: list[_PromptResourceSource], *, cwd: str
+) -> tuple[tuple[SkillResource, ...], tuple[PromptResourceResolution, ...]]:
+    groups = _group_sources(sources)
+    skills: list[SkillResource] = []
+    resolutions: list[PromptResourceResolution] = []
+    for name in sorted(groups):
+        candidates = groups[name]
+        winner = candidates[0]
+        text = _read_utf8(winner.path, winner.relative, "Skill")
+        skills.append(
+            _parse_skill(
+                name,
+                text,
+                winner.relative,
+                _cwd_relative(winner.path, cwd),
+            )
+        )
+        resolutions.append(_resolution("skill", name, candidates))
+    return tuple(skills), tuple(resolutions)
+
+
+def _select_templates(
+    sources: list[_PromptResourceSource],
+) -> tuple[tuple[TemplateResource, ...], tuple[PromptResourceResolution, ...]]:
+    groups = _group_sources(sources)
+    templates: list[TemplateResource] = []
+    resolutions: list[PromptResourceResolution] = []
+    for name in sorted(groups):
+        candidates = groups[name]
+        winner = candidates[0]
+        text = _read_utf8(winner.path, winner.relative, "Prompt Template")
+        templates.append(_parse_template(name, text, winner.relative))
+        resolutions.append(_resolution("prompt_template", name, candidates))
     return tuple(templates), tuple(resolutions)
+
+
+def _group_sources(
+    sources: list[_PromptResourceSource],
+) -> dict[str, list[_PromptResourceSource]]:
+    groups: dict[str, list[_PromptResourceSource]] = {}
+    for candidate in sources:
+        groups.setdefault(candidate.name, []).append(candidate)
+    for candidates in groups.values():
+        candidates.sort(
+            key=lambda candidate: (
+                candidate.directory_rank,
+                candidate.source == "omh",
+            ),
+            reverse=True,
+        )
+    return groups
+
+
+def _resolution(
+    kind: Literal["skill", "prompt_template"],
+    name: str,
+    sources: list[_PromptResourceSource],
+) -> PromptResourceResolution:
+    return PromptResourceResolution(
+        kind=kind,
+        name=name,
+        candidates=tuple(
+            PromptResourceCandidate(
+                source=source.source,
+                path=os.path.abspath(source.path),
+                disposition="effective" if index == 0 else "shadowed",
+            )
+            for index, source in enumerate(sources)
+        ),
+    )
 
 
 def _parse_skill(
@@ -457,11 +512,11 @@ def _read_utf8(path: str, relative: str, kind: str) -> str:
 
 def _direct_names(path: str, label: str) -> list[str]:
     try:
-        names = [
+        names = sorted(
             entry.name
             for entry in os.scandir(path)
             if not entry.name.startswith(".")
-        ]
+        )
     except OSError as error:
         raise LifecycleError(
             "cleanup",
