@@ -16,6 +16,7 @@ from ._resource_state import (
     PromptResourceResolution,
     ResourceAdmissionError,
     ResourceResolutionReport,
+    TrustPolicyError,
 )
 from ._session_manager import (
     CURRENT_SESSION_VERSION,
@@ -77,5 +78,6 @@ __all__ = (
     "SessionMessageEntry",
     "SessionTreeNode",
     "ThinkingLevelChangeEntry",
+    "TrustPolicyError",
     "createAgentSession",
 )

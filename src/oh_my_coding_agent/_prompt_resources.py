@@ -6,8 +6,6 @@ import re
 import stat
 from typing import Final, Literal
 
-from oh_my_llm import LifecycleError
-
 from ._frontmatter import (
     FrontmatterError,
     FrontmatterScalar,
@@ -15,7 +13,11 @@ from ._frontmatter import (
     split_frontmatter,
 )
 from ._project_rules import _discovery_chain
-from ._resource_state import PromptResourceCandidate, PromptResourceResolution
+from ._resource_state import (
+    PromptResourceCandidate,
+    PromptResourceResolution,
+    ResourceAdmissionError,
+)
 
 
 _NAME_PATTERN: Final[re.Pattern[str]] = re.compile(r"^[a-z0-9]+(?:-[a-z0-9]+)*$")
@@ -110,10 +112,7 @@ def load_prompt_resources(cwd: str, project_trusted: bool) -> PromptResourceSnap
     skill_sources: list[_PromptResourceSource] = []
     template_sources: list[_PromptResourceSource] = []
     for directory_rank, directory in enumerate(_discovery_chain(cwd)):
-        omh = _admit_dir(
-            os.path.join(directory, ".omh"),
-            'Project configuration ".omh"',
-        )
+        omh = _admit_dir(os.path.join(directory, ".omh"))
         if omh is not None:
             skill_sources.extend(
                 _discover_skills(
@@ -129,10 +128,7 @@ def load_prompt_resources(cwd: str, project_trusted: bool) -> PromptResourceSnap
                     directory_rank=directory_rank,
                 )
             )
-        agents = _admit_dir(
-            os.path.join(directory, ".agents"),
-            'Skill namespace ".agents"',
-        )
+        agents = _admit_dir(os.path.join(directory, ".agents"))
         if agents is not None:
             skill_sources.extend(
                 _discover_skills(
@@ -261,28 +257,39 @@ def _discover_skills(
     prefix: str,
     directory_rank: int,
 ) -> tuple[_PromptResourceSource, ...]:
-    label = f'Skill directory "{prefix}"'
-    kind = _lstat_kind(skills_dir, label=label)
+    kind = _lstat_kind(skills_dir)
     if kind is None:
         return ()
     if kind != "dir":
-        raise ValueError(f"{label} is invalid")
-    names = _direct_names(skills_dir, label)
+        raise ResourceAdmissionError(
+            kind="project_resources",
+            path=os.path.abspath(skills_dir),
+            stage="structure",
+        )
+    names = _direct_names(skills_dir)
     selected: list[_PromptResourceSource] = []
     for name in names:
         entry = os.path.join(skills_dir, name)
         relative = f"{prefix}/{name}/SKILL.md"
-        entry_kind = _lstat_kind(entry, label=f'Skill "{relative}"')
-        if entry_kind == "symlink":
-            raise ValueError(f'Skill "{relative}" is invalid')
+        entry_kind = _lstat_kind(entry)
         if entry_kind != "dir":
-            continue
+            if not is_resource_name(name):
+                continue
+            raise ResourceAdmissionError(
+                kind="skill",
+                name=name,
+                path=os.path.abspath(os.path.join(entry, "SKILL.md")),
+                stage="structure",
+            )
         skill_file = os.path.join(entry, "SKILL.md")
-        file_kind = _lstat_kind(skill_file, label=f'Skill "{relative}"')
-        if file_kind is None:
-            continue
+        file_kind = _lstat_kind(skill_file)
         if file_kind != "file":
-            raise ValueError(f'Skill "{relative}" is invalid')
+            raise ResourceAdmissionError(
+                kind="skill",
+                name=name,
+                path=os.path.abspath(skill_file),
+                stage="structure",
+            )
         selected.append(
             _PromptResourceSource(
                 name=name,
@@ -298,12 +305,16 @@ def _discover_skills(
 def _discover_templates(
     prompts_dir: str, *, directory_rank: int
 ) -> tuple[_PromptResourceSource, ...]:
-    kind = _lstat_kind(prompts_dir, label='Prompt Template directory ".omh/prompts"')
+    kind = _lstat_kind(prompts_dir)
     if kind is None:
         return ()
     if kind != "dir":
-        raise ValueError('Prompt Template directory ".omh/prompts" is invalid')
-    names = _direct_names(prompts_dir, 'Prompt Template directory ".omh/prompts"')
+        raise ResourceAdmissionError(
+            kind="project_resources",
+            path=os.path.abspath(prompts_dir),
+            stage="structure",
+        )
+    names = _direct_names(prompts_dir)
     selected: list[_PromptResourceSource] = []
     for filename in names:
         if not filename.endswith(".md"):
@@ -311,9 +322,14 @@ def _discover_templates(
         stem = filename[: -len(".md")]
         path = os.path.join(prompts_dir, filename)
         relative = f".omh/prompts/{filename}"
-        file_kind = _lstat_kind(path, label=f'Prompt Template "{relative}"')
+        file_kind = _lstat_kind(path)
         if file_kind != "file":
-            raise ValueError(f'Prompt Template "{relative}" is invalid')
+            raise ResourceAdmissionError(
+                kind="prompt_template",
+                name=stem,
+                path=os.path.abspath(path),
+                stage="structure",
+            )
         selected.append(
             _PromptResourceSource(
                 name=stem,
@@ -335,15 +351,19 @@ def _select_skills(
     for name in sorted(groups):
         candidates = groups[name]
         winner = candidates[0]
-        text = _read_utf8(winner.path, winner.relative, "Skill")
-        skills.append(
-            _parse_skill(
+        text = _read_utf8(winner, "skill")
+        try:
+            skill = _parse_skill(
                 name,
                 text,
                 winner.relative,
                 _cwd_relative(winner.path, cwd),
             )
-        )
+        except ValueError:
+            skill = None
+        if skill is None:
+            raise _source_error(winner, "skill", "document")
+        skills.append(skill)
         resolutions.append(_resolution("skill", name, candidates))
     return tuple(skills), tuple(resolutions)
 
@@ -357,8 +377,14 @@ def _select_templates(
     for name in sorted(groups):
         candidates = groups[name]
         winner = candidates[0]
-        text = _read_utf8(winner.path, winner.relative, "Prompt Template")
-        templates.append(_parse_template(name, text, winner.relative))
+        text = _read_utf8(winner, "prompt_template")
+        try:
+            template = _parse_template(name, text, winner.relative)
+        except ValueError:
+            template = None
+        if template is None:
+            raise _source_error(winner, "prompt_template", "document")
+        templates.append(template)
         resolutions.append(_resolution("prompt_template", name, candidates))
     return tuple(templates), tuple(resolutions)
 
@@ -492,51 +518,68 @@ def _required_description(
     return description
 
 
-def _read_utf8(path: str, relative: str, kind: str) -> str:
+def _read_utf8(
+    source: _PromptResourceSource,
+    kind: Literal["skill", "prompt_template"],
+) -> str:
+    read_failed = False
     try:
-        with open(path, "rb") as handle:
+        with open(source.path, "rb") as handle:
             raw = handle.read()
-    except OSError as error:
-        raise LifecycleError(
-            "cleanup",
-            f'{kind} "{relative}" could not be read',
-            causes=(error,),
-        ) from error
+    except OSError:
+        read_failed = True
+        raw = b""
+    if read_failed:
+        raise _source_error(source, kind, "read")
     if raw.startswith(b"\xef\xbb\xbf"):
-        raise ValueError(f'{kind} "{relative}" is invalid')
+        raise _source_error(source, kind, "encoding")
+    encoding_failed = False
     try:
-        return raw.decode("utf-8")
-    except UnicodeDecodeError as error:
-        raise ValueError(f'{kind} "{relative}" is invalid') from error
+        text = raw.decode("utf-8")
+    except UnicodeDecodeError:
+        encoding_failed = True
+        text = ""
+    if encoding_failed or "\0" in text:
+        raise _source_error(source, kind, "encoding")
+    return text
 
 
-def _direct_names(path: str, label: str) -> list[str]:
+def _direct_names(path: str) -> list[str]:
+    read_failed = False
     try:
         names = sorted(
             entry.name
             for entry in os.scandir(path)
             if not entry.name.startswith(".")
         )
-    except OSError as error:
-        raise LifecycleError(
-            "cleanup",
-            f"{label} could not be read",
-            causes=(error,),
-        ) from error
+    except OSError:
+        read_failed = True
+        names = []
+    if read_failed:
+        raise ResourceAdmissionError(
+            kind="project_resources",
+            path=os.path.abspath(path),
+            stage="read",
+        )
     return names
 
 
-def _lstat_kind(path: str, *, label: str) -> str | None:
+def _lstat_kind(path: str) -> str | None:
+    read_failed = False
     try:
         info = os.lstat(path)
     except FileNotFoundError:
         return None
-    except OSError as error:
-        raise LifecycleError(
-            "cleanup",
-            f"{label} could not be read",
-            causes=(error,),
-        ) from error
+    except OSError:
+        read_failed = True
+        info = None
+    if read_failed:
+        raise ResourceAdmissionError(
+            kind="project_resources",
+            path=os.path.abspath(path),
+            stage="read",
+        )
+    assert info is not None
     if stat.S_ISLNK(info.st_mode):
         return "symlink"
     if stat.S_ISDIR(info.st_mode):
@@ -546,17 +589,34 @@ def _lstat_kind(path: str, *, label: str) -> str | None:
     return "other"
 
 
-def _admit_dir(path: str, label: str) -> str | None:
-    kind = _lstat_kind(path, label=label)
+def _admit_dir(path: str) -> str | None:
+    kind = _lstat_kind(path)
     if kind is None:
         return None
     if kind != "dir":
-        raise ValueError(f"{label} is invalid")
+        raise ResourceAdmissionError(
+            kind="project_resources",
+            path=os.path.abspath(path),
+            stage="structure",
+        )
     return path
 
 
 def _cwd_relative(path: str, cwd: str) -> str:
     return os.path.relpath(path, cwd).replace(os.sep, "/")
+
+
+def _source_error(
+    source: _PromptResourceSource,
+    kind: Literal["skill", "prompt_template"],
+    stage: Literal["read", "encoding", "document"],
+) -> ResourceAdmissionError:
+    return ResourceAdmissionError(
+        kind=kind,
+        name=source.name,
+        path=os.path.abspath(source.path),
+        stage=stage,
+    )
 
 
 def _es_trim(value: str) -> str:

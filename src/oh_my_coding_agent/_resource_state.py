@@ -1,6 +1,7 @@
 from __future__ import annotations
 
 from dataclasses import MISSING, dataclass, fields
+import os
 from typing import Any, ClassVar, Literal, NoReturn, cast, final
 
 
@@ -18,6 +19,17 @@ _LIFECYCLE_EVENT = frozenset(
 
 
 class _PublicValueMeta(type):
+    def __new__(
+        mcls,
+        name: str,
+        bases: tuple[type[Any], ...],
+        namespace: dict[str, Any],
+        **kwargs: Any,
+    ) -> _PublicValueMeta:
+        if any(isinstance(base, _PublicValueMeta) for base in bases):
+            raise TypeError(f"{bases[0].__name__} is final")
+        return super().__new__(mcls, name, bases, namespace, **kwargs)
+
     def __call__(cls, *args: object, **kwargs: object) -> object:
         type_name = cls.__name__
         if args:
@@ -62,6 +74,13 @@ def _optional_string(value: object, type_name: str, path: str) -> str | None:
     return _string(value, type_name, path)
 
 
+def _absolute_path(value: object, type_name: str, path: str) -> str:
+    text = _string(value, type_name, path)
+    if not os.path.isabs(text):
+        _fail_value(type_name, path, "must be a lexical absolute path")
+    return text
+
+
 def _literal(
     value: object,
     allowed: frozenset[str],
@@ -98,7 +117,7 @@ class ProjectRuleResolution(metaclass=_PublicValueMeta):
 
     def __post_init__(self) -> None:
         type_name = type(self).__name__
-        object.__setattr__(self, "path", _string(self.path, type_name, "path"))
+        object.__setattr__(self, "path", _absolute_path(self.path, type_name, "path"))
         object.__setattr__(
             self,
             "disposition",
@@ -135,7 +154,7 @@ class PromptResourceCandidate(metaclass=_PublicValueMeta):
             "source",
             _literal(self.source, _CANDIDATE_SOURCE, type_name, "source"),
         )
-        object.__setattr__(self, "path", _string(self.path, type_name, "path"))
+        object.__setattr__(self, "path", _absolute_path(self.path, type_name, "path"))
         object.__setattr__(
             self,
             "disposition",
@@ -211,7 +230,7 @@ class ExtensionDiagnosticLoad(ExtensionDiagnostic, metaclass=_PublicValueMeta):
 
     def __post_init__(self) -> None:
         type_name = "ExtensionDiagnostic.Load"
-        object.__setattr__(self, "path", _string(self.path, type_name, "path"))
+        object.__setattr__(self, "path", _absolute_path(self.path, type_name, "path"))
         object.__setattr__(
             self, "phase", _literal(self.phase, _LOAD_PHASE, type_name, "phase")
         )
@@ -230,7 +249,7 @@ class ExtensionDiagnosticLifecycle(ExtensionDiagnostic, metaclass=_PublicValueMe
 
     def __post_init__(self) -> None:
         type_name = "ExtensionDiagnostic.Lifecycle"
-        object.__setattr__(self, "path", _string(self.path, type_name, "path"))
+        object.__setattr__(self, "path", _absolute_path(self.path, type_name, "path"))
         object.__setattr__(
             self,
             "eventType",
@@ -298,6 +317,15 @@ class ResourceResolutionReport(metaclass=_PublicValueMeta):
         for index, group in enumerate(self.skills):
             if group.kind != "skill":
                 _fail_value(type_name, f"skills[{index}].kind", "must be skill")
+        if any(
+            previous.name >= current.name
+            for previous, current in zip(self.skills, self.skills[1:])
+        ):
+            _fail_value(
+                type_name,
+                "skills",
+                "must be strictly ordered by Unicode name",
+            )
         for index, group in enumerate(self.promptTemplates):
             if group.kind != "prompt_template":
                 _fail_value(
@@ -305,6 +333,17 @@ class ResourceResolutionReport(metaclass=_PublicValueMeta):
                     f"promptTemplates[{index}].kind",
                     "must be prompt_template",
                 )
+        if any(
+            previous.name >= current.name
+            for previous, current in zip(
+                self.promptTemplates, self.promptTemplates[1:]
+            )
+        ):
+            _fail_value(
+                type_name,
+                "promptTemplates",
+                "must be strictly ordered by Unicode name",
+            )
 
 
 @final
@@ -340,6 +379,8 @@ _ADMISSION_KINDS = frozenset(
     }
 )
 _ADMISSION_STAGES = frozenset({"structure", "read", "encoding", "document"})
+_TRUST_OPERATIONS = frozenset({"resolve", "update"})
+_TRUST_STAGES = frozenset({"lock", "read", "encoding", "document", "write"})
 
 
 @final
@@ -360,22 +401,50 @@ class ResourceAdmissionError(RuntimeError):
         stage: Literal["structure", "read", "encoding", "document"],
         name: str | None = None,
     ) -> None:
-        if kind not in _ADMISSION_KINDS:
-            _fail_value("ResourceAdmissionError", "kind", "must be an admitted literal")
-        if stage not in _ADMISSION_STAGES:
-            _fail_value("ResourceAdmissionError", "stage", "must be an admitted literal")
-        path_text = _string(path, "ResourceAdmissionError", "path")
+        kind_text = _literal(
+            kind, _ADMISSION_KINDS, "ResourceAdmissionError", "kind"
+        )
+        stage_text = _literal(
+            stage, _ADMISSION_STAGES, "ResourceAdmissionError", "stage"
+        )
+        path_text = _absolute_path(path, "ResourceAdmissionError", "path")
         if name is not None:
             name = _string(name, "ResourceAdmissionError", "name")
+            if kind_text not in {"skill", "prompt_template"}:
+                _fail_value(
+                    "ResourceAdmissionError",
+                    "name",
+                    "is admitted only for a Prompt Resource",
+                )
         super().__init__("Project resource admission failed")
-        self._kind = kind
+        self._kind = kind_text
         self._name = name
         self._path = path_text
-        self._stage = stage
+        self._stage = stage_text
+
+    def __init_subclass__(cls) -> None:
+        raise TypeError("ResourceAdmissionError is final")
 
     @property
-    def kind(self) -> str:
-        return self._kind
+    def kind(
+        self,
+    ) -> Literal[
+        "project_resources",
+        "project_rule",
+        "skill",
+        "prompt_template",
+        "python_extension",
+    ]:
+        return cast(
+            Literal[
+                "project_resources",
+                "project_rule",
+                "skill",
+                "prompt_template",
+                "python_extension",
+            ],
+            self._kind,
+        )
 
     @property
     def name(self) -> str | None:
@@ -386,5 +455,49 @@ class ResourceAdmissionError(RuntimeError):
         return self._path
 
     @property
-    def stage(self) -> str:
-        return self._stage
+    def stage(self) -> Literal["structure", "read", "encoding", "document"]:
+        return cast(
+            Literal["structure", "read", "encoding", "document"],
+            self._stage,
+        )
+
+
+@final
+class TrustPolicyError(RuntimeError):
+    __slots__ = ("_operation", "_stage")
+
+    def __init__(
+        self,
+        *,
+        operation: Literal["resolve", "update"],
+        stage: Literal["lock", "read", "encoding", "document", "write"],
+    ) -> None:
+        operation_text = _literal(
+            operation,
+            _TRUST_OPERATIONS,
+            "TrustPolicyError",
+            "operation",
+        )
+        stage_text = _literal(
+            stage,
+            _TRUST_STAGES,
+            "TrustPolicyError",
+            "stage",
+        )
+        super().__init__("Project trust policy failed")
+        self._operation = operation_text
+        self._stage = stage_text
+
+    def __init_subclass__(cls) -> None:
+        raise TypeError("TrustPolicyError is final")
+
+    @property
+    def operation(self) -> Literal["resolve", "update"]:
+        return cast(Literal["resolve", "update"], self._operation)
+
+    @property
+    def stage(self) -> Literal["lock", "read", "encoding", "document", "write"]:
+        return cast(
+            Literal["lock", "read", "encoding", "document", "write"],
+            self._stage,
+        )
