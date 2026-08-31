@@ -328,3 +328,63 @@ class ProjectResourceState(metaclass=_PublicValueMeta):
             "extensionDiagnostics",
         )
         object.__setattr__(self, "extensionDiagnostics", diagnostics)
+
+
+_ADMISSION_KINDS = frozenset(
+    {
+        "project_resources",
+        "project_rule",
+        "skill",
+        "prompt_template",
+        "python_extension",
+    }
+)
+_ADMISSION_STAGES = frozenset({"structure", "read", "encoding", "document"})
+
+
+@final
+class ResourceAdmissionError(RuntimeError):
+    __slots__ = ("_kind", "_name", "_path", "_stage")
+
+    def __init__(
+        self,
+        *,
+        kind: Literal[
+            "project_resources",
+            "project_rule",
+            "skill",
+            "prompt_template",
+            "python_extension",
+        ],
+        path: str,
+        stage: Literal["structure", "read", "encoding", "document"],
+        name: str | None = None,
+    ) -> None:
+        if kind not in _ADMISSION_KINDS:
+            _fail_value("ResourceAdmissionError", "kind", "must be an admitted literal")
+        if stage not in _ADMISSION_STAGES:
+            _fail_value("ResourceAdmissionError", "stage", "must be an admitted literal")
+        path_text = _string(path, "ResourceAdmissionError", "path")
+        if name is not None:
+            name = _string(name, "ResourceAdmissionError", "name")
+        super().__init__("Project resource admission failed")
+        self._kind = kind
+        self._name = name
+        self._path = path_text
+        self._stage = stage
+
+    @property
+    def kind(self) -> str:
+        return self._kind
+
+    @property
+    def name(self) -> str | None:
+        return self._name
+
+    @property
+    def path(self) -> str:
+        return self._path
+
+    @property
+    def stage(self) -> str:
+        return self._stage

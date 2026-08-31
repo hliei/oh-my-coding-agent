@@ -14,6 +14,7 @@ from ._resource_state import (
     ProjectRuleResolution,
     PromptResourceCandidate,
     PromptResourceResolution,
+    ResourceAdmissionError,
     ResourceResolutionReport,
 )
 from ._session_manager import (
@@ -64,6 +65,7 @@ __all__ = (
     "PromptOptions",
     "PromptResourceCandidate",
     "PromptResourceResolution",
+    "ResourceAdmissionError",
     "ResourceResolutionReport",
     "SessionContext",
     "SessionEntry",
