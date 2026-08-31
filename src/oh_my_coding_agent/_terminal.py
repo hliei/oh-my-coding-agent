@@ -1,18 +1,22 @@
 from __future__ import annotations
 
-from dataclasses import dataclass
-from typing import Any, BinaryIO, Literal
+import asyncio
 import os
+import signal
 import string
 import sys
 import termios
 import tty
+from dataclasses import dataclass
+from typing import Any, BinaryIO, Literal
 
 import icu  # type: ignore[import-untyped]
 import wcwidth
+from oh_my_llm import AssistantMessage, LifecycleError, TextContent
 from oh_my_llm._canonical import encodeCanonical
 
 from ._prompt_resources import _es_trim
+from ._session import AgentSession, AgentSessionEvent
 
 
 _BIDI = frozenset(
@@ -37,6 +41,59 @@ _WIDTH_ERROR = "interactive input width is invalid"
 _WIDTH_UNICODE = "17.0.0"
 _ICU_ROOT = icu.Locale.getRoot()
 _INTERRUPT = b"\x03"
+_SIGNAL_STATUS: dict[signal.Signals, int] = {
+    signal.SIGINT: 130,
+    signal.SIGHUP: 129,
+    signal.SIGTERM: 143,
+}
+
+_TerminalClassification = Literal[
+    "completed", "model_error", "cancelled", "unconfirmed"
+]
+
+
+class _Shutdown:
+    def __init__(self, *, print_mode: bool) -> None:
+        self.print_mode = print_mode
+        self.signum: signal.Signals | None = None
+        self.session: AgentSession | None = None
+        self._terminating = asyncio.Event()
+        self._interrupt = asyncio.Event()
+
+    def request(self, signum: signal.Signals) -> None:
+        if self.signum is not None:
+            self._abort()
+            return
+        session = self.session
+        if signum == signal.SIGINT and not self.print_mode and session is not None:
+            self._interrupt.set()
+            if not session.isIdle:
+                self._abort()
+            return
+        self.signum = signum
+        self._terminating.set()
+        self._abort()
+
+    def _abort(self) -> None:
+        session = self.session
+        if session is None:
+            return
+        task = asyncio.create_task(session.abort())
+        task.add_done_callback(_consume_task_exception)
+
+    async def wait(self) -> None:
+        await self._terminating.wait()
+
+    async def wait_interrupt(self) -> None:
+        await self._interrupt.wait()
+
+    def clear_interrupt(self) -> None:
+        self._interrupt.clear()
+
+
+def _consume_task_exception(task: asyncio.Task[object]) -> None:
+    if not task.cancelled():
+        task.exception()
 
 
 def encode_body(value: str) -> str:
@@ -127,6 +184,358 @@ def _acquire_end_of_line_editing(fd: int) -> tuple[list[Any], bool]:
 
 def _restore_tty(fd: int, saved: list[Any]) -> None:
     termios.tcsetattr(fd, termios.TCSANOW, saved)
+
+
+async def _drive_interactive(
+    session: AgentSession, shutdown: _Shutdown
+) -> int:
+    return await _InteractiveTerminalAdapter(session, shutdown).run()
+
+
+class _InteractiveTerminalAdapter:
+    __slots__ = (
+        "_busy",
+        "_editor",
+        "_input_failure",
+        "_lines",
+        "_loop",
+        "_queued_nonempty",
+        "_rendered_text",
+        "_session",
+        "_shutdown",
+        "_stdin_fd",
+    )
+
+    def __init__(
+        self, session: AgentSession, shutdown: _Shutdown
+    ) -> None:
+        self._session = session
+        self._shutdown = shutdown
+        self._rendered_text = ""
+        self._busy = False
+        self._queued_nonempty = False
+        self._input_failure: Exception | None = None
+        self._loop: asyncio.AbstractEventLoop
+        self._lines: asyncio.Queue[bytes | Exception]
+        self._stdin_fd: int
+        self._editor: _CommandInput
+
+    async def run(self) -> int:
+        self._session.subscribe(self._render)
+        self._loop = asyncio.get_running_loop()
+        self._lines = asyncio.Queue()
+        self._stdin_fd = sys.stdin.buffer.fileno()
+        saved_tty, echo = _acquire_end_of_line_editing(self._stdin_fd)
+        output_fd = sys.stdout.buffer.fileno()
+        self._editor = _CommandInput(echo=echo, output_fd=output_fd)
+
+        reader_registered = False
+        winch_registered = False
+        try:
+            self._editor.begin()
+            self._loop.add_reader(self._stdin_fd, self._input_ready)
+            reader_registered = True
+            try:
+                self._loop.add_signal_handler(signal.SIGWINCH, self._on_resize)
+                winch_registered = True
+            except (NotImplementedError, RuntimeError):
+                signal.signal(
+                    signal.SIGWINCH,
+                    lambda _num, _frame: self._on_resize(),
+                )
+                winch_registered = True
+            return await self._run_editor()
+        except LifecycleError as error:
+            write_lifecycle(error.code, str(error))
+            return 1
+        except OSError:
+            write_stderr("I/O error\n")
+            return 1
+        except ValueError as error:
+            write_error(_public_value_message(error))
+            return 1
+        except Exception:
+            write_stderr("internal error\n")
+            return 1
+        finally:
+            if reader_registered:
+                self._loop.remove_reader(self._stdin_fd)
+            if winch_registered:
+                try:
+                    self._loop.remove_signal_handler(signal.SIGWINCH)
+                except (NotImplementedError, RuntimeError, OSError):
+                    signal.signal(signal.SIGWINCH, signal.SIG_DFL)
+            try:
+                _restore_tty(self._stdin_fd, saved_tty)
+            except OSError:
+                if self._shutdown.signum is not None:
+                    write_cleanup("terminal restore failed")
+                else:
+                    write_stderr("I/O error\n")
+                    return 1
+
+    async def _run_editor(self) -> int:
+        while True:
+            if self._shutdown.signum is not None:
+                return self._shutdown_status()
+            item = await self._wait_line_or_control()
+            if item == "terminate":
+                return self._shutdown_status()
+            if item == "interrupt" or item == _INTERRUPT:
+                self._editor.handle_idle_interrupt()
+                continue
+            if isinstance(item, Exception):
+                raise item
+            if item == b"":
+                return 0
+            text = _decode_interactive_line(
+                item, "interactive input is not UTF-8"
+            )
+            prompt = _es_trim(text)
+            if not prompt:
+                continue
+            self._queued_nonempty = False
+            prior_messages = self._session.messages
+            prior_entries = self._session.sessionManager.getEntries()
+            self._busy = True
+            prompt_task = asyncio.create_task(self._session.prompt(prompt))
+            try:
+                try:
+                    await self._join_prompt(prompt_task)
+                except ValueError as error:
+                    if (
+                        self._session.messages != prior_messages
+                        or self._session.sessionManager.getEntries() != prior_entries
+                        or not self._session.isIdle
+                    ):
+                        raise RuntimeError(
+                            "AgentSession ValueError changed admitted state"
+                        ) from error
+                    if not write_error(_public_value_message(error)):
+                        raise OSError("interactive diagnostic write failed")
+                    continue
+                if self._input_failure is not None:
+                    raise self._input_failure
+                classification, _payload = _session_terminal(self._session)
+                if self._shutdown.signum is not None:
+                    if classification == "cancelled":
+                        write_stdout("run cancelled\n")
+                    return self._shutdown_status()
+                if classification == "unconfirmed":
+                    raise RuntimeError("AgentSession prompt settlement is unconfirmed")
+                write_stdout(f"run {classification}\n")
+            finally:
+                self._busy = False
+                self._editor.reopen_idle()
+
+    async def _render(self, event: AgentSessionEvent) -> None:
+        if self._input_failure is not None:
+            return
+        if isinstance(event, AgentSessionEvent.MessageStart) and isinstance(
+            event.message, AssistantMessage
+        ):
+            self._rendered_text = ""
+            write_stdout("assistant start\n")
+        elif isinstance(event, AgentSessionEvent.MessageUpdate):
+            text = "".join(
+                block.text
+                for block in event.message.content
+                if isinstance(block, TextContent)
+            )
+            if not text.startswith(self._rendered_text):
+                raise RuntimeError("Assistant Text update is not cumulative")
+            suffix = text[len(self._rendered_text) :]
+            if suffix:
+                write_stdout(encode_body(suffix))
+            self._rendered_text = text
+        elif isinstance(event, AgentSessionEvent.MessageEnd) and isinstance(
+            event.message, AssistantMessage
+        ):
+            if not self._rendered_text.endswith("\n"):
+                write_stdout("\n")
+            write_stdout("assistant end\n")
+        elif isinstance(event, AgentSessionEvent.ToolExecutionStart):
+            write_stdout(
+                "tool start "
+                f'name="{encode_field(event.toolName)}" '
+                f'id="{encode_field(event.toolCallId)}" '
+                f"arguments={encode_json(event.args)}\n"
+            )
+        elif isinstance(event, AgentSessionEvent.ToolExecutionEnd):
+            kind = "failure" if event.isError else "outcome"
+            result = {
+                "content": tuple(item.text for item in event.result.content),
+                "details": event.result.details,
+                "terminate": event.result.terminate,
+            }
+            write_stdout(
+                f"tool {kind} "
+                f'name="{encode_field(event.toolName)}" '
+                f'id="{encode_field(event.toolCallId)}" '
+                f"result={encode_json(result)}\n"
+            )
+
+    def _fail_input(self, error: Exception) -> None:
+        self._loop.remove_reader(self._stdin_fd)
+        self._input_failure = error
+        if self._busy:
+            asyncio.create_task(self._session.abort())
+            return
+        self._lines.put_nowait(error)
+
+    def _on_resize(self) -> None:
+        if self._input_failure is not None:
+            return
+        try:
+            self._editor.resize()
+        except Exception as error:
+            self._fail_input(error)
+
+    def _deliver(self, raw: bytes) -> None:
+        if raw == b"":
+            self._loop.remove_reader(self._stdin_fd)
+            if self._busy:
+                asyncio.create_task(self._session.abort())
+            self._lines.put_nowait(raw)
+            return
+        if raw == _INTERRUPT:
+            if self._busy:
+                asyncio.create_task(self._session.abort())
+                return
+            self._lines.put_nowait(raw)
+            return
+        try:
+            text = _decode_interactive_line(
+                raw, "interactive input is not UTF-8"
+            )
+        except OSError as error:
+            self._fail_input(error)
+            return
+        prompt = _es_trim(text)
+        if self._busy or self._queued_nonempty:
+            if prompt and not write_stderr(
+                "busy: Product Session has an active Run\n"
+            ):
+                self._fail_input(OSError("interactive diagnostic write failed"))
+            return
+        self._queued_nonempty = bool(prompt)
+        self._lines.put_nowait(raw)
+
+    def _input_ready(self) -> None:
+        try:
+            raw = os.read(self._stdin_fd, 4096)
+        except OSError as error:
+            self._fail_input(error)
+            return
+        if raw == b"":
+            self._deliver(b"")
+            return
+        try:
+            completed = self._editor.feed(raw)
+        except Exception as error:
+            self._fail_input(error)
+            return
+        for item in completed:
+            self._deliver(item)
+            if item == b"":
+                return
+
+    async def _wait_line_or_control(
+        self,
+    ) -> bytes | Exception | Literal["interrupt", "terminate"]:
+        if self._shutdown.signum is not None:
+            return "terminate"
+        line = asyncio.create_task(self._lines.get())
+        interrupt = asyncio.create_task(self._shutdown.wait_interrupt())
+        terminate = asyncio.create_task(self._shutdown.wait())
+        done, pending = await asyncio.wait(
+            {line, interrupt, terminate},
+            return_when=asyncio.FIRST_COMPLETED,
+        )
+        for task in pending:
+            task.cancel()
+        await asyncio.gather(*pending, return_exceptions=True)
+        if terminate in done or self._shutdown.signum is not None:
+            return "terminate"
+        if line in done:
+            return line.result()
+        self._shutdown.clear_interrupt()
+        return "interrupt"
+
+    async def _join_prompt(self, prompt_task: asyncio.Task[None]) -> None:
+        while not prompt_task.done():
+            if self._shutdown.signum is not None:
+                await prompt_task
+                return
+            interrupt = asyncio.create_task(self._shutdown.wait_interrupt())
+            terminate = asyncio.create_task(self._shutdown.wait())
+            done, pending = await asyncio.wait(
+                {prompt_task, interrupt, terminate},
+                return_when=asyncio.FIRST_COMPLETED,
+            )
+            for task in pending:
+                if task is not prompt_task:
+                    task.cancel()
+            await asyncio.gather(
+                *[task for task in pending if task is not prompt_task],
+                return_exceptions=True,
+            )
+            if interrupt in done:
+                self._shutdown.clear_interrupt()
+                await self._session.abort()
+        await prompt_task
+
+    def _shutdown_status(self) -> int:
+        assert self._shutdown.signum is not None
+        return _SIGNAL_STATUS[self._shutdown.signum]
+
+
+def _decode_interactive_line(raw: bytes, message: str) -> str:
+    try:
+        text = raw.decode("utf-8")
+    except UnicodeDecodeError as error:
+        raise OSError(message) from error
+    if text.endswith("\n"):
+        text = text[:-1]
+    if text.endswith("\r"):
+        text = text[:-1]
+    return text
+
+
+def _session_terminal(
+    session: AgentSession,
+) -> tuple[_TerminalClassification, bytes | None]:
+    messages = session.messages
+    assistants = [
+        message for message in messages if isinstance(message, AssistantMessage)
+    ]
+    if not assistants:
+        return "unconfirmed", None
+    terminal = assistants[-1]
+    body = "".join(
+        block.text for block in terminal.content if isinstance(block, TextContent)
+    )
+    encoded = encode_body(body).encode("utf-8")
+    if terminal.stopReason in {"stop", "length"}:
+        return "completed", encoded
+    if terminal.stopReason == "error":
+        return "model_error", encoded
+    if terminal.stopReason == "aborted":
+        return "cancelled", encoded
+    return "unconfirmed", None
+
+
+def _public_value_message(error: ValueError) -> str:
+    message = str(error)
+    if "Session file is not a valid omh session" in message:
+        return "session file is invalid"
+    if message.startswith("NewSessionOptions.id"):
+        return "invalid session id"
+    if message.startswith("--cwd") or message.startswith(
+        "CreateAgentSessionOptions.cwd"
+    ):
+        return "invalid cwd"
+    return "invalid value"
 
 
 @dataclass(frozen=True, slots=True)
