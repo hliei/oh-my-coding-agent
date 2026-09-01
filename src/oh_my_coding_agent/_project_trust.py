@@ -5,6 +5,7 @@ import errno
 import fcntl
 import json
 import os
+import secrets
 import stat
 import time
 from typing import Literal, TypeVar, cast
@@ -28,6 +29,39 @@ def resolve_project_trust(cwd: str, choice: bool | None) -> bool:
     if saved is not None:
         return saved
     return _default_project_trust() == "always"
+
+
+def interactive_trust_is_pending(cwd: str) -> bool:
+    if not _has_protected_resources(cwd):
+        return False
+    if _nearest_saved_policy(cwd) is not None:
+        return False
+    return _default_project_trust() == "ask"
+
+
+def update_project_trust(
+    cwd: str, action: Literal["trust", "distrust", "trust_parent"]
+) -> None:
+    trust_path = os.path.realpath(cwd)
+    target = os.path.join(os.path.expanduser("~"), ".omh", "agent", "trust.json")
+
+    def mutate(
+        document: dict[str, bool | None],
+    ) -> dict[str, bool | None]:
+        updated = dict(document)
+        if action == "trust":
+            updated[trust_path] = True
+        elif action == "distrust":
+            updated[trust_path] = False
+        else:
+            parent = os.path.dirname(trust_path)
+            if parent == trust_path:
+                raise TrustPolicyError(operation="update", stage="document")
+            updated[parent] = True
+            updated.pop(trust_path, None)
+        return updated
+
+    _update_policy_document(target, _validate_trust_document, mutate)
 
 
 def _has_protected_resources(cwd: str) -> bool:
@@ -152,6 +186,108 @@ def _read_policy_document(target: str, validate: Callable[[object], _T]) -> _T:
     except (TypeError, ValueError):
         pass
     raise TrustPolicyError(operation="resolve", stage="document")
+
+
+def _update_policy_document(
+    target: str,
+    validate: Callable[[object], _T],
+    mutate: Callable[[_T], _T],
+) -> None:
+    lock = _acquire_policy_lock(f"{target}.lock")
+    if lock is None:
+        raise TrustPolicyError(operation="update", stage="lock")
+    committed = False
+    failure: TrustPolicyError | None = None
+    try:
+        raw, read_stage = _read_policy_target(target)
+        if read_stage is not None:
+            raise TrustPolicyError(operation="update", stage=read_stage)
+        if raw is _MISSING:
+            value: object = {}
+        else:
+            assert isinstance(raw, bytes)
+            decoded, encoding_failed = _decode_policy(raw)
+            if encoding_failed:
+                raise TrustPolicyError(operation="update", stage="encoding")
+            assert decoded is not None
+            parsed, document_failed = _parse_policy(decoded)
+            if document_failed:
+                raise TrustPolicyError(operation="update", stage="document")
+            value = parsed
+        try:
+            current = validate(value)
+        except (TypeError, ValueError):
+            raise TrustPolicyError(operation="update", stage="document") from None
+        payload = _serialize_policy(mutate(current))
+        _commit_policy_target(target, payload)
+        committed = True
+    except TrustPolicyError as error:
+        failure = error
+    finally:
+        release_failed = _release_policy_lock(lock)
+    if committed:
+        return
+    if failure is not None:
+        raise failure
+    if release_failed:
+        raise TrustPolicyError(operation="update", stage="lock")
+
+
+def _serialize_policy(value: object) -> bytes:
+    return (
+        json.dumps(value, ensure_ascii=False, indent=2, sort_keys=True) + "\n"
+    ).encode("utf-8")
+
+
+def _commit_policy_target(target: str, payload: bytes) -> None:
+    directory = os.path.dirname(target)
+    flags = os.O_RDWR | os.O_CREAT | os.O_EXCL
+    if hasattr(os, "O_CLOEXEC"):
+        flags |= os.O_CLOEXEC
+    if hasattr(os, "O_NOFOLLOW"):
+        flags |= os.O_NOFOLLOW
+    descriptor: int | None = None
+    temporary: str | None = None
+    try:
+        for _attempt in range(_POLICY_ATTEMPTS):
+            candidate = os.path.join(
+                directory, f".omh-policy-{os.getpid()}-{secrets.token_hex(8)}.tmp"
+            )
+            try:
+                descriptor = os.open(candidate, flags, 0o600)
+            except FileExistsError:
+                continue
+            temporary = candidate
+            break
+        if descriptor is None or temporary is None:
+            raise OSError("policy temporary create failed")
+        os.fchmod(descriptor, 0o600)
+        opened = os.fstat(descriptor)
+        if not _valid_lock_carrier(opened):
+            raise OSError("policy temporary is not a private regular file")
+        remaining = payload
+        while remaining:
+            remaining = remaining[os.write(descriptor, remaining) :]
+        os.fsync(descriptor)
+        os.close(descriptor)
+        descriptor = None
+        os.replace(temporary, target)
+        temporary = None
+    except OSError:
+        raise TrustPolicyError(operation="update", stage="write") from None
+    finally:
+        if descriptor is not None:
+            try:
+                os.close(descriptor)
+            except OSError:
+                pass
+        if temporary is not None:
+            try:
+                os.unlink(temporary)
+            except FileNotFoundError:
+                pass
+            except OSError:
+                raise TrustPolicyError(operation="update", stage="write") from None
 
 
 def _acquire_policy_lock(path: str) -> int | None:

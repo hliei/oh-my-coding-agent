@@ -39,6 +39,15 @@ omh --cwd /path/to/project
 
 Use `omh --help` for session selectors, project trust, and command-mode details.
 
+## Upgrade from 0.1.x
+
+`--trust-project` is removed. Use construction-only `--approve` / `-a` or
+`--no-approve` / `-na`; omission resolves saved policy, then
+`defaultProjectTrust`. Non-built-in slash input that does not expand may
+reach the Model literally. Existing Session files remain recoverable without
+a v0.2 Session migration. Trust and settings policy files are created only
+when a persistent choice is saved.
+
 ## Python interfaces
 
 The `omh` distribution installs three public import packages:

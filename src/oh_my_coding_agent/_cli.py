@@ -13,12 +13,15 @@ from oh_my_coding_agent import (
     AgentSession,
     CreateAgentSessionOptions,
     NewSessionOptions,
+    ResourceAdmissionError,
     SessionInfo,
     SessionManager,
+    TrustPolicyError,
     createAgentSession,
 )
 from oh_my_llm import LifecycleError, ModelsError
 
+from ._project_trust import interactive_trust_is_pending, update_project_trust
 from ._prompt_resources import _es_trim
 from ._session_manager import _resolve_path, _session_id
 from ._terminal import (
@@ -28,7 +31,6 @@ from ._terminal import (
     _drive_interactive,
     _public_value_message,
     _session_terminal,
-    encode_field,
     write_cleanup,
     write_error,
     write_identity,
@@ -58,7 +60,8 @@ Options:
   --session PATH_OR_ID Open a JSONL path, or search exact then prefix id
   --session-id ID      Open an exact current-project Session, or create that id
   --no-session         In-memory Session; may combine with --session-id
-  --trust-project      Trust project resources without prompting
+  --approve, -a        Trust project resources for this construction
+  --no-approve, -na    Do not trust project resources for this construction
   --help               Show this help and exit
   --version            Show version and exit
 
@@ -67,8 +70,10 @@ Prompt:
   strict-UTF-8 non-TTY stdin when PROMPT is omitted.
 
 Trust:
-  Interactive asks for a yes/no decision unless --trust-project is set.
-  One-shot never prompts: the flag is trusted and omission is untrusted.
+  Omission resolves saved policy, then defaultProjectTrust. Interactive
+  unresolved ask offers persistent, parent, this-Session, and untrusted
+  choices. Explicit --approve/--no-approve write no policy. One-shot never
+  prompts: always is trusted; ask and never are untrusted.
 
 Sessions:
   With no selector, a persistent Session is created. An existing selected
@@ -93,10 +98,31 @@ _SWITCH_FLAGS = {
     "--continue": "continue_session",
     "-c": "continue_session",
     "--no-session": "no_session",
-    "--trust-project": "trust_project",
+    "--approve": "approve",
+    "-a": "approve",
+    "--no-approve": "no_approve",
+    "-na": "no_approve",
     "--help": "help",
     "--version": "version",
 }
+_TRUST_CANCELLED = object()
+_TRUST_PROMPT_WITH_PARENT = (
+    "Project resources require trust:\n"
+    "1. Trust for future Sessions\n"
+    "2. Trust parent for future Sessions\n"
+    "3. Trust this Session only\n"
+    "4. Do not trust for future Sessions\n"
+    "5. Do not trust this Session only\n"
+    "Select 1-5, or c to cancel:"
+)
+_TRUST_PROMPT_ROOT = (
+    "Project resources require trust:\n"
+    "1. Trust for future Sessions\n"
+    "3. Trust this Session only\n"
+    "4. Do not trust for future Sessions\n"
+    "5. Do not trust this Session only\n"
+    "Select 1/3/4/5, or c to cancel:"
+)
 class _Usage(Exception):
     def __init__(self, reason: str) -> None:
         super().__init__(reason)
@@ -123,9 +149,16 @@ class _Parsed:
     session: str | None = None
     session_id: str | None = None
     no_session: bool = False
-    trust_project: bool = False
+    approve: bool = False
+    no_approve: bool = False
     end_of_options: bool = False
     positionals: tuple[str, ...] = ()
+
+
+@dataclass
+class _TrustChoice:
+    trusted: bool
+    persist: Literal["trust", "distrust", "trust_parent"] | None
 
 
 @dataclass
@@ -187,6 +220,7 @@ def _parse(argv: list[str]) -> _Parsed:
         index += 1
     parsed.positionals = tuple(positionals)
     _reject_selector_conflicts(parsed)
+    _reject_trust_conflicts(parsed)
     if parsed.session_id is not None:
         _require_session_id(parsed.session_id)
     if parsed.session is not None and not _path_shaped(parsed.session):
@@ -204,7 +238,8 @@ def _reject_help_version_combinations(parsed: _Parsed) -> None:
         or parsed.session is not None
         or parsed.session_id is not None
         or parsed.no_session
-        or parsed.trust_project
+        or parsed.approve
+        or parsed.no_approve
         or parsed.end_of_options
         or parsed.positionals
         or (parsed.help and parsed.version)
@@ -223,6 +258,11 @@ def _reject_selector_conflicts(parsed: _Parsed) -> None:
         raise _Usage("conflicting session selectors")
     if parsed.no_session and (parsed.session is not None or parsed.continue_session):
         raise _Usage("conflicting session selectors")
+
+
+def _reject_trust_conflicts(parsed: _Parsed) -> None:
+    if parsed.approve and parsed.no_approve:
+        raise _Usage("conflicting options")
 
 
 def _admit_source(parsed: _Parsed) -> str | None:
@@ -327,22 +367,56 @@ async def _drive_command_mode(parsed: _Parsed, prompt: str | None) -> int:
         return 1
     if shutdown.signum is not None:
         return _pre_session_cancel(shutdown.signum)
-    if parsed.print_mode or parsed.trust_project:
-        project_trusted = parsed.trust_project
-    else:
-        trusted = await _interactive_trust(cwd, shutdown)
-        if trusted is None:
-            return 0 if shutdown.signum is None else _SIGNAL_STATUS[shutdown.signum]
-        project_trusted = trusted
+    try:
+        project_trusted = await _resolve_construction_trust(parsed, cwd, shutdown)
+    except TrustPolicyError as error:
+        _write_trust_policy_failure(error)
+        return 1
+    except ResourceAdmissionError:
+        write_stderr("internal error\n")
+        return 1
+    except OSError:
+        write_stderr("I/O error\n")
+        return 1
+    if project_trusted is _TRUST_CANCELLED:
+        return 0 if shutdown.signum is None else _SIGNAL_STATUS[shutdown.signum]
+    assert project_trusted is None or type(project_trusted) is bool
     return await _drive_session(
         parsed, selected, cwd, project_trusted, prompt, shutdown
     )
 
 
-async def _interactive_trust(cwd: str, shutdown: _Shutdown) -> bool | None:
+async def _resolve_construction_trust(
+    parsed: _Parsed, cwd: str, shutdown: _Shutdown
+) -> bool | None | object:
+    if parsed.approve:
+        return True
+    if parsed.no_approve:
+        return False
+    if parsed.print_mode:
+        return None
+    if shutdown.signum is not None:
+        _write_trust_cancel(shutdown.signum)
+        return _TRUST_CANCELLED
+    if not interactive_trust_is_pending(cwd):
+        return None
+    choice = await _interactive_trust(cwd, shutdown)
+    if choice is None:
+        return _TRUST_CANCELLED
+    if choice.persist is not None:
+        update_project_trust(cwd, choice.persist)
+    return choice.trusted
+
+
+async def _interactive_trust(
+    cwd: str, shutdown: _Shutdown
+) -> _TrustChoice | None:
     loop = asyncio.get_running_loop()
     lines: asyncio.Queue[bytes | OSError] = asyncio.Queue()
+    redraw = asyncio.Event()
     stdin_fd = sys.stdin.buffer.fileno()
+    prompt = _trust_prompt(cwd)
+    winch_registered = False
 
     def input_ready() -> None:
         try:
@@ -355,42 +429,103 @@ async def _interactive_trust(cwd: str, shutdown: _Shutdown) -> bool | None:
             loop.remove_reader(stdin_fd)
         lines.put_nowait(raw)
 
+    def on_resize() -> None:
+        redraw.set()
+
     loop.add_reader(stdin_fd, input_ready)
     try:
+        try:
+            loop.add_signal_handler(signal.SIGWINCH, on_resize)
+            winch_registered = True
+        except (NotImplementedError, RuntimeError):
+            signal.signal(signal.SIGWINCH, lambda _num, _frame: on_resize())
+            winch_registered = True
         if shutdown.signum is not None:
             _write_trust_cancel(shutdown.signum)
             return None
+        line: asyncio.Task[bytes | OSError] | None = None
         while True:
-            write_stdout(
-                f'Trust project resources in "{encode_field(cwd)}"? [y/n] '
-            )
-            line = asyncio.create_task(lines.get())
+            write_stdout(prompt)
+            if line is None or line.done():
+                line = asyncio.create_task(lines.get())
             cancelled = asyncio.create_task(shutdown.wait())
+            resized = asyncio.create_task(redraw.wait())
             done, _pending = await asyncio.wait(
-                (line, cancelled), return_when=asyncio.FIRST_COMPLETED
+                (line, cancelled, resized),
+                return_when=asyncio.FIRST_COMPLETED,
             )
+            if resized in done:
+                redraw.clear()
+                cancelled.cancel()
+                await asyncio.gather(cancelled, return_exceptions=True)
+                resized.cancel()
+                await asyncio.gather(resized, return_exceptions=True)
+                continue
+            cancelled.cancel()
+            await asyncio.gather(cancelled, return_exceptions=True)
+            resized.cancel()
+            await asyncio.gather(resized, return_exceptions=True)
+            assert line is not None
             if cancelled in done:
                 line.cancel()
                 await asyncio.gather(line, return_exceptions=True)
                 _write_trust_cancel(shutdown.signum)
                 return None
-            cancelled.cancel()
-            await asyncio.gather(cancelled, return_exceptions=True)
             raw = line.result()
+            line = None
             if isinstance(raw, OSError):
                 raise raw
             if raw == b"":
                 write_stdout("trust cancelled\n")
                 return None
             text = _decode_interactive_line(raw, "trust input is not UTF-8")
-            lowered = _es_trim(text).lower()
-            if lowered == "y":
-                return True
-            if lowered == "n":
-                return False
-            write_stdout("Please enter y or n.\n")
+            trimmed = _es_trim(text)
+            lowered = trimmed.lower()
+            if lowered == "c" or trimmed == "\x1b":
+                write_stdout("trust cancelled\n")
+                return None
+            selected = _trust_choice(trimmed, _trust_has_parent(cwd))
+            if selected is not None:
+                return selected
     finally:
         loop.remove_reader(stdin_fd)
+        if winch_registered:
+            try:
+                loop.remove_signal_handler(signal.SIGWINCH)
+            except (NotImplementedError, RuntimeError, OSError):
+                signal.signal(signal.SIGWINCH, signal.SIG_DFL)
+
+
+def _trust_has_parent(cwd: str) -> bool:
+    path = os.path.realpath(cwd)
+    return os.path.dirname(path) != path
+
+
+def _trust_prompt(cwd: str) -> str:
+    if _trust_has_parent(cwd):
+        return _TRUST_PROMPT_WITH_PARENT
+    return _TRUST_PROMPT_ROOT
+
+
+def _trust_choice(selected: str, has_parent: bool) -> _TrustChoice | None:
+    if selected == "1":
+        return _TrustChoice(True, "trust")
+    if selected == "2" and has_parent:
+        return _TrustChoice(True, "trust_parent")
+    if selected == "3":
+        return _TrustChoice(True, None)
+    if selected == "4":
+        return _TrustChoice(False, "distrust")
+    if selected == "5":
+        return _TrustChoice(False, None)
+    return None
+
+
+def _write_trust_policy_failure(error: TrustPolicyError) -> None:
+    write_stderr(
+        f'trust policy failed operation="{error.operation}" '
+        f'stage="{error.stage}"\n'
+    )
 
 
 def _write_trust_cancel(signum: signal.Signals | None) -> None:
@@ -468,7 +603,7 @@ async def _drive_session(
     parsed: _Parsed,
     selected: _Selected,
     cwd: str,
-    project_trusted: bool,
+    project_trusted: bool | None,
     prompt: str | None,
     shutdown: _Shutdown,
 ) -> int:
@@ -486,6 +621,9 @@ async def _drive_session(
         raise
     except ModelsError as error:
         write_error(str(error))
+        return 1
+    except TrustPolicyError as error:
+        _write_trust_policy_failure(error)
         return 1
     except ValueError as error:
         write_error(_public_value_message(error))
