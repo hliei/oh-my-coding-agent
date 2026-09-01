@@ -55,7 +55,7 @@ StreamFn: TypeAlias = Callable[
     AsyncIterator[AssistantMessageEvent],
 ]
 ToolExecutionMode: TypeAlias = Literal["sequential", "parallel"]
-_SteeringPoll: TypeAlias = Callable[[], UserMessage | None]
+_QueuedMessagePoll: TypeAlias = Callable[[], UserMessage | None]
 
 
 @final
@@ -472,7 +472,9 @@ async def _run_agent_loop(
     *,
     continuation: bool,
     cancellationResult: bool,
-    steeringPoll: _SteeringPoll | None = None,
+    steeringPoll: _QueuedMessagePoll | None = None,
+    followUpPoll: _QueuedMessagePoll | None = None,
+    skipInitialSteeringPoll: bool = False,
 ) -> tuple[AgentMessage, ...]:
     _validate_run(prompt_messages, context, config, streamFn, continuation=continuation)
     if not callable(emit):
@@ -486,6 +488,8 @@ async def _run_agent_loop(
         control,
         cancellationResult=cancellationResult,
         steeringPoll=steeringPoll,
+        followUpPoll=followUpPoll,
+        skipInitialSteeringPoll=skipInitialSteeringPoll,
     )
 
 
@@ -523,6 +527,22 @@ def _snapshot_prompts(prompts: object) -> tuple[AgentMessage, ...]:
     return tuple(cast(Sequence[AgentMessage], prompts))
 
 
+def _poll_queued(
+    poll: _QueuedMessagePoll | None,
+) -> UserMessage | None:
+    return None if poll is None else poll()
+
+
+def _poll_when_stopping(
+    steeringPoll: _QueuedMessagePoll | None,
+    followUpPoll: _QueuedMessagePoll | None,
+) -> UserMessage | None:
+    pending = _poll_queued(steeringPoll)
+    if pending is not None:
+        return pending
+    return _poll_queued(followUpPoll)
+
+
 async def _run_agent_loop_body(
     prompt_messages: tuple[AgentMessage, ...],
     context: AgentContext,
@@ -532,7 +552,9 @@ async def _run_agent_loop_body(
     control: _RunControl,
     *,
     cancellationResult: bool,
-    steeringPoll: _SteeringPoll | None,
+    steeringPoll: _QueuedMessagePoll | None,
+    followUpPoll: _QueuedMessagePoll | None,
+    skipInitialSteeringPoll: bool,
 ) -> tuple[AgentMessage, ...]:
     await _emit(emit, AgentStart())
     produced: list[AgentMessage] = list(prompt_messages)
@@ -541,7 +563,7 @@ async def _run_agent_loop_body(
         *prompt_messages,
     )
     seed_emitted = False
-    pending_steering: UserMessage | None = None
+    pending_injected: UserMessage | None = None
     signal = control.signal
 
     while True:
@@ -551,14 +573,15 @@ async def _run_agent_loop_body(
                 await _emit(emit, MessageStart(message=prompt))
                 await _emit(emit, MessageEnd(message=prompt))
             seed_emitted = True
-            pending_steering = steeringPoll() if steeringPoll is not None else None
+            if not skipInitialSteeringPoll:
+                pending_injected = _poll_queued(steeringPoll)
 
-        if pending_steering is not None:
-            await _emit(emit, MessageStart(message=pending_steering))
-            await _emit(emit, MessageEnd(message=pending_steering))
-            produced.append(pending_steering)
-            working_messages = (*working_messages, pending_steering)
-            pending_steering = None
+        if pending_injected is not None:
+            await _emit(emit, MessageStart(message=pending_injected))
+            await _emit(emit, MessageEnd(message=pending_injected))
+            produced.append(pending_injected)
+            working_messages = (*working_messages, pending_injected)
+            pending_injected = None
 
         working = Context(
             systemPrompt=context.systemPrompt,
@@ -608,10 +631,8 @@ async def _run_agent_loop_body(
             if signal.aborted:
                 await _append_aborted_tail(produced, config.model, emit)
                 break
-            pending_steering = (
-                steeringPoll() if steeringPoll is not None else None
-            )
-            if pending_steering is None:
+            pending_injected = _poll_when_stopping(steeringPoll, followUpPoll)
+            if pending_injected is None:
                 break
             continue
 
@@ -632,9 +653,12 @@ async def _run_agent_loop_body(
         if signal.aborted:
             await _append_aborted_tail(produced, config.model, emit)
             break
-        pending_steering = steeringPoll() if steeringPoll is not None else None
-        if terminate and pending_steering is None:
-            break
+        if terminate:
+            pending_injected = _poll_when_stopping(steeringPoll, followUpPoll)
+            if pending_injected is None:
+                break
+        else:
+            pending_injected = _poll_queued(steeringPoll)
 
     result = tuple(produced)
     control.terminalCommitted = True

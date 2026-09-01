@@ -185,6 +185,7 @@ class _ActiveRun:
 @final
 class Agent:
     __slots__ = (
+        "_follow_up_queue",
         "_listeners",
         "_run",
         "_state",
@@ -203,6 +204,7 @@ class Agent:
         self._run: _ActiveRun | None = None
         self._listeners: list[_ListenerRecord] = []
         self._steering_queue: deque[UserMessage] = deque()
+        self._follow_up_queue: deque[UserMessage] = deque()
 
     @property
     def state(self) -> AgentState:
@@ -215,12 +217,17 @@ class Agent:
 
     @property
     def hasQueuedMessages(self) -> bool:
-        return bool(self._steering_queue)
+        return bool(self._steering_queue or self._follow_up_queue)
 
     def steer(self, message: UserMessage) -> None:
         if type(message) is not UserMessage:
             raise TypeError("message must be a UserMessage")
         self._steering_queue.append(message)
+
+    def followUp(self, message: UserMessage) -> None:
+        if type(message) is not UserMessage:
+            raise TypeError("message must be a UserMessage")
+        self._follow_up_queue.append(message)
 
     def subscribe(self, listener: _Listener) -> Callable[[], None]:
         if not callable(listener):
@@ -247,6 +254,20 @@ class Agent:
     async def continue_(self) -> None:
         if self._run is not None:
             raise LifecycleError("busy", "Agent is busy")
+        messages = self._state.messages
+        if messages and type(messages[-1]) is AssistantMessage:
+            steering = self._poll_steering()
+            if steering is not None:
+                await self._launch(
+                    (steering,),
+                    continuation=False,
+                    skip_initial_steering_poll=True,
+                )
+                return
+            follow_up = self._poll_follow_up()
+            if follow_up is not None:
+                await self._launch((follow_up,), continuation=False)
+                return
         await self._launch((), continuation=True)
 
     def abort(self) -> None:
@@ -280,6 +301,7 @@ class Agent:
         prompts: tuple[AgentMessage, ...],
         *,
         continuation: bool,
+        skip_initial_steering_poll: bool = False,
     ) -> None:
         state = self._state
         context = AgentContext(
@@ -309,6 +331,7 @@ class Agent:
                 context,
                 config,
                 continuation=continuation,
+                skip_initial_steering_poll=skip_initial_steering_poll,
             )
         )
         run.task = task
@@ -328,6 +351,7 @@ class Agent:
         config: AgentLoopConfig,
         *,
         continuation: bool,
+        skip_initial_steering_poll: bool = False,
     ) -> tuple[AgentMessage, ...]:
         try:
             return await _run_agent_loop(
@@ -340,6 +364,8 @@ class Agent:
                 continuation=continuation,
                 cancellationResult=True,
                 steeringPoll=self._poll_steering,
+                followUpPoll=self._poll_follow_up,
+                skipInitialSteeringPoll=skip_initial_steering_poll,
             )
         except LifecycleError:
             run.control.requestCancellation()
@@ -353,6 +379,11 @@ class Agent:
         if not self._steering_queue:
             return None
         return self._steering_queue.popleft()
+
+    def _poll_follow_up(self) -> UserMessage | None:
+        if not self._follow_up_queue:
+            return None
+        return self._follow_up_queue.popleft()
 
     async def _dispatch(self, event: AgentEvent) -> None:
         self._reduce(event)
