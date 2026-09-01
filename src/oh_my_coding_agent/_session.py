@@ -52,6 +52,7 @@ from ._prompt_resources import (
     load_prompt_resources,
 )
 from ._project_rules import ProjectRuleSnapshot, load_project_rules
+from ._project_trust import resolve_project_trust
 from ._resource_state import ProjectResourceState
 from ._system_prompt import build_system_prompt
 from ._tools import product_session_tools
@@ -90,7 +91,7 @@ class CreateAgentSessionOptions:
     cwd: str | None = None
     model: Model | None = None
     sessionManager: SessionManager | None = None
-    projectTrusted: bool = False
+    projectTrusted: bool | None = None
 
 
 @final
@@ -1369,8 +1370,10 @@ async def createAgentSession(
     supplied_manager = selected.sessionManager
     if supplied_manager is not None and type(supplied_manager) is not SessionManager:
         raise TypeError("CreateAgentSessionOptions.sessionManager: must be a SessionManager")
-    if type(selected.projectTrusted) is not bool:
-        raise TypeError("CreateAgentSessionOptions.projectTrusted: must be a bool")
+    if selected.projectTrusted is not None and type(selected.projectTrusted) is not bool:
+        raise TypeError(
+            "CreateAgentSessionOptions.projectTrusted: must be a bool or None"
+        )
 
     if selected.cwd is not None:
         operational_cwd = _resolve_path(
@@ -1395,9 +1398,10 @@ async def createAgentSession(
     if await models.getAuth(model) is None:
         raise ModelsError("auth", "DeepSeek authentication is required")
 
-    prompt_resources = load_prompt_resources(operational_cwd, selected.projectTrusted)
-    project_rules = load_project_rules(operational_cwd, selected.projectTrusted)
-    extensions = await load_extensions(operational_cwd, selected.projectTrusted)
+    project_trusted = resolve_project_trust(operational_cwd, selected.projectTrusted)
+    prompt_resources = load_prompt_resources(operational_cwd, project_trusted)
+    project_rules = load_project_rules(operational_cwd, project_trusted)
+    extensions = await load_extensions(operational_cwd, project_trusted)
 
     manager = (
         supplied_manager
