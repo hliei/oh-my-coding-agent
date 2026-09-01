@@ -331,6 +331,7 @@ class AgentSession:
         "_compaction_task",
         "_compaction_terminal_committed",
         "_disposal_task",
+        "_disposal_queues_cleared",
         "_disposed",
         "_extensions",
         "_listeners",
@@ -354,6 +355,7 @@ class AgentSession:
         "_project_rules",
         "_project_resource_state",
         "_prompt_terminal_projection_truncated",
+        "_queue_cutoff_generation",
         "_reload_task",
         "_session_manager",
         "_system_prompt",
@@ -410,7 +412,9 @@ class AgentSession:
         self._prompt_cancel_requested = False
         self._prompt_settlement: asyncio.Future[None] | None = None
         self._prompt_terminal_projection_truncated = False
+        self._queue_cutoff_generation = 0
         self._disposal_task: asyncio.Task[None] | None = None
+        self._disposal_queues_cleared = False
         self._reload_task: asyncio.Task[ProjectResourceReloadResult] | None = None
         self._agent_unsubscribe: Callable[[], None] | None = self._agent.subscribe(
             self._handle_agent_event
@@ -619,6 +623,21 @@ class AgentSession:
     ) -> None:
         await self._enqueue_queued_message(text, options, kind="follow_up")
 
+    async def clearQueue(self) -> PendingMessages:
+        self._ensure_not_reentrant()
+        self._ensure_open()
+        cleared = self._clear_queued_messages()
+        await self._dispatch(QueueUpdate(pendingMessages=self.pendingMessages))
+        return cleared
+
+    def _clear_queued_messages(self) -> PendingMessages:
+        cleared = self.pendingMessages
+        self._pending_steering.clear()
+        self._pending_follow_up.clear()
+        self._agent.clearAllQueues()
+        self._queue_cutoff_generation += 1
+        return cleared
+
     async def _enqueue_queued_message(
         self,
         text: str,
@@ -635,6 +654,7 @@ class AgentSession:
         expanded = expand_prompt(text, self._prompt_resources, enabled=expand)
         timestamp = time.time_ns() // 1_000_000
         message = UserMessage(content=expanded, timestamp=timestamp)
+        cutoff_generation = self._queue_cutoff_generation
         if kind == "steering":
             pending = self._pending_steering
             queued = self._queued_steering_messages
@@ -645,6 +665,8 @@ class AgentSession:
             enqueue = self._agent.followUp
         pending.append(expanded)
         await self._dispatch(QueueUpdate(pendingMessages=self.pendingMessages))
+        if cutoff_generation != self._queue_cutoff_generation:
+            return
         enqueue(message)
         queued.append(message)
 
@@ -721,6 +743,16 @@ class AgentSession:
 
     async def _drive_disposal(self) -> None:
         disposal_failures: list[BaseException] = []
+        queue_listener_failure: BaseException | None = None
+        if not self._disposal_queues_cleared:
+            self._clear_queued_messages()
+            self._disposal_queues_cleared = True
+            try:
+                await self._dispatch(
+                    QueueUpdate(pendingMessages=self.pendingMessages)
+                )
+            except BaseException as error:
+                queue_listener_failure = error
         compaction = self._compaction_task
         if compaction is not None and not compaction.done():
             self._request_compaction_cancel()
@@ -767,6 +799,8 @@ class AgentSession:
             else:
                 self._agent_unsubscribe = None
         if disposal_failures:
+            if queue_listener_failure is not None:
+                disposal_failures.insert(0, queue_listener_failure)
             raise LifecycleError(
                 "disposal",
                 "AgentSession disposal failed",
@@ -775,8 +809,12 @@ class AgentSession:
         self._listeners.clear()
         self._pending_agent_end = None
         self._pending_agent_end_signal = None
+        self._queued_steering_messages.clear()
+        self._queued_follow_up_messages.clear()
         self._extensions.release()
         self._disposed = True
+        if queue_listener_failure is not None:
+            raise queue_listener_failure
         if settlement_failure is not None:
             raise settlement_failure
 
