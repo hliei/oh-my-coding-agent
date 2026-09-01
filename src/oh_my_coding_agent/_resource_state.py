@@ -539,3 +539,47 @@ class TrustPolicyError(RuntimeError):
             Literal["lock", "read", "encoding", "document", "write"],
             self._stage,
         )
+
+
+@final
+class ProjectResourceReloadError(RuntimeError):
+    __slots__ = ("_state", "_diagnostics")
+
+    def __init__(
+        self,
+        *,
+        state: ProjectResourceState,
+        diagnostics: tuple[ExtensionDiagnostic, ...] | list[ExtensionDiagnostic] = (),
+    ) -> None:
+        if type(state) is not ProjectResourceState:
+            _fail_type(
+                "ProjectResourceReloadError",
+                "state",
+                "must be a ProjectResourceState",
+            )
+        if state.status != "indeterminate":
+            _fail_value(
+                "ProjectResourceReloadError",
+                "state",
+                "must be an indeterminate ProjectResourceState",
+            )
+        copied = _sequence(
+            diagnostics,
+            (ExtensionDiagnosticLoad, ExtensionDiagnosticLifecycle),
+            "ProjectResourceReloadError",
+            "diagnostics",
+        )
+        super().__init__("Project resource reload failed")
+        self._state = state
+        self._diagnostics = copied
+
+    def __init_subclass__(cls) -> None:
+        raise TypeError("ProjectResourceReloadError is final")
+
+    @property
+    def state(self) -> ProjectResourceState:
+        return self._state
+
+    @property
+    def diagnostics(self) -> tuple[ExtensionDiagnostic, ...]:
+        return self._diagnostics

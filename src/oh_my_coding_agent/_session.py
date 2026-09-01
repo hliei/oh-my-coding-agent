@@ -56,6 +56,7 @@ from ._project_rules import ProjectRuleSnapshot, load_project_rules
 from ._project_trust import resolve_project_trust
 from ._resource_state import (
     ExtensionDiagnostic,
+    ProjectResourceReloadError,
     ProjectResourceReloadResult,
     ProjectResourceState,
 )
@@ -725,34 +726,56 @@ class AgentSession:
         extension_sources = snapshot_extension_sources(cwd, trusted)
         context = self._extension_context(None)
         previous = self._extensions
+        last_successful = self._project_resource_state
         old_diagnostics: list[ExtensionDiagnostic] = []
         await previous.shutdown(context, diagnostics=old_diagnostics)
-        extensions = await load_extensions(
-            cwd, trusted, snapshots=extension_sources
-        )
-        await extensions.start(context)
-        system_prompt = build_system_prompt(
-            cwd,
-            prompt_resources,
-            project_rules,
-            extensions.tool_summaries(),
-        )
-        tools = (*product_session_tools(cwd), *extensions.tools)
-        new_diagnostics = tuple(extensions.diagnostics)
-        state = project_rules.state(
-            skills=prompt_resources.skill_resolutions,
-            prompt_templates=prompt_resources.template_resolutions,
-            extension_diagnostics=new_diagnostics,
-        )
-        self._prompt_resources = prompt_resources
-        self._project_rules = project_rules
-        self._extensions = extensions
-        self._system_prompt = system_prompt
-        self._agent.state.systemPrompt = system_prompt
-        self._agent.state.tools = tools
-        self._project_resource_state = state
-        previous.release()
-        diagnostics = (*old_diagnostics, *new_diagnostics)
+        collected: list[ExtensionDiagnostic] = list(old_diagnostics)
+        extensions: ExtensionRuntime | None = None
+        try:
+            await _reload_owned_cutoff("retire_registry")
+            extensions = await load_extensions(
+                cwd, trusted, snapshots=extension_sources
+            )
+            await extensions.start(context)
+            collected = [*old_diagnostics, *extensions.diagnostics]
+            system_prompt = build_system_prompt(
+                cwd,
+                prompt_resources,
+                project_rules,
+                extensions.tool_summaries(),
+            )
+            tools = (*product_session_tools(cwd), *extensions.tools)
+            new_diagnostics = tuple(extensions.diagnostics)
+            state = project_rules.state(
+                skills=prompt_resources.skill_resolutions,
+                prompt_templates=prompt_resources.template_resolutions,
+                extension_diagnostics=new_diagnostics,
+            )
+            await _reload_owned_cutoff("owned_cleanup")
+            previous.release()
+            await _reload_owned_cutoff("publish")
+            self._prompt_resources = prompt_resources
+            self._project_rules = project_rules
+            self._extensions = extensions
+            self._system_prompt = system_prompt
+            self._agent.state.systemPrompt = system_prompt
+            self._agent.state.tools = tools
+            self._project_resource_state = state
+        except asyncio.CancelledError:
+            raise
+        except Exception:
+            if extensions is not None:
+                self._extensions = extensions
+            self._project_resource_state = ProjectResourceState(
+                status="indeterminate",
+                report=last_successful.report,
+                extensionDiagnostics=last_successful.extensionDiagnostics,
+            )
+            raise ProjectResourceReloadError(
+                state=self._project_resource_state,
+                diagnostics=tuple(collected),
+            ) from None
+        diagnostics = tuple(collected)
         return ProjectResourceReloadResult(
             status="clean" if not diagnostics else "partial",
             state=state,
@@ -1406,6 +1429,10 @@ async def _finish_settlement_before_cancellation(
 def _consume_future_exception(settlement: asyncio.Future[None]) -> None:
     if not settlement.cancelled():
         settlement.exception()
+
+
+async def _reload_owned_cutoff(phase: str) -> None:
+    del phase
 
 
 async def _join_task(
