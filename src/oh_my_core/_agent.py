@@ -1,6 +1,7 @@
 from __future__ import annotations
 
 import asyncio
+from collections import deque
 from collections.abc import Callable, Sequence
 from dataclasses import dataclass
 import inspect
@@ -183,7 +184,14 @@ class _ActiveRun:
 
 @final
 class Agent:
-    __slots__ = ("_listeners", "_run", "_state", "_stream_fn", "_tool_execution")
+    __slots__ = (
+        "_listeners",
+        "_run",
+        "_state",
+        "_steering_queue",
+        "_stream_fn",
+        "_tool_execution",
+    )
 
     def __init__(self, options: AgentOptions) -> None:
         if type(options) is not AgentOptions:
@@ -194,6 +202,7 @@ class Agent:
         self._tool_execution = options.toolExecution
         self._run: _ActiveRun | None = None
         self._listeners: list[_ListenerRecord] = []
+        self._steering_queue: deque[UserMessage] = deque()
 
     @property
     def state(self) -> AgentState:
@@ -203,6 +212,15 @@ class Agent:
     def signal(self) -> AbortSignal | None:
         run = self._run
         return None if run is None else run.control.signal
+
+    @property
+    def hasQueuedMessages(self) -> bool:
+        return bool(self._steering_queue)
+
+    def steer(self, message: UserMessage) -> None:
+        if type(message) is not UserMessage:
+            raise TypeError("message must be a UserMessage")
+        self._steering_queue.append(message)
 
     def subscribe(self, listener: _Listener) -> Callable[[], None]:
         if not callable(listener):
@@ -321,6 +339,7 @@ class Agent:
                 run.control,
                 continuation=continuation,
                 cancellationResult=True,
+                steeringPoll=self._poll_steering,
             )
         except LifecycleError:
             run.control.requestCancellation()
@@ -329,6 +348,11 @@ class Agent:
             if self._run is run:
                 self._state._end_run()
                 self._run = None
+
+    def _poll_steering(self) -> UserMessage | None:
+        if not self._steering_queue:
+            return None
+        return self._steering_queue.popleft()
 
     async def _dispatch(self, event: AgentEvent) -> None:
         self._reduce(event)

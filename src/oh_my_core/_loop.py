@@ -55,6 +55,7 @@ StreamFn: TypeAlias = Callable[
     AsyncIterator[AssistantMessageEvent],
 ]
 ToolExecutionMode: TypeAlias = Literal["sequential", "parallel"]
+_SteeringPoll: TypeAlias = Callable[[], UserMessage | None]
 
 
 @final
@@ -471,6 +472,7 @@ async def _run_agent_loop(
     *,
     continuation: bool,
     cancellationResult: bool,
+    steeringPoll: _SteeringPoll | None = None,
 ) -> tuple[AgentMessage, ...]:
     _validate_run(prompt_messages, context, config, streamFn, continuation=continuation)
     if not callable(emit):
@@ -483,6 +485,7 @@ async def _run_agent_loop(
         streamFn,
         control,
         cancellationResult=cancellationResult,
+        steeringPoll=steeringPoll,
     )
 
 
@@ -529,6 +532,7 @@ async def _run_agent_loop_body(
     control: _RunControl,
     *,
     cancellationResult: bool,
+    steeringPoll: _SteeringPoll | None,
 ) -> tuple[AgentMessage, ...]:
     await _emit(emit, AgentStart())
     produced: list[AgentMessage] = list(prompt_messages)
@@ -537,6 +541,7 @@ async def _run_agent_loop_body(
         *prompt_messages,
     )
     seed_emitted = False
+    pending_steering: UserMessage | None = None
     signal = control.signal
 
     while True:
@@ -546,6 +551,14 @@ async def _run_agent_loop_body(
                 await _emit(emit, MessageStart(message=prompt))
                 await _emit(emit, MessageEnd(message=prompt))
             seed_emitted = True
+            pending_steering = steeringPoll() if steeringPoll is not None else None
+
+        if pending_steering is not None:
+            await _emit(emit, MessageStart(message=pending_steering))
+            await _emit(emit, MessageEnd(message=pending_steering))
+            produced.append(pending_steering)
+            working_messages = (*working_messages, pending_steering)
+            pending_steering = None
 
         working = Context(
             systemPrompt=context.systemPrompt,
@@ -594,7 +607,13 @@ async def _run_agent_loop_body(
             await _emit(emit, TurnEnd(message=response, toolResults=()))
             if signal.aborted:
                 await _append_aborted_tail(produced, config.model, emit)
-            break
+                break
+            pending_steering = (
+                steeringPoll() if steeringPoll is not None else None
+            )
+            if pending_steering is None:
+                break
+            continue
 
         tool_results, terminate = await _process_tool_calls(
             tool_calls,
@@ -613,7 +632,8 @@ async def _run_agent_loop_body(
         if signal.aborted:
             await _append_aborted_tail(produced, config.model, emit)
             break
-        if terminate:
+        pending_steering = steeringPoll() if steeringPoll is not None else None
+        if terminate and pending_steering is None:
             break
 
     result = tuple(produced)
