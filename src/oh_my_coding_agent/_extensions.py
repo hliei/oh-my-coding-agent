@@ -273,7 +273,12 @@ class ExtensionRuntime:
         if extension in self._loaded:
             self._loaded.remove(extension)
 
-    async def shutdown(self, context: ExtensionContext) -> list[BaseException]:
+    async def shutdown(
+        self,
+        context: ExtensionContext,
+        *,
+        diagnostics: list[ExtensionDiagnostic] | None = None,
+    ) -> list[BaseException]:
         failures: list[BaseException] = []
         owner_cancellation: asyncio.CancelledError | None = None
         for extension in reversed(self._loaded):
@@ -291,9 +296,13 @@ class ExtensionRuntime:
                         _uncancel_owner()
                         owner_cancellation = error
                     else:
-                        failures.append(error)
+                        _record_shutdown_failure(
+                            failures, diagnostics, extension.path, error
+                        )
                 except BaseException as error:
-                    failures.append(error)
+                    _record_shutdown_failure(
+                        failures, diagnostics, extension.path, error
+                    )
                 else:
                     handler.resolved = True
         if owner_cancellation is not None:
@@ -545,6 +554,19 @@ def _lifecycle_diagnostic(
         message=_raw_message(error),
         stack=_raw_stack(error),
     )
+
+
+def _record_shutdown_failure(
+    failures: list[BaseException],
+    diagnostics: list[ExtensionDiagnostic] | None,
+    path: str,
+    error: BaseException,
+) -> None:
+    failures.append(error)
+    if diagnostics is not None:
+        diagnostics.append(
+            _lifecycle_diagnostic(path, "session_shutdown", error)
+        )
 
 
 async def _invoke_session_handler(

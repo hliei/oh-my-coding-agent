@@ -54,7 +54,11 @@ from ._prompt_resources import (
 )
 from ._project_rules import ProjectRuleSnapshot, load_project_rules
 from ._project_trust import resolve_project_trust
-from ._resource_state import ProjectResourceReloadResult, ProjectResourceState
+from ._resource_state import (
+    ExtensionDiagnostic,
+    ProjectResourceReloadResult,
+    ProjectResourceState,
+)
 from ._system_prompt import build_system_prompt
 from ._tools import product_session_tools
 from ._compaction import (
@@ -721,7 +725,8 @@ class AgentSession:
         extension_sources = snapshot_extension_sources(cwd, trusted)
         context = self._extension_context(None)
         previous = self._extensions
-        await previous.shutdown(context)
+        old_diagnostics: list[ExtensionDiagnostic] = []
+        await previous.shutdown(context, diagnostics=old_diagnostics)
         extensions = await load_extensions(
             cwd, trusted, snapshots=extension_sources
         )
@@ -733,10 +738,11 @@ class AgentSession:
             extensions.tool_summaries(),
         )
         tools = (*product_session_tools(cwd), *extensions.tools)
+        new_diagnostics = tuple(extensions.diagnostics)
         state = project_rules.state(
             skills=prompt_resources.skill_resolutions,
             prompt_templates=prompt_resources.template_resolutions,
-            extension_diagnostics=tuple(extensions.diagnostics),
+            extension_diagnostics=new_diagnostics,
         )
         self._prompt_resources = prompt_resources
         self._project_rules = project_rules
@@ -746,7 +752,7 @@ class AgentSession:
         self._agent.state.tools = tools
         self._project_resource_state = state
         previous.release()
-        diagnostics = tuple(extensions.diagnostics)
+        diagnostics = (*old_diagnostics, *new_diagnostics)
         return ProjectResourceReloadResult(
             status="clean" if not diagnostics else "partial",
             state=state,
