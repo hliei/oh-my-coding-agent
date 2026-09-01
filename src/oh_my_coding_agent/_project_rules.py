@@ -6,6 +6,7 @@ import stat
 from typing import Literal
 
 from ._resource_state import (
+    ExtensionDiagnostic,
     ProjectResourceState,
     ProjectRuleResolution,
     PromptResourceResolution,
@@ -44,6 +45,7 @@ class ProjectRuleSnapshot:
         self,
         skills: tuple[PromptResourceResolution, ...] = (),
         prompt_templates: tuple[PromptResourceResolution, ...] = (),
+        extension_diagnostics: tuple[ExtensionDiagnostic, ...] = (),
     ) -> ProjectResourceState:
         if not self.trusted:
             report = ResourceResolutionReport(
@@ -71,7 +73,7 @@ class ProjectRuleSnapshot:
         return ProjectResourceState(
             status="current",
             report=report,
-            extensionDiagnostics=(),
+            extensionDiagnostics=extension_diagnostics,
         )
 
 

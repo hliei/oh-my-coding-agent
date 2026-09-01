@@ -7,11 +7,14 @@ import inspect
 import os
 import re
 import stat
+import traceback
 import types
-from typing import Any, Final, Protocol, cast, final
+from typing import Any, Final, Literal, Protocol, cast, final
 
 from oh_my_core import AgentMessage, AgentTool
 from oh_my_llm import AbortSignal, LifecycleError, Model
+
+from ._resource_state import ExtensionDiagnostic
 
 
 _TOKEN = object()
@@ -76,9 +79,11 @@ class ExtensionAPI:
         if type(tool) is not AgentTool:
             raise TypeError("ExtensionAPI.registerTool: must be an AgentTool")
         assert self._runtime is not None
+        assert self._extension is not None
         if tool.name in _BUILTIN_TOOL_NAMES or tool.name in self._runtime.tool_names:
             raise ValueError(f'Extension Tool "{tool.name}" is already registered')
         self._runtime.tools.append(tool)
+        self._extension.tools.append(tool)
 
     def _bind(self, runtime: ExtensionRuntime, extension: _LoadedExtension) -> None:
         self._runtime = runtime
@@ -170,17 +175,21 @@ class _RegisteredHandler:
 class _LoadedExtension:
     name: str
     relative: str
+    path: str
     module: types.ModuleType
     handlers: list[_RegisteredHandler] = field(default_factory=list)
+    tools: list[AgentTool] = field(default_factory=list)
     started: bool = False
+    start_attempted: bool = False
 
 
 class ExtensionRuntime:
-    __slots__ = ("_loaded", "tools")
+    __slots__ = ("_loaded", "diagnostics", "tools")
 
     def __init__(self) -> None:
         self._loaded: list[_LoadedExtension] = []
         self.tools: list[AgentTool] = []
+        self.diagnostics: list[ExtensionDiagnostic] = []
 
     @property
     def tool_names(self) -> set[str]:
@@ -192,30 +201,83 @@ class ExtensionRuntime:
     def release(self) -> None:
         self._loaded.clear()
         self.tools.clear()
+        self.diagnostics.clear()
 
     async def start(self, context: ExtensionContext) -> None:
-        for extension in self._loaded:
-            try:
-                for handler in extension.handlers:
-                    if handler.event_type != "session_start":
-                        continue
-                    await _invoke_session_handler(
-                        handler.callback, _fresh_context(context)
-                    )
-            except asyncio.CancelledError as error:
-                if _owner_cancelled():
-                    await self._raise_after_shutdown(context, error, re_raise=True)
-                await self._raise_after_shutdown(context, error, re_raise=False)
-            except BaseException as error:
-                await self._raise_after_shutdown(context, error, re_raise=False)
+        for extension in list(self._loaded):
+            if not await self._start_one(extension, context):
+                continue
+            if not await self._discover_one(extension, context):
+                continue
+            extension.started = True
+
+    async def _start_one(
+        self, extension: _LoadedExtension, context: ExtensionContext
+    ) -> bool:
+        extension.start_attempted = True
+        try:
+            for handler in extension.handlers:
+                if handler.event_type != "session_start":
+                    continue
+                await _invoke_session_handler(
+                    handler.callback, _fresh_context(context)
+                )
+        except asyncio.CancelledError as error:
+            if _owner_cancelled():
+                await self._raise_after_shutdown(context, error, re_raise=True)
             else:
-                extension.started = True
+                await self._omit(extension, context, error, "session_start")
+            return False
+        except Exception as error:
+            await self._omit(extension, context, error, "session_start")
+            return False
+        return True
+
+    async def _discover_one(
+        self, extension: _LoadedExtension, context: ExtensionContext
+    ) -> bool:
+        try:
+            await _collect_extension_resources(extension)
+        except asyncio.CancelledError as error:
+            if _owner_cancelled():
+                await self._raise_after_shutdown(context, error, re_raise=True)
+            else:
+                await self._omit(extension, context, error, "resources_discover")
+            return False
+        except Exception as error:
+            await self._omit(extension, context, error, "resources_discover")
+            return False
+        return True
+
+    async def _omit(
+        self,
+        extension: _LoadedExtension,
+        context: ExtensionContext,
+        error: BaseException,
+        event_type: Literal[
+            "session_start", "resources_discover", "session_shutdown"
+        ],
+    ) -> None:
+        self.diagnostics.append(
+            _lifecycle_diagnostic(extension.path, event_type, error)
+        )
+        _drop_tools(self, extension)
+        if extension.start_attempted:
+            shutdown_error = await self._shutdown_one(extension, context)
+            if shutdown_error is not None:
+                self.diagnostics.append(
+                    _lifecycle_diagnostic(
+                        extension.path, "session_shutdown", shutdown_error
+                    )
+                )
+        if extension in self._loaded:
+            self._loaded.remove(extension)
 
     async def shutdown(self, context: ExtensionContext) -> list[BaseException]:
         failures: list[BaseException] = []
         owner_cancellation: asyncio.CancelledError | None = None
         for extension in reversed(self._loaded):
-            if not extension.started:
+            if not extension.start_attempted:
                 continue
             for handler in reversed(extension.handlers):
                 if handler.event_type != "session_shutdown" or handler.resolved:
@@ -237,6 +299,33 @@ class ExtensionRuntime:
         if owner_cancellation is not None:
             raise owner_cancellation
         return failures
+
+    async def _shutdown_one(
+        self, extension: _LoadedExtension, context: ExtensionContext
+    ) -> BaseException | None:
+        first: BaseException | None = None
+        owner_cancellation: asyncio.CancelledError | None = None
+        for handler in reversed(extension.handlers):
+            if handler.event_type != "session_shutdown" or handler.resolved:
+                continue
+            try:
+                await _invoke_session_handler(
+                    handler.callback, _fresh_context(context)
+                )
+            except asyncio.CancelledError as error:
+                if _owner_cancelled():
+                    _uncancel_owner()
+                    owner_cancellation = error
+                if first is None:
+                    first = error
+            except BaseException as error:
+                if first is None:
+                    first = error
+            else:
+                handler.resolved = True
+        if owner_cancellation is not None:
+            raise owner_cancellation
+        return first
 
     async def dispatch(
         self, event: _NamedEvent, context: ExtensionContext
@@ -344,26 +433,34 @@ async def _admit_extension(
     snapshot: tuple[str, str, str],
 ) -> None:
     name, relative, source = snapshot
+    path = os.path.abspath(os.path.join(cwd, relative))
     module = types.ModuleType(f"_omh_ext_{id(runtime)}_{index}_{name}")
-    module.__file__ = os.path.join(cwd, relative)
+    module.__file__ = path
     module.__package__ = None
     module.__loader__ = None
     try:
         compiled = compile(source, relative, "exec", dont_inherit=True)
     except (SyntaxError, ValueError) as error:
-        raise ValueError(f'Python Extension "{relative}" is invalid') from error
+        runtime.diagnostics.append(_load_diagnostic(path, "load", error))
+        return
     try:
         exec(compiled, module.__dict__)
     except Exception as error:
-        raise LifecycleError(
-            "hook",
-            f'Python Extension "{relative}" initialization failed',
-            causes=(error,),
-        ) from error
+        runtime.diagnostics.append(_load_diagnostic(path, "load", error))
+        return
     entrypoint = module.__dict__.get("extension")
     if not callable(entrypoint):
-        raise ValueError(f'Python Extension "{relative}" is invalid')
-    loaded = _LoadedExtension(name=name, relative=relative, module=module)
+        runtime.diagnostics.append(
+            ExtensionDiagnostic.Load(
+                path=path,
+                phase="load",
+                message="'extension' is not a callable factory",
+            )
+        )
+        return
+    loaded = _LoadedExtension(
+        name=name, relative=relative, path=path, module=module
+    )
     api = ExtensionAPI(_token=_TOKEN)
     api._bind(runtime, loaded)
     try:
@@ -374,25 +471,65 @@ async def _admit_extension(
             raise TypeError("extension() must return None or an awaitable")
     except asyncio.CancelledError as error:
         api._close()
+        _drop_tools(runtime, loaded)
         if _owner_cancelled():
             raise
-        raise LifecycleError(
-            "hook",
-            f'Python Extension "{relative}" initialization failed',
-            causes=(error,),
-        ) from error
+        runtime.diagnostics.append(_load_diagnostic(path, "factory", error))
     except Exception as error:
         api._close()
-        if isinstance(error, LifecycleError) and error.code in {"hook", "cleanup"}:
-            raise
-        raise LifecycleError(
-            "hook",
-            f'Python Extension "{relative}" initialization failed',
-            causes=(error,),
-        ) from error
+        _drop_tools(runtime, loaded)
+        runtime.diagnostics.append(_load_diagnostic(path, "factory", error))
     else:
         api._close()
         runtime._loaded.append(loaded)
+
+
+async def _collect_extension_resources(extension: _LoadedExtension) -> None:
+    del extension
+
+
+def _drop_tools(runtime: ExtensionRuntime, extension: _LoadedExtension) -> None:
+    owned = {id(tool) for tool in extension.tools}
+    runtime.tools[:] = [tool for tool in runtime.tools if id(tool) not in owned]
+    extension.tools.clear()
+
+
+def _raw_message(error: BaseException) -> str:
+    text = str(error)
+    if text:
+        return text
+    return type(error).__name__
+
+
+def _raw_stack(error: BaseException) -> str | None:
+    if error.__traceback__ is None:
+        return None
+    return "".join(
+        traceback.format_exception(
+            type(error), error, error.__traceback__, chain=False
+        )
+    )
+
+
+def _load_diagnostic(
+    path: str, phase: Literal["load", "factory"], error: BaseException
+) -> ExtensionDiagnostic:
+    return ExtensionDiagnostic.Load(
+        path=path, phase=phase, message=_raw_message(error)
+    )
+
+
+def _lifecycle_diagnostic(
+    path: str,
+    event_type: Literal["session_start", "resources_discover", "session_shutdown"],
+    error: BaseException,
+) -> ExtensionDiagnostic:
+    return ExtensionDiagnostic.Lifecycle(
+        path=path,
+        eventType=event_type,
+        message=_raw_message(error),
+        stack=_raw_stack(error),
+    )
 
 
 async def _invoke_session_handler(

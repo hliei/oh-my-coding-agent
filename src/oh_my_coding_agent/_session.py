@@ -334,6 +334,7 @@ class AgentSession:
         self._project_resource_state = project_rules.state(
             skills=prompt_resources.skill_resolutions,
             prompt_templates=prompt_resources.template_resolutions,
+            extension_diagnostics=tuple(extensions.diagnostics),
         )
         self._extensions = extensions
         self._overflow_recovery_attempted = False
