@@ -343,6 +343,7 @@ class AgentSession:
         "_pending_agent_end_signal",
         "_pending_follow_up",
         "_pending_steering",
+        "_queued_follow_up_messages",
         "_queued_steering_messages",
         "_last_run_signal",
         "_projecting_agent_end",
@@ -390,6 +391,7 @@ class AgentSession:
         self._pending_agent_end_signal: AbortSignal | None = None
         self._pending_steering: list[str] = []
         self._pending_follow_up: list[str] = []
+        self._queued_follow_up_messages: list[UserMessage] = []
         self._queued_steering_messages: list[UserMessage] = []
         self._last_run_signal: AbortSignal | None = None
         self._projecting_agent_end = False
@@ -561,15 +563,15 @@ class AgentSession:
                     raise manager_failure from error
                 raise
             else:
-                await self._run_automatic_compaction()
+                may_continue = await self._run_automatic_compaction()
                 while (
-                    self._agent.hasQueuedMessages
+                    may_continue
+                    and self._agent.hasQueuedMessages
                     and not self._closing
-                    and not self._prompt_cancel_requested
                     and not self._prompt_terminal_projection_truncated
                 ):
                     await self._agent.continue_()
-                    await self._run_automatic_compaction()
+                    may_continue = await self._run_automatic_compaction()
                 if not self._prompt_terminal_projection_truncated:
                     self._prompt_active = False
                     await self._dispatch(
@@ -610,6 +612,20 @@ class AgentSession:
     async def steer(
         self, text: str, options: PromptOptions | None = None
     ) -> None:
+        await self._enqueue_queued_message(text, options, kind="steering")
+
+    async def followUp(
+        self, text: str, options: PromptOptions | None = None
+    ) -> None:
+        await self._enqueue_queued_message(text, options, kind="follow_up")
+
+    async def _enqueue_queued_message(
+        self,
+        text: str,
+        options: PromptOptions | None,
+        *,
+        kind: Literal["steering", "follow_up"],
+    ) -> None:
         if type(text) is not str:
             raise TypeError("text must be a string")
         if options is not None and type(options) is not PromptOptions:
@@ -619,10 +635,18 @@ class AgentSession:
         expanded = expand_prompt(text, self._prompt_resources, enabled=expand)
         timestamp = time.time_ns() // 1_000_000
         message = UserMessage(content=expanded, timestamp=timestamp)
-        self._pending_steering.append(expanded)
+        if kind == "steering":
+            pending = self._pending_steering
+            queued = self._queued_steering_messages
+            enqueue = self._agent.steer
+        else:
+            pending = self._pending_follow_up
+            queued = self._queued_follow_up_messages
+            enqueue = self._agent.followUp
+        pending.append(expanded)
         await self._dispatch(QueueUpdate(pendingMessages=self.pendingMessages))
-        self._agent.steer(message)
-        self._queued_steering_messages.append(message)
+        enqueue(message)
+        queued.append(message)
 
     async def abort(self) -> None:
         self._ensure_not_reentrant()
@@ -906,7 +930,7 @@ class AgentSession:
 
     async def _run_automatic_compaction(
         self, *, allow_overflow_retry: bool = True
-    ) -> None:
+    ) -> bool:
         messages = self._agent.state.messages
         if (
             not allow_overflow_retry
@@ -915,14 +939,14 @@ class AgentSession:
             and _is_context_overflow_error(messages[-1])
         ):
             await self._report_exhausted_overflow()
-            return
+            return False
         candidate = self._automatic_compaction_candidate(
             include_aborted=False,
             allow_overflow_retry=allow_overflow_retry,
         )
         if candidate is None:
             await self._dispatch_pending_agent_end(will_retry=False)
-            return
+            return True
         assistant, preparation, reason, will_retry = candidate
         retryable_overflow = reason == "overflow" and assistant.stopReason != "stop"
         if (
@@ -931,7 +955,7 @@ class AgentSession:
             and not allow_overflow_retry
         ):
             await self._report_exhausted_overflow()
-            return
+            return False
         if will_retry:
             self._overflow_recovery_attempted = True
         succeeded = await self._run_automatic_compaction_task(
@@ -939,21 +963,21 @@ class AgentSession:
         )
         if self._prompt_terminal_projection_truncated:
             self._compaction_result_committed = False
-            return
+            return False
         await self._dispatch_pending_agent_end(will_retry=will_retry and succeeded)
         if self._prompt_terminal_projection_truncated:
             self._compaction_result_committed = False
-            return
+            return False
         if not succeeded:
             self._compaction_result_committed = False
-            return
+            return False
         if will_retry:
             self._compaction_result_committed = False
             self._remove_trailing_overflow_error()
             await self._agent.continue_()
-            await self._run_automatic_compaction(allow_overflow_retry=False)
-            return
+            return await self._run_automatic_compaction(allow_overflow_retry=False)
         self._compaction_result_committed = False
+        return True
 
     async def _report_exhausted_overflow(self) -> None:
         await self._dispatch(
@@ -1323,27 +1347,39 @@ class AgentSession:
                 "reentrant", "AgentSession operation cannot wait from its listener"
             )
 
+    def _drop_queued_user(self, message: UserMessage) -> bool:
+        for queue in (
+            self._queued_steering_messages,
+            self._queued_follow_up_messages,
+        ):
+            for index, queued in enumerate(queue):
+                if queued is message:
+                    del queue[index]
+                    return True
+        return False
+
+    def _remove_first_pending_text(self, text: str) -> bool:
+        if text in self._pending_steering:
+            self._pending_steering.remove(text)
+            return True
+        if text in self._pending_follow_up:
+            self._pending_follow_up.remove(text)
+            return True
+        return False
+
     async def _handle_agent_event(
         self, event: AgentEvent, signal: AbortSignal
     ) -> None:
         if isinstance(event, AgentEvent.MessageStart) and isinstance(
             event.message, UserMessage
         ):
-            queued = next(
-                (
-                    message
-                    for message in self._queued_steering_messages
-                    if message is event.message
-                ),
-                None,
-            )
-            if queued is not None:
-                self._queued_steering_messages.remove(queued)
-                self._pending_steering.remove(cast(str, queued.content))
-                await self._dispatch(
-                    QueueUpdate(pendingMessages=self.pendingMessages),
-                    agent_signal=signal,
-                )
+            if self._drop_queued_user(event.message):
+                displayed = cast(str, event.message.content)
+                if self._remove_first_pending_text(displayed):
+                    await self._dispatch(
+                        QueueUpdate(pendingMessages=self.pendingMessages),
+                        agent_signal=signal,
+                    )
         if isinstance(event, AgentEvent.MessageEnd) and not isinstance(
             event.message, UserMessage
         ):
