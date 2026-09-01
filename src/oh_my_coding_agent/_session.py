@@ -56,6 +56,9 @@ from ._project_rules import ProjectRuleSnapshot, load_project_rules
 from ._project_trust import resolve_project_trust
 from ._resource_state import (
     ExtensionDiagnostic,
+    _PublicValueMeta,
+    _sequence,
+    _string,
     ProjectResourceReloadError,
     ProjectResourceReloadResult,
     ProjectResourceState,
@@ -116,6 +119,26 @@ class PromptOptions:
             raise TypeError("PromptOptions.expandPromptTemplates: must be a bool")
 
 
+@final
+@dataclass(frozen=True, slots=True, kw_only=True)
+class PendingMessages(metaclass=_PublicValueMeta):
+    steering: tuple[str, ...]
+    followUp: tuple[str, ...]
+
+    def __post_init__(self) -> None:
+        type_name = type(self).__name__
+        for field_name in ("steering", "followUp"):
+            values = _sequence(
+                getattr(self, field_name),
+                (str,),
+                type_name,
+                field_name,
+            )
+            for index, value in enumerate(values):
+                _string(value, type_name, f"{field_name}[{index}]")
+            object.__setattr__(self, field_name, values)
+
+
 class AgentSessionEvent:
     __slots__ = ()
     type: str
@@ -132,6 +155,7 @@ class AgentSessionEvent:
     CompactionStart: ClassVar[builtins.type[CompactionStart]]
     CompactionEnd: ClassVar[builtins.type[CompactionEnd]]
     AgentSettled: ClassVar[builtins.type[AgentSettled]]
+    QueueUpdate: ClassVar[builtins.type[QueueUpdate]]
 
     def __new__(cls, *args: object, **kwargs: object) -> AgentSessionEvent:
         del args, kwargs
@@ -254,6 +278,19 @@ class AgentSettled(AgentSessionEvent):
     type: Literal["agent_settled"] = field(init=False, default="agent_settled")
 
 
+@final
+@dataclass(frozen=True, slots=True, kw_only=True)
+class QueueUpdate(AgentSessionEvent, metaclass=_PublicValueMeta):
+    pendingMessages: PendingMessages
+    type: Literal["queue_update"] = field(init=False, default="queue_update")
+
+    def __post_init__(self) -> None:
+        if type(self.pendingMessages) is not PendingMessages:
+            raise TypeError(
+                "QueueUpdate.pendingMessages: must be a PendingMessages"
+            )
+
+
 AgentSessionEvent.AgentStart = AgentStart
 AgentSessionEvent.AgentEnd = AgentEnd
 AgentSessionEvent.TurnStart = TurnStart
@@ -267,6 +304,7 @@ AgentSessionEvent.ToolExecutionEnd = ToolExecutionEnd
 AgentSessionEvent.CompactionStart = CompactionStart
 AgentSessionEvent.CompactionEnd = CompactionEnd
 AgentSessionEvent.AgentSettled = AgentSettled
+AgentSessionEvent.QueueUpdate = QueueUpdate
 
 
 AgentSessionEventListener: TypeAlias = Callable[
@@ -303,6 +341,9 @@ class AgentSession:
         "_overflow_recovery_attempted",
         "_pending_agent_end",
         "_pending_agent_end_signal",
+        "_pending_follow_up",
+        "_pending_steering",
+        "_queued_steering_messages",
         "_last_run_signal",
         "_projecting_agent_end",
         "_prompt_active",
@@ -347,6 +388,9 @@ class AgentSession:
         self._overflow_recovery_attempted = False
         self._pending_agent_end: AgentEvent | None = None
         self._pending_agent_end_signal: AbortSignal | None = None
+        self._pending_steering: list[str] = []
+        self._pending_follow_up: list[str] = []
+        self._queued_steering_messages: list[UserMessage] = []
         self._last_run_signal: AbortSignal | None = None
         self._projecting_agent_end = False
         self._agent = agent
@@ -384,6 +428,7 @@ class AgentSession:
             return True
         return (
             not self._closing
+            and not self._prompt_active
             and not self.isCompacting
             and not self._is_reloading
             and not self.isStreaming
@@ -396,6 +441,13 @@ class AgentSession:
     @property
     def projectResourceState(self) -> ProjectResourceState:
         return self._project_resource_state
+
+    @property
+    def pendingMessages(self) -> PendingMessages:
+        return PendingMessages(
+            steering=tuple(self._pending_steering),
+            followUp=tuple(self._pending_follow_up),
+        )
 
     @property
     def messages(self) -> tuple[AgentMessage, ...]:
@@ -510,7 +562,16 @@ class AgentSession:
                 raise
             else:
                 await self._run_automatic_compaction()
+                while (
+                    self._agent.hasQueuedMessages
+                    and not self._closing
+                    and not self._prompt_cancel_requested
+                    and not self._prompt_terminal_projection_truncated
+                ):
+                    await self._agent.continue_()
+                    await self._run_automatic_compaction()
                 if not self._prompt_terminal_projection_truncated:
+                    self._prompt_active = False
                     await self._dispatch(
                         AgentSettled(),
                         agent_signal=self._last_run_signal,
@@ -519,6 +580,7 @@ class AgentSession:
             if self._pending_agent_end is not None:
                 try:
                     await self._dispatch_pending_agent_end(will_retry=False)
+                    self._prompt_active = False
                     await self._dispatch(
                         AgentSettled(),
                         agent_signal=self._last_run_signal,
@@ -544,6 +606,23 @@ class AgentSession:
                     settlement.set_exception(settlement_failure)
             if self._prompt_settlement is settlement:
                 self._prompt_settlement = None
+
+    async def steer(
+        self, text: str, options: PromptOptions | None = None
+    ) -> None:
+        if type(text) is not str:
+            raise TypeError("text must be a string")
+        if options is not None and type(options) is not PromptOptions:
+            raise TypeError("options must be a PromptOptions")
+        self._ensure_open()
+        expand = True if options is None else options.expandPromptTemplates
+        expanded = expand_prompt(text, self._prompt_resources, enabled=expand)
+        timestamp = time.time_ns() // 1_000_000
+        message = UserMessage(content=expanded, timestamp=timestamp)
+        self._pending_steering.append(expanded)
+        await self._dispatch(QueueUpdate(pendingMessages=self.pendingMessages))
+        self._agent.steer(message)
+        self._queued_steering_messages.append(message)
 
     async def abort(self) -> None:
         self._ensure_not_reentrant()
@@ -1247,6 +1326,24 @@ class AgentSession:
     async def _handle_agent_event(
         self, event: AgentEvent, signal: AbortSignal
     ) -> None:
+        if isinstance(event, AgentEvent.MessageStart) and isinstance(
+            event.message, UserMessage
+        ):
+            queued = next(
+                (
+                    message
+                    for message in self._queued_steering_messages
+                    if message is event.message
+                ),
+                None,
+            )
+            if queued is not None:
+                self._queued_steering_messages.remove(queued)
+                self._pending_steering.remove(cast(str, queued.content))
+                await self._dispatch(
+                    QueueUpdate(pendingMessages=self.pendingMessages),
+                    agent_signal=signal,
+                )
         if isinstance(event, AgentEvent.MessageEnd) and not isinstance(
             event.message, UserMessage
         ):

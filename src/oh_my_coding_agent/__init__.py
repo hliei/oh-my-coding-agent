@@ -4,6 +4,7 @@ from ._session import (
     AgentSessionEventListener,
     CreateAgentSessionOptions,
     CreateAgentSessionResult,
+    PendingMessages,
     PromptOptions,
     createAgentSession,
 )
@@ -63,6 +64,7 @@ __all__ = (
     "LabelEntry",
     "ModelChangeEntry",
     "NewSessionOptions",
+    "PendingMessages",
     "ProjectResourceReloadError",
     "ProjectResourceReloadResult",
     "ProjectResourceState",
