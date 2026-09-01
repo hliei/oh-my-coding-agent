@@ -10,6 +10,7 @@ from ._session import (
 from ._extensions import ExtensionAPI, ExtensionContext
 from ._resource_state import (
     ExtensionDiagnostic,
+    ProjectResourceReloadResult,
     ProjectResourceState,
     ProjectRuleResolution,
     PromptResourceCandidate,
@@ -61,6 +62,7 @@ __all__ = (
     "LabelEntry",
     "ModelChangeEntry",
     "NewSessionOptions",
+    "ProjectResourceReloadResult",
     "ProjectResourceState",
     "ProjectRuleResolution",
     "PromptOptions",

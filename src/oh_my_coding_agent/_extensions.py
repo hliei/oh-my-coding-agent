@@ -377,12 +377,27 @@ class ExtensionRuntime:
         ) from error
 
 
-async def load_extensions(cwd: str, project_trusted: bool) -> ExtensionRuntime:
+def snapshot_extension_sources(
+    cwd: str, project_trusted: bool
+) -> tuple[tuple[str, str, str], ...]:
     if not project_trusted:
-        return ExtensionRuntime()
-    snapshots = _snapshot_sources(cwd)
+        return ()
+    return _snapshot_sources(cwd)
+
+
+async def load_extensions(
+    cwd: str,
+    project_trusted: bool,
+    *,
+    snapshots: tuple[tuple[str, str, str], ...] | None = None,
+) -> ExtensionRuntime:
+    selected = (
+        snapshot_extension_sources(cwd, project_trusted)
+        if snapshots is None
+        else snapshots
+    )
     runtime = ExtensionRuntime()
-    for index, snapshot in enumerate(snapshots):
+    for index, snapshot in enumerate(selected):
         await _admit_extension(runtime, cwd, index, snapshot)
     return runtime
 

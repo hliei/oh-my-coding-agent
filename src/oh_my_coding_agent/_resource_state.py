@@ -369,6 +369,44 @@ class ProjectResourceState(metaclass=_PublicValueMeta):
         object.__setattr__(self, "extensionDiagnostics", diagnostics)
 
 
+_RELOAD_STATUS = frozenset({"clean", "partial"})
+
+
+@final
+@dataclass(frozen=True, slots=True, kw_only=True)
+class ProjectResourceReloadResult(metaclass=_PublicValueMeta):
+    status: Literal["clean", "partial"]
+    state: ProjectResourceState
+    diagnostics: tuple[ExtensionDiagnostic, ...]
+
+    def __post_init__(self) -> None:
+        type_name = type(self).__name__
+        object.__setattr__(
+            self, "status", _literal(self.status, _RELOAD_STATUS, type_name, "status")
+        )
+        if type(self.state) is not ProjectResourceState:
+            _fail_type(type_name, "state", "must be a ProjectResourceState")
+        diagnostics = _sequence(
+            self.diagnostics,
+            (ExtensionDiagnosticLoad, ExtensionDiagnosticLifecycle),
+            type_name,
+            "diagnostics",
+        )
+        object.__setattr__(self, "diagnostics", diagnostics)
+        if self.state.status != "current":
+            _fail_value(type_name, "state", "must be a current ProjectResourceState")
+        if self.status == "clean":
+            if diagnostics:
+                _fail_value(
+                    type_name, "status", "must be partial when diagnostics are present"
+                )
+            return
+        if not diagnostics:
+            _fail_value(
+                type_name, "status", "must be clean when diagnostics are empty"
+            )
+
+
 _ADMISSION_KINDS = frozenset(
     {
         "project_resources",

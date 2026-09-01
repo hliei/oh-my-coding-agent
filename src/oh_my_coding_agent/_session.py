@@ -45,6 +45,7 @@ from ._extensions import (
     ExtensionRuntime,
     load_extensions,
     snapshot_extension_context,
+    snapshot_extension_sources,
 )
 from ._prompt_resources import (
     PromptResourceSnapshot,
@@ -53,7 +54,7 @@ from ._prompt_resources import (
 )
 from ._project_rules import ProjectRuleSnapshot, load_project_rules
 from ._project_trust import resolve_project_trust
-from ._resource_state import ProjectResourceState
+from ._resource_state import ProjectResourceReloadResult, ProjectResourceState
 from ._system_prompt import build_system_prompt
 from ._tools import product_session_tools
 from ._compaction import (
@@ -306,6 +307,7 @@ class AgentSession:
         "_project_rules",
         "_project_resource_state",
         "_prompt_terminal_projection_truncated",
+        "_reload_task",
         "_session_manager",
         "_system_prompt",
     )
@@ -358,6 +360,7 @@ class AgentSession:
         self._prompt_settlement: asyncio.Future[None] | None = None
         self._prompt_terminal_projection_truncated = False
         self._disposal_task: asyncio.Task[None] | None = None
+        self._reload_task: asyncio.Task[ProjectResourceReloadResult] | None = None
         self._agent_unsubscribe: Callable[[], None] | None = self._agent.subscribe(
             self._handle_agent_event
         )
@@ -377,6 +380,7 @@ class AgentSession:
         return (
             not self._closing
             and not self.isCompacting
+            and not self._is_reloading
             and not self.isStreaming
         )
 
@@ -413,6 +417,11 @@ class AgentSession:
         task = self._compaction_task
         return task is not None and not task.done()
 
+    @property
+    def _is_reloading(self) -> bool:
+        task = self._reload_task
+        return task is not None and not task.done()
+
     def subscribe(self, listener: AgentSessionEventListener) -> Callable[[], None]:
         self._ensure_open()
         if not callable(listener):
@@ -437,7 +446,7 @@ class AgentSession:
         if options is not None and type(options) is not PromptOptions:
             raise TypeError("options must be a PromptOptions")
         self._ensure_open()
-        if self._prompt_active or self.isCompacting:
+        if self._prompt_active or self.isCompacting or self._is_reloading:
             raise LifecycleError("busy", "AgentSession is busy")
         expand = True if options is None else options.expandPromptTemplates
         text = expand_prompt(text, self._prompt_resources, enabled=expand)
@@ -580,6 +589,10 @@ class AgentSession:
                     return
                 raise
             return
+        reload = self._reload_task
+        if reload is not None:
+            await _join_task(reload)
+            return
         await self._agent.waitForIdle()
 
     async def dispose(self) -> None:
@@ -609,6 +622,12 @@ class AgentSession:
                 pass
             except BaseException as error:
                 disposal_failures.append(error)
+        reload = self._reload_task
+        if reload is not None and not reload.done():
+            try:
+                await asyncio.shield(reload)
+            except BaseException:
+                pass
         settlement = self._prompt_settlement
         self._agent.abort()
         settlement_failure: BaseException | None = None
@@ -660,7 +679,7 @@ class AgentSession:
         self._ensure_open()
         if customInstructions is not None and type(customInstructions) is not str:
             raise TypeError("customInstructions must be a string")
-        if self.isCompacting:
+        if self.isCompacting or self._is_reloading:
             raise LifecycleError("busy", "AgentSession is busy")
         task = asyncio.create_task(self._drive_manual_compaction(customInstructions))
         task.add_done_callback(_consume_task_exception)
@@ -679,6 +698,60 @@ class AgentSession:
 
     def abortCompaction(self) -> None:
         self._request_compaction_cancel()
+
+    async def reloadProjectResources(self) -> ProjectResourceReloadResult:
+        self._ensure_not_reentrant()
+        self._ensure_open()
+        if self._prompt_active or self.isCompacting or self._is_reloading:
+            raise LifecycleError("busy", "AgentSession is busy")
+        task = asyncio.create_task(self._drive_reload())
+        task.add_done_callback(_consume_task_exception)
+        self._reload_task = task
+        try:
+            return await _join_task(task)
+        finally:
+            if task.done() and self._reload_task is task:
+                self._reload_task = None
+
+    async def _drive_reload(self) -> ProjectResourceReloadResult:
+        trusted = self._project_rules.trusted
+        cwd = self._operational_cwd
+        prompt_resources = load_prompt_resources(cwd, trusted)
+        project_rules = load_project_rules(cwd, trusted)
+        extension_sources = snapshot_extension_sources(cwd, trusted)
+        context = self._extension_context(None)
+        previous = self._extensions
+        await previous.shutdown(context)
+        extensions = await load_extensions(
+            cwd, trusted, snapshots=extension_sources
+        )
+        await extensions.start(context)
+        system_prompt = build_system_prompt(
+            cwd,
+            prompt_resources,
+            project_rules,
+            extensions.tool_summaries(),
+        )
+        tools = (*product_session_tools(cwd), *extensions.tools)
+        state = project_rules.state(
+            skills=prompt_resources.skill_resolutions,
+            prompt_templates=prompt_resources.template_resolutions,
+            extension_diagnostics=tuple(extensions.diagnostics),
+        )
+        self._prompt_resources = prompt_resources
+        self._project_rules = project_rules
+        self._extensions = extensions
+        self._system_prompt = system_prompt
+        self._agent.state.systemPrompt = system_prompt
+        self._agent.state.tools = tools
+        self._project_resource_state = state
+        previous.release()
+        diagnostics = tuple(extensions.diagnostics)
+        return ProjectResourceReloadResult(
+            status="clean" if not diagnostics else "partial",
+            state=state,
+            diagnostics=diagnostics,
+        )
 
     def _request_compaction_cancel(self) -> None:
         task = self._compaction_task
