@@ -229,6 +229,16 @@ class Agent:
             raise TypeError("message must be a UserMessage")
         self._follow_up_queue.append(message)
 
+    def clearSteeringQueue(self) -> None:
+        self._steering_queue.clear()
+
+    def clearFollowUpQueue(self) -> None:
+        self._follow_up_queue.clear()
+
+    def clearAllQueues(self) -> None:
+        self.clearSteeringQueue()
+        self.clearFollowUpQueue()
+
     def subscribe(self, listener: _Listener) -> Callable[[], None]:
         if not callable(listener):
             raise TypeError("listener must be callable")
@@ -295,6 +305,7 @@ class Agent:
             raise LifecycleError("busy", "Agent is busy")
         self._state._messages = ()
         self._state._error_message = None
+        self.clearAllQueues()
 
     async def _launch(
         self,
