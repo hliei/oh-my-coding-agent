@@ -16,8 +16,16 @@ import wcwidth
 from oh_my_llm import AssistantMessage, LifecycleError, TextContent, UserMessage
 from oh_my_llm._canonical import encodeCanonical
 
+from ._project_rules import _project_root
 from ._prompt_resources import _es_trim
-from ._resource_state import ProjectResourceState
+from ._resource_state import (
+    ExtensionDiagnostic,
+    ExtensionDiagnosticLifecycle,
+    ExtensionDiagnosticLoad,
+    ProjectResourceState,
+    PromptResourceResolution,
+    ResourceResolutionReport,
+)
 from ._session import AgentSession, AgentSessionEvent, PendingMessages
 
 
@@ -184,6 +192,260 @@ def _resources_line(state: ProjectResourceState) -> str:
     return f"Resources: current, discovery {discovery}"
 
 
+def _terminal_relative_path(path: str, root: str) -> str:
+    lexical = path.replace(os.sep, "/")
+    base = root.replace(os.sep, "/").rstrip("/")
+    if lexical == base:
+        return "."
+    prefix = base + "/"
+    if lexical.startswith(prefix):
+        return lexical[len(prefix) :]
+    return lexical.rsplit("/", 1)[-1]
+
+
+def _is_escape_token(text: str, index: int) -> bool:
+    return (
+        index + 6 <= len(text)
+        and text.startswith("\\u", index)
+        and all(
+            character in "0123456789ABCDEF"
+            for character in text[index + 2 : index + 6]
+        )
+    )
+
+
+def _field_tokens(
+    text: str, iterator: icu.BreakIterator
+) -> list[tuple[str, int]]:
+    tokens: list[tuple[str, int]] = []
+    index = 0
+    length = len(text)
+    span_start: int | None = None
+
+    def flush(end: int) -> None:
+        nonlocal span_start
+        if span_start is None:
+            return
+        fragment = text[span_start:end]
+        for begin, stop in _grapheme_bounds(fragment, iterator):
+            grapheme = fragment[begin:stop]
+            tokens.append((grapheme, _grapheme_width(grapheme)))
+        span_start = None
+
+    while index < length:
+        if _is_escape_token(text, index):
+            flush(index)
+            tokens.append((text[index : index + 6], 6))
+            index += 6
+            continue
+        if span_start is None:
+            span_start = index
+        index += 1
+    flush(length)
+    return tokens
+
+
+def _truncate_row(row: str, width: int, iterator: icu.BreakIterator) -> str:
+    if width <= 0:
+        return ""
+    tokens = _field_tokens(row, iterator)
+    total = sum(cells for _text, cells in tokens)
+    if total <= width:
+        return row
+    ellipsis = "…"
+    ellipsis_width = _grapheme_width(ellipsis)
+    if width < ellipsis_width:
+        kept: list[str] = []
+        used = 0
+        for text, cells in tokens:
+            if used + cells > width:
+                break
+            kept.append(text)
+            used += cells
+        return "".join(kept)
+    kept_text: list[str] = []
+    used = 0
+    for text, cells in tokens:
+        if used + cells + ellipsis_width > width:
+            break
+        kept_text.append(text)
+        used += cells
+    return "".join(kept_text) + ellipsis
+
+
+def _truncate_block(text: str, width: int) -> str:
+    iterator = icu.BreakIterator.createCharacterInstance(_ICU_ROOT)
+    lines = text.split("\n")
+    trailing = lines[-1] == ""
+    body = lines[:-1] if trailing else lines
+    truncated = [_truncate_row(line, width, iterator) for line in body]
+    result = "\n".join(truncated)
+    if trailing:
+        result += "\n"
+    return result
+
+
+def _comma_row(items: tuple[str, ...] | list[str]) -> str:
+    if not items:
+        return "  (none)"
+    return "  " + ", ".join(encode_field(item) for item in items)
+
+
+def _startup_summary(state: ProjectResourceState, root: str, width: int) -> str:
+    report = state.report
+    if report.discovery == "disabled":
+        return _truncate_block("[Project resources] disabled\n", width)
+    rules = tuple(
+        _terminal_relative_path(rule.path, root)
+        for rule in report.projectRules
+        if rule.disposition == "effective"
+    )
+    skills = tuple(group.name for group in report.skills)
+    prompts = tuple(f"/{group.name}" for group in report.promptTemplates)
+    sections = (
+        f"[Context]\n{_comma_row(rules)}\n",
+        f"[Skills]\n{_comma_row(skills)}\n",
+        f"[Prompts]\n{_comma_row(prompts)}\n",
+    )
+    body = "\n".join(sections)
+    diagnostics = _resource_diagnostics(report, root)
+    if diagnostics:
+        body = f"{body}\n{diagnostics}"
+    extensions = _extension_diagnostics(state.extensionDiagnostics, root)
+    if extensions:
+        body = f"{body}\n{extensions}"
+    return _truncate_block(body, width)
+
+
+def _resources_command(state: ProjectResourceState, root: str, width: int) -> str:
+    report = state.report
+    if state.status == "current":
+        header = (
+            "[Resources]\n"
+            f"state=current report=current discovery={report.discovery}\n"
+        )
+    else:
+        header = (
+            "[Resources]\n"
+            "state=indeterminate report=last_successful "
+            f"discovery={report.discovery}\n"
+        )
+    if report.discovery == "disabled":
+        return _truncate_block(header, width)
+    sections = (
+        _project_rules_section(report, root),
+        _named_resource_section("Skills", report.skills, root),
+        _named_resource_section("Prompts", report.promptTemplates, root),
+    )
+    body = header + "\n" + "\n".join(sections)
+    extensions = _extension_diagnostics(state.extensionDiagnostics, root)
+    if extensions:
+        body = f"{body}\n{extensions}"
+    return _truncate_block(body, width)
+
+
+def _project_rules_section(report: ResourceResolutionReport, root: str) -> str:
+    if not report.projectRules:
+        return "[Project Rules]\n  (none)\n"
+    rows: list[str] = []
+    for rule in report.projectRules:
+        path = encode_field(_terminal_relative_path(rule.path, root))
+        if rule.disposition == "effective":
+            rows.append(f'effective path="{path}"')
+            continue
+        stage = encode_field(rule.validationStage or "")
+        rows.append(f'soft_skipped path="{path}" stage="{stage}"')
+    return "[Project Rules]\n" + "\n".join(rows) + "\n"
+
+
+def _named_resource_section(
+    title: str,
+    groups: tuple[PromptResourceResolution, ...],
+    root: str,
+) -> str:
+    if not groups:
+        return f"[{title}]\n  (none)\n"
+    blocks: list[str] = []
+    for group in groups:
+        name = encode_field(group.name)
+        lines = [f'name="{name}"']
+        for candidate in group.candidates:
+            source = encode_field(candidate.source)
+            path = encode_field(_terminal_relative_path(candidate.path, root))
+            if candidate.disposition == "effective":
+                lines.append(f'  effective source="{source}" path="{path}"')
+            else:
+                lines.append(
+                    f'  shadowed_unchecked source="{source}" path="{path}"'
+                )
+        blocks.append("\n".join(lines))
+    return f"[{title}]\n" + "\n".join(blocks) + "\n"
+
+
+def _resource_diagnostics(report: ResourceResolutionReport, root: str) -> str:
+    rows: list[str] = []
+    for rule in report.projectRules:
+        if rule.disposition != "soft_skipped" or rule.validationStage is None:
+            continue
+        path = encode_field(_terminal_relative_path(rule.path, root))
+        stage = encode_field(rule.validationStage)
+        rows.append(f'  project_rule soft_skipped path="{path}" stage="{stage}"')
+    for kind, groups in (
+        ("skill", report.skills),
+        ("prompt_template", report.promptTemplates),
+    ):
+        for group in groups:
+            if len(group.candidates) < 2:
+                continue
+            name = encode_field(group.name)
+            winner = group.candidates[0]
+            effective = encode_field(_terminal_relative_path(winner.path, root))
+            rows.append(
+                f'  {kind} collision name="{name}" effective="{effective}"'
+            )
+            for candidate in group.candidates[1:]:
+                shadowed = encode_field(
+                    _terminal_relative_path(candidate.path, root)
+                )
+                rows.append(
+                    f'  {kind} collision name="{name}" '
+                    f'shadowed_unchecked="{shadowed}"'
+                )
+    if not rows:
+        return ""
+    return "[Resource diagnostics]\n" + "\n".join(rows) + "\n"
+
+
+def _extension_diagnostics(
+    diagnostics: tuple[ExtensionDiagnostic, ...], root: str
+) -> str:
+    if not diagnostics:
+        return ""
+    rows: list[str] = []
+    for item in diagnostics:
+        if isinstance(item, ExtensionDiagnosticLoad):
+            path = encode_field(_terminal_relative_path(item.path, root))
+            phase = encode_field(item.phase)
+            message = encode_field(item.message)
+            rows.append(
+                f'  load path="{path}" phase="{phase}" message="{message}"'
+            )
+            continue
+        if isinstance(item, ExtensionDiagnosticLifecycle):
+            path = encode_field(_terminal_relative_path(item.path, root))
+            event = encode_field(item.eventType)
+            message = encode_field(item.message)
+            line = (
+                f'  lifecycle path="{path}" event="{event}" message="{message}"'
+            )
+            if item.stack is not None:
+                line += f' stack="{encode_field(item.stack)}"'
+            rows.append(line)
+    if not rows:
+        return ""
+    return "[Extension diagnostics]\n" + "\n".join(rows) + "\n"
+
+
 def _fifo_removed(
     before: tuple[str, ...], after: tuple[str, ...]
 ) -> tuple[str, ...]:
@@ -295,12 +557,8 @@ class _TerminalSubmission:
     intent: Literal["prompt", "steering", "follow_up"]
 
 
-_LineWait = (
-    bytes
-    | Exception
-    | _TerminalSubmission
-    | Literal["interrupt", "terminate", "prompt_done"]
-)
+_QueuedLine = bytes | Exception | _TerminalSubmission | Literal["resources"]
+_LineWait = _QueuedLine | Literal["interrupt", "terminate", "prompt_done"]
 
 
 class _InteractiveTerminalAdapter:
@@ -314,6 +572,7 @@ class _InteractiveTerminalAdapter:
         "_live_encoded",
         "_loop",
         "_output_held",
+        "_project_root_path",
         "_pending_prompt",
         "_prompt_task",
         "_queue_snapshot",
@@ -329,6 +588,8 @@ class _InteractiveTerminalAdapter:
     ) -> None:
         self._session = session
         self._shutdown = shutdown
+        cwd = session.sessionManager.getCwd()
+        self._project_root_path = _project_root(cwd) or cwd
         self._rendered_text = ""
         self._pending_prompt = False
         self._enqueue_waiting = False
@@ -341,7 +602,7 @@ class _InteractiveTerminalAdapter:
         self._removed_for_admission: tuple[str, str] | None = None
         self._awaiting_processed: list[tuple[str, str]] = []
         self._loop: asyncio.AbstractEventLoop
-        self._lines: asyncio.Queue[bytes | Exception | _TerminalSubmission]
+        self._lines: asyncio.Queue[_QueuedLine]
         self._stdin_fd: int
         self._editor: _CommandInput
 
@@ -354,6 +615,13 @@ class _InteractiveTerminalAdapter:
         output_fd = sys.stdout.buffer.fileno()
         self._editor = _CommandInput(echo=echo, output_fd=output_fd)
         self._editor.ensure_size()
+        write_stdout(
+            _startup_summary(
+                self._session.projectResourceState,
+                self._project_root_path,
+                self._editor.width,
+            )
+        )
         self._editor.set_live_lines(self._allocate_live())
 
         reader_registered = False
@@ -449,6 +717,9 @@ class _InteractiveTerminalAdapter:
                 if self._prompt_task is not None:
                     await self._finish_prompt()
                 return 0
+            if item == "resources":
+                self._show_resources()
+                continue
             if not isinstance(item, _TerminalSubmission):
                 raise RuntimeError("interactive editor submitted an invalid event")
             await self._submit(item)
@@ -606,6 +877,9 @@ class _InteractiveTerminalAdapter:
             prompt = _es_trim(raw.text)
             if not prompt:
                 return
+            if prompt == "/resources":
+                self._lines.put_nowait("resources")
+                return
             active = self._is_active_input()
             if raw.alt:
                 intent: Literal["prompt", "steering", "follow_up"] = (
@@ -698,6 +972,17 @@ class _InteractiveTerminalAdapter:
             await self._admit_prompt(item.text)
             return
         await self._enqueue_queued(item.intent, item.text)
+
+    def _show_resources(self) -> None:
+        self._editor.clear_after_success()
+        state = self._session.projectResourceState
+        self._write_record(
+            _resources_command(
+                state,
+                self._project_root_path,
+                self._editor.width,
+            )
+        )
 
     async def _admit_prompt(self, text: str) -> None:
         self._editor.freeze()
@@ -956,6 +1241,10 @@ class _CommandInput:
     @property
     def height(self) -> int:
         return self._height
+
+    @property
+    def width(self) -> int:
+        return self._width
 
     def set_live_lines(self, lines: tuple[str, ...]) -> None:
         self._live_lines = lines
