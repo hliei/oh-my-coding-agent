@@ -192,14 +192,36 @@ async def _drive_interactive(
     return await _InteractiveTerminalAdapter(session, shutdown).run()
 
 
+@dataclass(frozen=True, slots=True)
+class _CompletedLine:
+    text: str
+    alt: bool
+
+
+@dataclass(frozen=True, slots=True)
+class _TerminalSubmission:
+    text: str
+    intent: Literal["prompt", "steering", "follow_up"]
+
+
+_LineWait = (
+    bytes
+    | Exception
+    | _TerminalSubmission
+    | Literal["interrupt", "terminate", "prompt_done"]
+)
+
+
 class _InteractiveTerminalAdapter:
     __slots__ = (
-        "_busy",
         "_editor",
+        "_enqueue_waiting",
         "_input_failure",
         "_lines",
         "_loop",
-        "_queued_nonempty",
+        "_output_held",
+        "_pending_prompt",
+        "_prompt_task",
         "_rendered_text",
         "_session",
         "_shutdown",
@@ -212,11 +234,13 @@ class _InteractiveTerminalAdapter:
         self._session = session
         self._shutdown = shutdown
         self._rendered_text = ""
-        self._busy = False
-        self._queued_nonempty = False
+        self._pending_prompt = False
+        self._enqueue_waiting = False
+        self._output_held = False
+        self._prompt_task: asyncio.Task[None] | None = None
         self._input_failure: Exception | None = None
         self._loop: asyncio.AbstractEventLoop
-        self._lines: asyncio.Queue[bytes | Exception]
+        self._lines: asyncio.Queue[bytes | Exception | _TerminalSubmission]
         self._stdin_fd: int
         self._editor: _CommandInput
 
@@ -277,56 +301,32 @@ class _InteractiveTerminalAdapter:
     async def _run_editor(self) -> int:
         while True:
             if self._shutdown.signum is not None:
+                if self._prompt_task is not None:
+                    await self._finish_prompt()
                 return self._shutdown_status()
             item = await self._wait_line_or_control()
+            if item == "prompt_done":
+                await self._finish_prompt()
+                if self._shutdown.signum is not None:
+                    return self._shutdown_status()
+                continue
             if item == "terminate":
+                if self._prompt_task is not None:
+                    await self._finish_prompt()
                 return self._shutdown_status()
             if item == "interrupt" or item == _INTERRUPT:
-                self._editor.handle_idle_interrupt()
+                if self._is_idle_editor():
+                    self._editor.handle_idle_interrupt()
+                else:
+                    asyncio.create_task(self._session.abort())
                 continue
             if isinstance(item, Exception):
                 raise item
             if item == b"":
                 return 0
-            text = _decode_interactive_line(
-                item, "interactive input is not UTF-8"
-            )
-            prompt = _es_trim(text)
-            if not prompt:
-                continue
-            self._queued_nonempty = False
-            prior_messages = self._session.messages
-            prior_entries = self._session.sessionManager.getEntries()
-            self._busy = True
-            prompt_task = asyncio.create_task(self._session.prompt(prompt))
-            try:
-                try:
-                    await self._join_prompt(prompt_task)
-                except ValueError as error:
-                    if (
-                        self._session.messages != prior_messages
-                        or self._session.sessionManager.getEntries() != prior_entries
-                        or not self._session.isIdle
-                    ):
-                        raise RuntimeError(
-                            "AgentSession ValueError changed admitted state"
-                        ) from error
-                    if not write_error(_public_value_message(error)):
-                        raise OSError("interactive diagnostic write failed")
-                    continue
-                if self._input_failure is not None:
-                    raise self._input_failure
-                classification, _payload = _session_terminal(self._session)
-                if self._shutdown.signum is not None:
-                    if classification == "cancelled":
-                        write_stdout("run cancelled\n")
-                    return self._shutdown_status()
-                if classification == "unconfirmed":
-                    raise RuntimeError("AgentSession prompt settlement is unconfirmed")
-                write_stdout(f"run {classification}\n")
-            finally:
-                self._busy = False
-                self._editor.reopen_idle()
+            if not isinstance(item, _TerminalSubmission):
+                raise RuntimeError("interactive editor submitted an invalid event")
+            await self._submit(item)
 
     async def _render(self, event: AgentSessionEvent) -> None:
         if self._input_failure is not None:
@@ -335,7 +335,7 @@ class _InteractiveTerminalAdapter:
             event.message, AssistantMessage
         ):
             self._rendered_text = ""
-            write_stdout("assistant start\n")
+            self._write_record("assistant start\n", hold=True)
         elif isinstance(event, AgentSessionEvent.MessageUpdate):
             text = "".join(
                 block.text
@@ -346,16 +346,16 @@ class _InteractiveTerminalAdapter:
                 raise RuntimeError("Assistant Text update is not cumulative")
             suffix = text[len(self._rendered_text) :]
             if suffix:
-                write_stdout(encode_body(suffix))
+                self._write_record(encode_body(suffix), hold=True)
             self._rendered_text = text
         elif isinstance(event, AgentSessionEvent.MessageEnd) and isinstance(
             event.message, AssistantMessage
         ):
             if not self._rendered_text.endswith("\n"):
-                write_stdout("\n")
-            write_stdout("assistant end\n")
+                self._write_record("\n", hold=True)
+            self._write_record("assistant end\n")
         elif isinstance(event, AgentSessionEvent.ToolExecutionStart):
-            write_stdout(
+            self._write_record(
                 "tool start "
                 f'name="{encode_field(event.toolName)}" '
                 f'id="{encode_field(event.toolCallId)}" '
@@ -368,17 +368,39 @@ class _InteractiveTerminalAdapter:
                 "details": event.result.details,
                 "terminate": event.result.terminate,
             }
-            write_stdout(
+            self._write_record(
                 f"tool {kind} "
                 f'name="{encode_field(event.toolName)}" '
                 f'id="{encode_field(event.toolCallId)}" '
                 f"result={encode_json(result)}\n"
             )
 
+    def _write_record(self, data: bytes | str, *, hold: bool = False) -> None:
+        if not self._output_held:
+            self._editor.yield_for_output()
+            self._output_held = True
+        write_stdout(data)
+        if hold:
+            return
+        if self._editor.has_visible_input():
+            self._output_held = False
+            self._editor.restore_after_output()
+
+    def _is_idle_editor(self) -> bool:
+        return (
+            not self._pending_prompt
+            and self._prompt_task is None
+            and not self._enqueue_waiting
+            and self._session.isIdle
+        )
+
+    def _is_active_input(self) -> bool:
+        return not self._is_idle_editor()
+
     def _fail_input(self, error: Exception) -> None:
         self._loop.remove_reader(self._stdin_fd)
         self._input_failure = error
-        if self._busy:
+        if not self._is_idle_editor():
             asyncio.create_task(self._session.abort())
             return
         self._lines.put_nowait(error)
@@ -391,15 +413,35 @@ class _InteractiveTerminalAdapter:
         except Exception as error:
             self._fail_input(error)
 
-    def _deliver(self, raw: bytes) -> None:
+    def _deliver(self, raw: bytes | _CompletedLine) -> None:
+        if isinstance(raw, _CompletedLine):
+            prompt = _es_trim(raw.text)
+            if not prompt:
+                return
+            active = self._is_active_input()
+            if raw.alt:
+                intent: Literal["prompt", "steering", "follow_up"] = (
+                    "follow_up" if active else "prompt"
+                )
+            else:
+                intent = "steering" if active else "prompt"
+            if intent != "prompt" and self._enqueue_waiting:
+                return
+            if intent == "prompt":
+                self._pending_prompt = True
+            else:
+                self._enqueue_waiting = True
+                self._editor.freeze()
+            self._lines.put_nowait(_TerminalSubmission(prompt, intent))
+            return
         if raw == b"":
             self._loop.remove_reader(self._stdin_fd)
-            if self._busy:
+            if not self._is_idle_editor():
                 asyncio.create_task(self._session.abort())
             self._lines.put_nowait(raw)
             return
         if raw == _INTERRUPT:
-            if self._busy:
+            if not self._is_idle_editor():
                 asyncio.create_task(self._session.abort())
                 return
             self._lines.put_nowait(raw)
@@ -411,15 +453,8 @@ class _InteractiveTerminalAdapter:
         except OSError as error:
             self._fail_input(error)
             return
-        prompt = _es_trim(text)
-        if self._busy or self._queued_nonempty:
-            if prompt and not write_stderr(
-                "busy: Product Session has an active Run\n"
-            ):
-                self._fail_input(OSError("interactive diagnostic write failed"))
-            return
-        self._queued_nonempty = bool(prompt)
-        self._lines.put_nowait(raw)
+        if _es_trim(text):
+            self._deliver(_CompletedLine(text=text, alt=False))
 
     def _input_ready(self) -> None:
         try:
@@ -431,7 +466,9 @@ class _InteractiveTerminalAdapter:
             self._deliver(b"")
             return
         try:
-            completed = self._editor.feed(raw)
+            completed = self._editor.feed(
+                raw, freeze_on_submit=self._is_active_input()
+            )
         except Exception as error:
             self._fail_input(error)
             return
@@ -440,50 +477,141 @@ class _InteractiveTerminalAdapter:
             if item == b"":
                 return
 
-    async def _wait_line_or_control(
-        self,
-    ) -> bytes | Exception | Literal["interrupt", "terminate"]:
+    async def _wait_line_or_control(self) -> _LineWait:
         if self._shutdown.signum is not None:
             return "terminate"
         line = asyncio.create_task(self._lines.get())
         interrupt = asyncio.create_task(self._shutdown.wait_interrupt())
         terminate = asyncio.create_task(self._shutdown.wait())
+        waiters: set[asyncio.Task[Any]] = {line, interrupt, terminate}
+        prompt_task = self._prompt_task
+        if prompt_task is not None:
+            waiters.add(prompt_task)
         done, pending = await asyncio.wait(
-            {line, interrupt, terminate},
+            waiters,
             return_when=asyncio.FIRST_COMPLETED,
         )
         for task in pending:
-            task.cancel()
-        await asyncio.gather(*pending, return_exceptions=True)
+            if task is not prompt_task:
+                task.cancel()
+        await asyncio.gather(
+            *[task for task in pending if task is not prompt_task],
+            return_exceptions=True,
+        )
         if terminate in done or self._shutdown.signum is not None:
             return "terminate"
         if line in done:
             return line.result()
+        if prompt_task is not None and prompt_task in done:
+            return "prompt_done"
         self._shutdown.clear_interrupt()
         return "interrupt"
 
-    async def _join_prompt(self, prompt_task: asyncio.Task[None]) -> None:
-        while not prompt_task.done():
-            if self._shutdown.signum is not None:
-                await prompt_task
-                return
-            interrupt = asyncio.create_task(self._shutdown.wait_interrupt())
-            terminate = asyncio.create_task(self._shutdown.wait())
-            done, pending = await asyncio.wait(
-                {prompt_task, interrupt, terminate},
-                return_when=asyncio.FIRST_COMPLETED,
+    async def _submit(self, item: _TerminalSubmission) -> None:
+        if item.intent == "prompt":
+            await self._admit_prompt(item.text)
+            return
+        await self._enqueue_queued(item.intent, item.text)
+
+    async def _admit_prompt(self, text: str) -> None:
+        self._editor.freeze()
+        prior_messages = self._session.messages
+        prior_entries = self._session.sessionManager.getEntries()
+        task = asyncio.create_task(self._session.prompt(text))
+        self._prompt_task = task
+        self._pending_prompt = False
+        nudge = asyncio.get_running_loop().create_future()
+        self._loop.call_soon(nudge.set_result, None)
+        await asyncio.wait(
+            {task, nudge}, return_when=asyncio.FIRST_COMPLETED
+        )
+        if not nudge.done():
+            nudge.cancel()
+        if not task.done():
+            self._editor.clear_after_success()
+            return
+        self._prompt_task = None
+        try:
+            task.result()
+        except ValueError as error:
+            if (
+                self._session.messages != prior_messages
+                or self._session.sessionManager.getEntries() != prior_entries
+                or not self._session.isIdle
+            ):
+                raise RuntimeError(
+                    "AgentSession ValueError changed admitted state"
+                ) from error
+            self._editor.restore_draft()
+            if not write_error(_public_value_message(error)):
+                raise OSError("interactive diagnostic write failed")
+            return
+        self._editor.clear_after_success()
+        await self._finish_prompt_task(task)
+
+    async def _enqueue_queued(
+        self, intent: Literal["steering", "follow_up"], text: str
+    ) -> None:
+        self._editor.freeze()
+        prior_messages = self._session.messages
+        prior_entries = self._session.sessionManager.getEntries()
+        prior_pending = self._session.pendingMessages
+        call = (
+            self._session.steer if intent == "steering" else self._session.followUp
+        )
+        try:
+            await call(text)
+        except ValueError as error:
+            self._enqueue_waiting = False
+            effects = (
+                self._session.messages != prior_messages
+                or self._session.sessionManager.getEntries() != prior_entries
+                or self._session.pendingMessages != prior_pending
             )
-            for task in pending:
-                if task is not prompt_task:
-                    task.cancel()
-            await asyncio.gather(
-                *[task for task in pending if task is not prompt_task],
-                return_exceptions=True,
-            )
-            if interrupt in done:
-                self._shutdown.clear_interrupt()
-                await self._session.abort()
-        await prompt_task
+            if effects:
+                raise RuntimeError(
+                    "AgentSession ValueError changed admitted state"
+                ) from error
+            self._editor.restore_draft()
+            if not write_error(_public_value_message(error)):
+                raise OSError("interactive diagnostic write failed")
+            return
+        except BaseException:
+            self._enqueue_waiting = False
+            raise
+        self._enqueue_waiting = False
+        self._editor.clear_after_success()
+
+    async def _finish_prompt(self) -> None:
+        task = self._prompt_task
+        self._prompt_task = None
+        if task is None:
+            return
+        await self._finish_prompt_task(task)
+
+    async def _finish_prompt_task(self, task: asyncio.Task[None]) -> None:
+        if self._input_failure is not None:
+            try:
+                await task
+            except BaseException:
+                pass
+            raise self._input_failure
+        await task
+        classification, _payload = _session_terminal(self._session)
+        if self._shutdown.signum is not None:
+            if classification == "cancelled":
+                self._write_record("run cancelled\n")
+            self._release_output()
+            return
+        if classification == "unconfirmed":
+            raise RuntimeError("AgentSession prompt settlement is unconfirmed")
+        self._write_record(f"run {classification}\n")
+        self._release_output()
+
+    def _release_output(self) -> None:
+        if self._output_held:
+            self._output_held = False
+            self._editor.restore_after_output()
 
     def _shutdown_status(self) -> int:
         assert self._shutdown.signum is not None
@@ -551,15 +679,17 @@ class _CommandInput:
         "_output_fd",
         "_text",
         "_cursor",
-        "_busy_text",
+        "_draft",
+        "_frozen",
+        "_freeze_on_submit",
         "_pending",
         "_consumed_cr",
-        "_mode",
         "_paused",
         "_width",
         "_height",
         "_origin",
         "_owned_rows",
+        "_yielded",
         "_grapheme_iter",
         "_word_iter",
     )
@@ -569,15 +699,17 @@ class _CommandInput:
         self._output_fd = output_fd
         self._text = ""
         self._cursor = 0
-        self._busy_text = ""
+        self._draft = ""
+        self._frozen = False
+        self._freeze_on_submit = False
         self._pending = bytearray()
         self._consumed_cr = False
-        self._mode: Literal["idle", "busy"] = "idle"
         self._paused = False
         self._width = 0
         self._height = 0
         self._origin = 0
         self._owned_rows = 0
+        self._yielded = False
         self._grapheme_iter = icu.BreakIterator.createCharacterInstance(_ICU_ROOT)
         self._word_iter = icu.BreakIterator.createWordInstance(_ICU_ROOT)
 
@@ -594,8 +726,53 @@ class _CommandInput:
         self._height = height
         recovering = self._paused
         self._paused = False
-        if self._mode == "idle" and (recovering or self._echo or self._owned_rows):
+        if recovering or self._echo or self._owned_rows:
             self._paint()
+
+    def freeze(self) -> None:
+        self._frozen = True
+
+    def yield_for_output(self) -> None:
+        if self._paused:
+            self._yielded = True
+            return
+        if self._owned_rows == 0:
+            self._yielded = True
+            return
+        self._home()
+        count = self._owned_rows
+        for index in range(count):
+            write_stdout("\x1b[K")
+            if index < count - 1:
+                write_stdout("\n")
+        if count > 1:
+            write_stdout(f"\x1b[{count - 1}A")
+        write_stdout("\r")
+        self._owned_rows = 0
+        self._yielded = True
+
+    def restore_after_output(self) -> None:
+        self._yielded = False
+        if not self._paused:
+            self._paint()
+
+    def has_visible_input(self) -> bool:
+        return bool(self._text) and not self._paused
+
+    def restore_draft(self) -> None:
+        self._text = self._draft
+        self._cursor = len(self._text)
+        self._frozen = False
+        if not self._paused:
+            self._paint()
+
+    def clear_after_success(self) -> None:
+        self._draft = ""
+        self._text = ""
+        self._cursor = 0
+        self._origin = 0
+        self._pending.clear()
+        self._frozen = False
 
     def handle_idle_interrupt(self) -> None:
         self._text = ""
@@ -606,20 +783,18 @@ class _CommandInput:
         if not self._paused:
             self._paint()
 
-    def reopen_idle(self) -> None:
-        self._busy_text = ""
-        self._pending.clear()
-        self._text = ""
-        self._cursor = 0
-        self._origin = 0
-        self._owned_rows = 0
-        self._mode = "idle"
-        if not self._paused:
-            self._paint()
-
-    def feed(self, data: bytes) -> list[bytes]:
+    def feed(
+        self, data: bytes, *, freeze_on_submit: bool = False
+    ) -> list[bytes | _CompletedLine]:
         self._pending.extend(data)
-        completed: list[bytes] = []
+        self._freeze_on_submit = freeze_on_submit
+        try:
+            return self._consume_pending()
+        finally:
+            self._freeze_on_submit = False
+
+    def _consume_pending(self) -> list[bytes | _CompletedLine]:
+        completed: list[bytes | _CompletedLine] = []
         while self._pending:
             first = self._pending[0]
             if first == 0x1B:
@@ -628,16 +803,21 @@ class _CommandInput:
                     break
                 if action == "reprocess":
                     continue
-                event = self._navigation(action)
-                if event is not None:
-                    completed.append(event)
+                if action == "alt_enter":
+                    line = self._enter(alt=True)
+                    if line is not None:
+                        completed.append(line)
+                    continue
+                navigation = self._navigation(action)
+                if navigation is not None:
+                    completed.append(navigation)
                 continue
             if first < 0x20 or first == 0x7F:
                 del self._pending[0]
-                event = self._control(first)
-                if event is not None:
-                    completed.append(event)
-                    if event == b"":
+                control = self._control(first)
+                if control is not None:
+                    completed.append(control)
+                    if control == b"":
                         return completed
                 continue
             if self._paused:
@@ -650,7 +830,7 @@ class _CommandInput:
             self._insert(character)
         return completed
 
-    def _control(self, first: int) -> bytes | None:
+    def _control(self, first: int) -> bytes | _CompletedLine | None:
         if first == 0x0A and self._consumed_cr:
             self._consumed_cr = False
             return None
@@ -671,7 +851,7 @@ class _CommandInput:
 
     def _navigation(self, action: str) -> bytes | None:
         self._note_raw(None)
-        if self._paused or self._mode == "busy" or not action:
+        if self._paused or self._frozen or not action:
             return None
         before = self._cursor
         if action == "left":
@@ -700,8 +880,7 @@ class _CommandInput:
         return None
 
     def _insert(self, character: str) -> None:
-        if self._mode == "busy":
-            self._busy_text += character
+        if self._frozen:
             return
         self._text = self._text[: self._cursor] + character + self._text[self._cursor :]
         self._cursor += len(character)
@@ -709,15 +888,7 @@ class _CommandInput:
             self._paint()
 
     def _backward_delete(self) -> None:
-        if self._paused:
-            return
-        if self._mode == "busy":
-            if not self._busy_text:
-                return
-            start = _move_grapheme(
-                self._busy_text, len(self._busy_text), -1, self._grapheme_iter
-            )
-            self._busy_text = self._busy_text[:start]
+        if self._paused or self._frozen:
             return
         if self._cursor == 0:
             return
@@ -728,7 +899,7 @@ class _CommandInput:
             self._paint()
 
     def _forward_delete(self) -> None:
-        if self._paused or self._mode == "busy":
+        if self._paused or self._frozen:
             return
         if self._cursor >= len(self._text):
             return
@@ -737,15 +908,9 @@ class _CommandInput:
         if self._echo:
             self._paint()
 
-    def _enter(self) -> bytes | None:
-        if self._paused:
+    def _enter(self, *, alt: bool = False) -> _CompletedLine | None:
+        if self._paused or self._frozen:
             return None
-        if self._mode == "busy":
-            line = self._busy_text
-            self._busy_text = ""
-            if not _es_trim(line):
-                return None
-            return (line + "\n").encode("utf-8")
         line = self._text
         if not _es_trim(line):
             self._text = ""
@@ -754,16 +919,17 @@ class _CommandInput:
             self._paint()
             return None
         self._finalize()
+        self._draft = line
         self._text = ""
         self._cursor = 0
         self._origin = 0
-        self._busy_text = ""
-        self._mode = "busy"
-        return (line + "\n").encode("utf-8")
+        if self._freeze_on_submit:
+            self._frozen = True
+        return _CompletedLine(text=line, alt=alt)
 
     def _ctrl_d(self) -> bytes | None:
-        if self._mode == "busy":
-            return b"" if not self._busy_text else None
+        if self._frozen:
+            return None
         if self._paused:
             return b"" if not self._text else None
         if not self._text:
@@ -772,10 +938,7 @@ class _CommandInput:
         return None
 
     def _interrupt(self) -> bytes | None:
-        if self._mode == "busy":
-            return _INTERRUPT
-        self.handle_idle_interrupt()
-        return None
+        return _INTERRUPT
 
     def _consume_paused_utf8(self) -> None:
         first = self._pending[0]
@@ -895,7 +1058,9 @@ class _CommandInput:
             write_stdout("\r")
 
     def _paint(self) -> None:
-        if self._paused or self._mode == "busy":
+        if self._paused:
+            return
+        if self._yielded and not self._text:
             return
         if not self._text and self._owned_rows == 0:
             write_stdout("> ")
@@ -1034,6 +1199,9 @@ def _take_escape(buffer: bytearray) -> str | None:
     if len(buffer) == 1:
         return None
     second = buffer[1]
+    if second in {0x0D, 0x0A}:
+        del buffer[:2]
+        return "alt_enter"
     if second == 0x5B:
         return _take_csi(buffer)
     if second == 0x4F:
@@ -1084,6 +1252,10 @@ def _csi_action(parameter: bytes, final: int) -> str:
         return "word_right"
     if parameter == b"3" and final == 0x7E:
         return "forward_delete"
+    if parameter == b"27;3;13" and final == 0x7E:
+        return "alt_enter"
+    if parameter == b"13;3" and final == 0x75:
+        return "alt_enter"
     return ""
 
 
