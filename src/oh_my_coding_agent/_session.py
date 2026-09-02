@@ -344,6 +344,7 @@ class AgentSession:
         "_pending_agent_end_signal",
         "_pending_follow_up",
         "_pending_steering",
+        "_persist_on_message_end",
         "_queued_follow_up_messages",
         "_queued_steering_messages",
         "_last_run_signal",
@@ -393,6 +394,7 @@ class AgentSession:
         self._pending_agent_end_signal: AbortSignal | None = None
         self._pending_steering: list[str] = []
         self._pending_follow_up: list[str] = []
+        self._persist_on_message_end: list[UserMessage] = []
         self._queued_follow_up_messages: list[UserMessage] = []
         self._queued_steering_messages: list[UserMessage] = []
         self._last_run_signal: AbortSignal | None = None
@@ -1408,6 +1410,7 @@ class AgentSession:
     async def _handle_agent_event(
         self, event: AgentEvent, signal: AbortSignal
     ) -> None:
+        persist_after_start: UserMessage | None = None
         if isinstance(event, AgentEvent.MessageStart) and isinstance(
             event.message, UserMessage
         ):
@@ -1418,9 +1421,18 @@ class AgentSession:
                         QueueUpdate(pendingMessages=self.pendingMessages),
                         agent_signal=signal,
                     )
-        if isinstance(event, AgentEvent.MessageEnd) and not isinstance(
-            event.message, UserMessage
+                persist_after_start = event.message
+        if isinstance(event, AgentEvent.MessageEnd) and (
+            not isinstance(event.message, UserMessage)
+            or any(
+                queued is event.message for queued in self._persist_on_message_end
+            )
         ):
+            if isinstance(event.message, UserMessage):
+                for index, queued in enumerate(self._persist_on_message_end):
+                    if queued is event.message:
+                        del self._persist_on_message_end[index]
+                        break
             try:
                 self._session_manager.appendMessage(event.message)
             except BaseException as error:
@@ -1438,6 +1450,8 @@ class AgentSession:
             _project_event(event),
             agent_signal=signal,
         )
+        if persist_after_start is not None:
+            self._persist_on_message_end.append(persist_after_start)
 
     async def _dispatch_pending_agent_end(self, *, will_retry: bool) -> None:
         event = self._pending_agent_end
