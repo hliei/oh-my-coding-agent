@@ -1,6 +1,7 @@
 from __future__ import annotations
 
 import asyncio
+import errno
 import os
 import signal
 import string
@@ -12,11 +13,12 @@ from typing import Any, BinaryIO, Literal
 
 import icu  # type: ignore[import-untyped]
 import wcwidth
-from oh_my_llm import AssistantMessage, LifecycleError, TextContent
+from oh_my_llm import AssistantMessage, LifecycleError, TextContent, UserMessage
 from oh_my_llm._canonical import encodeCanonical
 
 from ._prompt_resources import _es_trim
-from ._session import AgentSession, AgentSessionEvent
+from ._resource_state import ProjectResourceState
+from ._session import AgentSession, AgentSessionEvent, PendingMessages
 
 
 _BIDI = frozenset(
@@ -144,6 +146,92 @@ def write_identity_stdout(session_id: str, kind: str) -> None:
     write_stdout(f"session {encode_field(session_id)} {kind}\n")
 
 
+def _user_text(message: UserMessage) -> str:
+    content = message.content
+    if type(content) is str:
+        return content
+    return "".join(
+        block.text
+        for block in content
+        if isinstance(block, TextContent)
+    )
+
+
+def _run_classification(
+    messages: tuple[Any, ...],
+) -> _TerminalClassification:
+    assistants = [
+        message
+        for message in messages
+        if isinstance(message, AssistantMessage)
+    ]
+    if not assistants:
+        return "unconfirmed"
+    terminal = assistants[-1]
+    if terminal.stopReason in {"stop", "length"}:
+        return "completed"
+    if terminal.stopReason == "error":
+        return "model_error"
+    if terminal.stopReason == "aborted":
+        return "cancelled"
+    return "unconfirmed"
+
+
+def _resources_line(state: ProjectResourceState) -> str:
+    if state.status == "indeterminate":
+        return "Resources: indeterminate"
+    discovery = state.report.discovery
+    return f"Resources: current, discovery {discovery}"
+
+
+def _fifo_removed(
+    before: tuple[str, ...], after: tuple[str, ...]
+) -> tuple[str, ...]:
+    remaining = list(after)
+    removed: list[str] = []
+    for item in before:
+        if remaining and remaining[0] == item:
+            del remaining[0]
+        else:
+            removed.append(item)
+    if remaining:
+        return ()
+    return tuple(removed)
+
+
+def _single_removal(
+    previous: PendingMessages, current: PendingMessages
+) -> tuple[str, str] | None:
+    steering = _fifo_removed(previous.steering, current.steering)
+    follow_up = _fifo_removed(previous.followUp, current.followUp)
+    if len(steering) == 1 and not follow_up:
+        return ("steering", steering[0])
+    if len(follow_up) == 1 and not steering:
+        return ("follow_up", follow_up[0])
+    return None
+
+
+def _pending_group_rows(
+    title: str, items: tuple[str, ...], max_rows: int
+) -> list[str]:
+    if not items or max_rows <= 0:
+        return []
+    rows = [f"{title} pending ({len(items)}):"]
+    if max_rows == 1:
+        return rows
+    capacity = max_rows - 1
+    if len(items) <= capacity:
+        rows.extend(f"  {encode_field(item)}" for item in items)
+        return rows
+    shown = capacity - 1
+    if shown <= 0:
+        rows.append(f"  … +{len(items)} more")
+        return rows
+    rows.extend(f"  {encode_field(item)}" for item in items[:shown])
+    rows.append(f"  … +{len(items) - shown} more")
+    return rows
+
+
 def _escape(character: str, *, field: bool) -> str:
     code = ord(character)
     if not field and character in {'\t', '\n'}:
@@ -167,12 +255,15 @@ def _payload(data: bytes | str) -> bytes:
 
 def _write(buffer: BinaryIO, payload: bytes) -> None:
     offset = 0
-    while offset < len(payload):
-        written = buffer.write(payload[offset:])
-        if written is None or written <= 0:
-            raise OSError("terminal write made no progress")
-        offset += written
-    buffer.flush()
+    try:
+        while offset < len(payload):
+            written = buffer.write(payload[offset:])
+            if written is None or written <= 0:
+                raise OSError("terminal write made no progress")
+            offset += written
+        buffer.flush()
+    except BrokenPipeError as error:
+        raise OSError(errno.EPIPE, "broken pipe") from error
 
 
 def _acquire_end_of_line_editing(fd: int) -> tuple[list[Any], bool]:
@@ -214,14 +305,19 @@ _LineWait = (
 
 class _InteractiveTerminalAdapter:
     __slots__ = (
+        "_admission_closed",
+        "_awaiting_processed",
         "_editor",
         "_enqueue_waiting",
         "_input_failure",
         "_lines",
+        "_live_encoded",
         "_loop",
         "_output_held",
         "_pending_prompt",
         "_prompt_task",
+        "_queue_snapshot",
+        "_removed_for_admission",
         "_rendered_text",
         "_session",
         "_shutdown",
@@ -239,19 +335,26 @@ class _InteractiveTerminalAdapter:
         self._output_held = False
         self._prompt_task: asyncio.Task[None] | None = None
         self._input_failure: Exception | None = None
+        self._live_encoded = ""
+        self._admission_closed = False
+        self._queue_snapshot = session.pendingMessages
+        self._removed_for_admission: tuple[str, str] | None = None
+        self._awaiting_processed: list[tuple[str, str]] = []
         self._loop: asyncio.AbstractEventLoop
         self._lines: asyncio.Queue[bytes | Exception | _TerminalSubmission]
         self._stdin_fd: int
         self._editor: _CommandInput
 
     async def run(self) -> int:
-        self._session.subscribe(self._render)
         self._loop = asyncio.get_running_loop()
+        self._session.subscribe(self._render)
         self._lines = asyncio.Queue()
         self._stdin_fd = sys.stdin.buffer.fileno()
         saved_tty, echo = _acquire_end_of_line_editing(self._stdin_fd)
         output_fd = sys.stdout.buffer.fileno()
         self._editor = _CommandInput(echo=echo, output_fd=output_fd)
+        self._editor.ensure_size()
+        self._editor.set_live_lines(self._allocate_live())
 
         reader_registered = False
         winch_registered = False
@@ -282,6 +385,19 @@ class _InteractiveTerminalAdapter:
             write_stderr("internal error\n")
             return 1
         finally:
+            try:
+                stdout_fd = sys.stdout.fileno()
+                sys.stdout.flush()
+                os.write(stdout_fd, b"")
+            except OSError as error:
+                if error.errno in {errno.EPIPE, errno.EIO}:
+                    devnull = os.open(os.devnull, os.O_WRONLY)
+                    try:
+                        os.dup2(devnull, sys.stdout.fileno())
+                    finally:
+                        os.close(devnull)
+                else:
+                    raise
             if reader_registered:
                 self._loop.remove_reader(self._stdin_fd)
             if winch_registered:
@@ -291,9 +407,11 @@ class _InteractiveTerminalAdapter:
                     signal.signal(signal.SIGWINCH, signal.SIG_DFL)
             try:
                 _restore_tty(self._stdin_fd, saved_tty)
-            except OSError:
+            except OSError as error:
                 if self._shutdown.signum is not None:
                     write_cleanup("terminal restore failed")
+                elif error.errno in {errno.EPIPE, errno.EIO}:
+                    pass
                 else:
                     write_stderr("I/O error\n")
                     return 1
@@ -323,6 +441,13 @@ class _InteractiveTerminalAdapter:
             if isinstance(item, Exception):
                 raise item
             if item == b"":
+                self._admission_closed = True
+                try:
+                    await self._session.clearQueue()
+                except LifecycleError:
+                    pass
+                if self._prompt_task is not None:
+                    await self._finish_prompt()
                 return 0
             if not isinstance(item, _TerminalSubmission):
                 raise RuntimeError("interactive editor submitted an invalid event")
@@ -331,49 +456,103 @@ class _InteractiveTerminalAdapter:
     async def _render(self, event: AgentSessionEvent) -> None:
         if self._input_failure is not None:
             return
-        if isinstance(event, AgentSessionEvent.MessageStart) and isinstance(
-            event.message, AssistantMessage
+        try:
+            await self._render_body(event)
+        except OSError as error:
+            if error.errno in {errno.EPIPE, errno.EIO}:
+                return
+            raise
+
+    async def _render_body(self, event: AgentSessionEvent) -> None:
+        if isinstance(event, AgentSessionEvent.QueueUpdate):
+            if self._admission_closed:
+                self._removed_for_admission = None
+            else:
+                self._removed_for_admission = _single_removal(
+                    self._queue_snapshot, event.pendingMessages
+                )
+            self._queue_snapshot = event.pendingMessages
+        elif isinstance(event, AgentSessionEvent.MessageStart) and isinstance(
+            event.message, UserMessage
         ):
-            self._rendered_text = ""
-            self._write_record("assistant start\n", hold=True)
-        elif isinstance(event, AgentSessionEvent.MessageUpdate):
-            text = "".join(
-                block.text
-                for block in event.message.content
-                if isinstance(block, TextContent)
-            )
-            if not text.startswith(self._rendered_text):
-                raise RuntimeError("Assistant Text update is not cumulative")
-            suffix = text[len(self._rendered_text) :]
-            if suffix:
-                self._write_record(encode_body(suffix), hold=True)
-            self._rendered_text = text
-        elif isinstance(event, AgentSessionEvent.MessageEnd) and isinstance(
-            event.message, AssistantMessage
-        ):
-            if not self._rendered_text.endswith("\n"):
-                self._write_record("\n", hold=True)
-            self._write_record("assistant end\n")
-        elif isinstance(event, AgentSessionEvent.ToolExecutionStart):
-            self._write_record(
-                "tool start "
-                f'name="{encode_field(event.toolName)}" '
-                f'id="{encode_field(event.toolCallId)}" '
-                f"arguments={encode_json(event.args)}\n"
-            )
-        elif isinstance(event, AgentSessionEvent.ToolExecutionEnd):
-            kind = "failure" if event.isError else "outcome"
-            result = {
-                "content": tuple(item.text for item in event.result.content),
-                "details": event.result.details,
-                "terminate": event.result.terminate,
-            }
-            self._write_record(
-                f"tool {kind} "
-                f'name="{encode_field(event.toolName)}" '
-                f'id="{encode_field(event.toolCallId)}" '
-                f"result={encode_json(result)}\n"
-            )
+            pending = self._removed_for_admission
+            self._removed_for_admission = None
+            text = _user_text(event.message)
+            if (
+                not self._admission_closed
+                and pending is not None
+                and pending[1] == text
+            ):
+                kind, source = pending
+                label = "Steering" if kind == "steering" else "Follow-up"
+                self._write_record(
+                    f"{label} admitted: {encode_field(source)}\n"
+                )
+                self._awaiting_processed.append((kind, source))
+        else:
+            self._removed_for_admission = None
+            if isinstance(event, AgentSessionEvent.MessageStart) and isinstance(
+                event.message, AssistantMessage
+            ):
+                self._rendered_text = ""
+                self._write_record("assistant start\n", hold=True)
+            elif isinstance(event, AgentSessionEvent.MessageUpdate):
+                text = "".join(
+                    block.text
+                    for block in event.message.content
+                    if isinstance(block, TextContent)
+                )
+                if not text.startswith(self._rendered_text):
+                    raise RuntimeError("Assistant Text update is not cumulative")
+                suffix = text[len(self._rendered_text) :]
+                if suffix:
+                    self._write_record(encode_body(suffix), hold=True)
+                self._rendered_text = text
+            elif isinstance(event, AgentSessionEvent.MessageEnd) and isinstance(
+                event.message, AssistantMessage
+            ):
+                if not self._rendered_text.endswith("\n"):
+                    self._write_record("\n", hold=True)
+                self._write_record("assistant end\n")
+            elif isinstance(event, AgentSessionEvent.ToolExecutionStart):
+                self._write_record(
+                    "tool start "
+                    f'name="{encode_field(event.toolName)}" '
+                    f'id="{encode_field(event.toolCallId)}" '
+                    f"arguments={encode_json(event.args)}\n"
+                )
+            elif isinstance(event, AgentSessionEvent.ToolExecutionEnd):
+                kind = "failure" if event.isError else "outcome"
+                result = {
+                    "content": tuple(item.text for item in event.result.content),
+                    "details": event.result.details,
+                    "terminate": event.result.terminate,
+                }
+                self._write_record(
+                    f"tool {kind} "
+                    f'name="{encode_field(event.toolName)}" '
+                    f'id="{encode_field(event.toolCallId)}" '
+                    f"result={encode_json(result)}\n"
+                )
+            elif isinstance(event, AgentSessionEvent.TurnEnd):
+                if self._awaiting_processed:
+                    kind, source = self._awaiting_processed.pop(0)
+                    label = "Steering" if kind == "steering" else "Follow-up"
+                    self._write_record(
+                        f"{label} processed: {encode_field(source)}\n"
+                    )
+            elif isinstance(event, AgentSessionEvent.AgentEnd):
+                classification = _run_classification(event.messages)
+                if classification == "unconfirmed":
+                    raise RuntimeError(
+                        "AgentSession run settlement is unconfirmed"
+                    )
+                self._write_record(f"run {classification}\n")
+            elif isinstance(event, AgentSessionEvent.AgentSettled):
+                self._write_record("session settled\n")
+        if isinstance(event, AgentSessionEvent.QueueUpdate):
+            self._refresh_live(force=True)
+        self._loop.call_soon(self._schedule_refresh)
 
     def _write_record(self, data: bytes | str, *, hold: bool = False) -> None:
         if not self._output_held:
@@ -382,22 +561,30 @@ class _InteractiveTerminalAdapter:
         write_stdout(data)
         if hold:
             return
-        if self._editor.has_visible_input():
-            self._output_held = False
-            self._editor.restore_after_output()
+        self._output_held = False
+        self._refresh_live(force=True)
 
     def _is_idle_editor(self) -> bool:
-        return (
-            not self._pending_prompt
-            and self._prompt_task is None
-            and not self._enqueue_waiting
-            and self._session.isIdle
-        )
+        return not self._is_active_input() and self._prompt_task is None
 
     def _is_active_input(self) -> bool:
-        return not self._is_idle_editor()
+        return (
+            self._pending_prompt
+            or self._enqueue_waiting
+            or not self._session.isIdle
+        )
 
     def _fail_input(self, error: Exception) -> None:
+        if (
+            isinstance(error, OSError)
+            and error.errno in {errno.EPIPE, errno.EIO}
+            and self._is_idle_editor()
+            and self._input_failure is None
+        ):
+            self._loop.remove_reader(self._stdin_fd)
+            self._input_failure = error
+            self._lines.put_nowait(b"")
+            return
         self._loop.remove_reader(self._stdin_fd)
         self._input_failure = error
         if not self._is_idle_editor():
@@ -410,6 +597,7 @@ class _InteractiveTerminalAdapter:
             return
         try:
             self._editor.resize()
+            self._refresh_live(force=True)
         except Exception as error:
             self._fail_input(error)
 
@@ -436,8 +624,6 @@ class _InteractiveTerminalAdapter:
             return
         if raw == b"":
             self._loop.remove_reader(self._stdin_fd)
-            if not self._is_idle_editor():
-                asyncio.create_task(self._session.abort())
             self._lines.put_nowait(raw)
             return
         if raw == _INTERRUPT:
@@ -519,16 +705,17 @@ class _InteractiveTerminalAdapter:
         prior_entries = self._session.sessionManager.getEntries()
         task = asyncio.create_task(self._session.prompt(text))
         self._prompt_task = task
-        self._pending_prompt = False
         nudge = asyncio.get_running_loop().create_future()
         self._loop.call_soon(nudge.set_result, None)
         await asyncio.wait(
             {task, nudge}, return_when=asyncio.FIRST_COMPLETED
         )
+        self._pending_prompt = False
         if not nudge.done():
             nudge.cancel()
         if not task.done():
             self._editor.clear_after_success()
+            self._refresh_live(force=True)
             return
         self._prompt_task = None
         try:
@@ -581,6 +768,7 @@ class _InteractiveTerminalAdapter:
             raise
         self._enqueue_waiting = False
         self._editor.clear_after_success()
+        self._refresh_live(force=True)
 
     async def _finish_prompt(self) -> None:
         task = self._prompt_task
@@ -597,21 +785,71 @@ class _InteractiveTerminalAdapter:
                 pass
             raise self._input_failure
         await task
-        classification, _payload = _session_terminal(self._session)
         if self._shutdown.signum is not None:
-            if classification == "cancelled":
-                self._write_record("run cancelled\n")
             self._release_output()
             return
-        if classification == "unconfirmed":
-            raise RuntimeError("AgentSession prompt settlement is unconfirmed")
-        self._write_record(f"run {classification}\n")
         self._release_output()
 
     def _release_output(self) -> None:
         if self._output_held:
             self._output_held = False
-            self._editor.restore_after_output()
+        self._refresh_live(force=True)
+
+    def _schedule_refresh(self) -> None:
+        if self._input_failure is not None:
+            return
+        try:
+            self._refresh_live()
+        except Exception as error:
+            self._fail_input(error)
+
+    def _refresh_live(self, *, force: bool = False) -> None:
+        if self._input_failure is not None:
+            return
+        try:
+            lines = self._allocate_live()
+            encoded = "\n".join(lines)
+            changed = encoded != self._live_encoded
+            self._live_encoded = encoded
+            self._editor.set_live_lines(lines)
+            if self._output_held:
+                return
+            if changed or force:
+                self._editor.restore_after_output()
+        except OSError as error:
+            if error.errno in {errno.EPIPE, errno.EIO}:
+                return
+            raise
+
+    def _allocate_live(self) -> tuple[str, ...]:
+        session = self._session
+        idle = "idle" if session.isIdle else "active"
+        run = "streaming" if session.isStreaming else "none"
+        core = (
+            f"Session {encode_field(session.sessionId)}: {idle}",
+            f"Run: {run}",
+            _resources_line(session.projectResourceState),
+        )
+        height = self._editor.height
+        budget = max(0, height - 1)
+        lines: list[str] = []
+        for row in core:
+            if len(lines) >= budget:
+                break
+            lines.append(row)
+        remaining = budget - len(lines)
+        pending = session.pendingMessages
+        steering_rows = _pending_group_rows(
+            "Steering", pending.steering, remaining
+        )
+        lines.extend(steering_rows)
+        follow_rows = _pending_group_rows(
+            "Follow-up",
+            pending.followUp,
+            remaining - len(steering_rows),
+        )
+        lines.extend(follow_rows)
+        return tuple(lines)
 
     def _shutdown_status(self) -> int:
         assert self._shutdown.signum is not None
@@ -692,6 +930,7 @@ class _CommandInput:
         "_yielded",
         "_grapheme_iter",
         "_word_iter",
+        "_live_lines",
     )
 
     def __init__(self, *, echo: bool, output_fd: int) -> None:
@@ -710,11 +949,24 @@ class _CommandInput:
         self._origin = 0
         self._owned_rows = 0
         self._yielded = False
+        self._live_lines: tuple[str, ...] = ()
         self._grapheme_iter = icu.BreakIterator.createCharacterInstance(_ICU_ROOT)
         self._word_iter = icu.BreakIterator.createWordInstance(_ICU_ROOT)
 
+    @property
+    def height(self) -> int:
+        return self._height
+
+    def set_live_lines(self, lines: tuple[str, ...]) -> None:
+        self._live_lines = lines
+
+    def ensure_size(self) -> None:
+        if self._width == 0:
+            self._read_size()
+
     def begin(self) -> None:
-        self._read_size()
+        if self._width == 0:
+            self._read_size()
         self._paint()
 
     def resize(self) -> None:
@@ -928,10 +1180,10 @@ class _CommandInput:
         return _CompletedLine(text=line, alt=alt)
 
     def _ctrl_d(self) -> bytes | None:
-        if self._frozen:
-            return None
         if self._paused:
             return b"" if not self._text else None
+        if self._frozen and self._text:
+            return None
         if not self._text:
             return b""
         self._forward_delete()
@@ -986,7 +1238,8 @@ class _CommandInput:
         return size.columns, size.lines
 
     def _viewport_cap(self) -> int:
-        return min(self._height, max(5, self._height * 30 // 100))
+        usable = max(1, self._height - len(self._live_lines))
+        return min(usable, max(1, max(5, self._height * 30 // 100)))
 
     def _layout(self) -> list[_VisualRow]:
         if not self._text:
@@ -1062,19 +1315,19 @@ class _CommandInput:
             return
         if self._yielded and not self._text:
             return
-        if not self._text and self._owned_rows == 0:
-            write_stdout("> ")
-            self._owned_rows = 1
-            return
         self._home()
+        live = self._live_lines
+        for line in live:
+            write_stdout(line)
+            write_stdout("\x1b[K\n")
         if not self._echo:
             write_stdout("> \x1b[K")
-            extra = self._owned_rows - 1
+            extra = self._owned_rows - len(live) - 1
             if extra > 0:
                 for _ in range(extra):
                     write_stdout("\n\x1b[K")
                 write_stdout(f"\x1b[{extra}A")
-            self._owned_rows = 1
+            self._owned_rows = len(live) + 1
             return
         rows = self._layout()
         cursor_row, cursor_col = self._cursor_row_col(rows)
@@ -1086,12 +1339,13 @@ class _CommandInput:
             write_stdout("\x1b[K")
             if index < len(visible) - 1:
                 write_stdout("\n")
-        extra = self._owned_rows - len(visible)
+        editor_rows = max(len(visible), 1)
+        extra = self._owned_rows - len(live) - editor_rows
         if extra > 0:
             for _ in range(extra):
                 write_stdout("\n\x1b[K")
             write_stdout(f"\x1b[{extra}A")
-        self._owned_rows = max(len(visible), 1)
+        self._owned_rows = len(live) + editor_rows
         last = len(visible) - 1
         target = cursor_row - origin
         up = last - target
@@ -1100,20 +1354,13 @@ class _CommandInput:
         write_stdout(f"\x1b[{cursor_col + 1}G")
 
     def _finalize(self) -> None:
+        submitted = self._text
+        self.yield_for_output()
+        self._yielded = False
         if not self._echo:
             write_stdout("\n")
-            self._owned_rows = 0
             return
-        rows = self._layout()
-        cursor_row, _cursor_col = self._cursor_row_col(rows)
-        origin = self._origin if len(rows) > self._viewport_cap() else 0
-        visible_count = min(len(rows) - origin, self._viewport_cap())
-        last_row = origin + visible_count - 1
-        down = last_row - cursor_row
-        if down > 0:
-            write_stdout(f"\x1b[{down}B")
-        write_stdout("\n")
-        self._owned_rows = 0
+        write_stdout("> " + submitted + "\n")
 
 
 def _grapheme_bounds(text: str, iterator: icu.BreakIterator) -> list[tuple[int, int]]:
