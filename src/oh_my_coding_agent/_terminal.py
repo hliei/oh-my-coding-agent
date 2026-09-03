@@ -597,7 +597,10 @@ def _escape(character: str, *, field: bool) -> str:
 
 def _payload(data: bytes | str) -> bytes:
     if isinstance(data, str):
-        return data.encode("utf-8")
+        try:
+            return data.encode("utf-8")
+        except UnicodeEncodeError as error:
+            raise OSError("interactive output is not UTF-8") from error
     return data
 
 
@@ -759,18 +762,23 @@ class _InteractiveTerminalAdapter:
                 winch_registered = True
             return await self._run_editor()
         except LifecycleError as error:
+            self._admission_closed = True
             write_lifecycle(error.code, str(error))
             return 1
         except OSError:
+            self._admission_closed = True
             write_stderr("I/O error\n")
             return 1
         except ValueError as error:
+            self._admission_closed = True
             write_error(_public_value_message(error))
             return 1
         except Exception:
+            self._admission_closed = True
             write_stderr("internal error\n")
             return 1
         finally:
+            reported_io = self._input_failure is not None
             try:
                 stdout_fd = sys.stdout.fileno()
                 sys.stdout.flush()
@@ -798,23 +806,27 @@ class _InteractiveTerminalAdapter:
                     write_cleanup("terminal restore failed")
                 elif error.errno in {errno.EPIPE, errno.EIO}:
                     pass
-                else:
+                elif not reported_io:
                     write_stderr("I/O error\n")
                     return 1
 
     async def _run_editor(self) -> int:
         while True:
             if self._shutdown.signum is not None:
+                self._admission_closed = True
                 if self._prompt_task is not None:
                     await self._finish_prompt()
                 return self._shutdown_status()
             item = await self._wait_line_or_control()
             if item == "prompt_done":
+                if self._shutdown.signum is not None:
+                    self._admission_closed = True
                 await self._finish_prompt()
                 if self._shutdown.signum is not None:
                     return self._shutdown_status()
                 continue
             if item == "terminate":
+                self._admission_closed = True
                 if self._modal_kind is not None:
                     self._leave_modal()
                 if self._prompt_task is not None:
@@ -828,7 +840,9 @@ class _InteractiveTerminalAdapter:
                 if self._is_idle_editor():
                     self._editor.handle_idle_interrupt()
                 else:
-                    asyncio.create_task(self._session.abort())
+                    asyncio.create_task(self._session.abort()).add_done_callback(
+                        _consume_task_exception
+                    )
                 continue
             if isinstance(item, Exception):
                 raise item
@@ -839,10 +853,6 @@ class _InteractiveTerminalAdapter:
                 if self._modal_kind is not None:
                     self._leave_modal()
                 self._admission_closed = True
-                try:
-                    await self._session.clearQueue()
-                except LifecycleError:
-                    pass
                 if self._prompt_task is not None:
                     await self._finish_prompt()
                 return 0
@@ -850,7 +860,11 @@ class _InteractiveTerminalAdapter:
                 self._show_resources()
                 continue
             if item == "reload":
-                await self._reload_resources()
+                status = await self._reload_resources()
+                if status is not None:
+                    if self._prompt_task is not None:
+                        await self._finish_prompt()
+                    return status
                 continue
             if item == "clear_queue":
                 await self._clear_queue()
@@ -875,9 +889,7 @@ class _InteractiveTerminalAdapter:
         try:
             await self._render_body(event)
         except OSError as error:
-            if error.errno in {errno.EPIPE, errno.EIO}:
-                return
-            raise
+            self._fail_input(error)
 
     async def _render_body(self, event: AgentSessionEvent) -> None:
         if isinstance(event, AgentSessionEvent.QueueUpdate):
@@ -994,22 +1006,27 @@ class _InteractiveTerminalAdapter:
             or not self._session.isIdle
         )
 
-    def _fail_input(self, error: Exception) -> None:
+    def _fail_input(self, error: Exception, *, hangup_is_eof: bool = False) -> None:
+        if self._input_failure is not None:
+            return
+        self._admission_closed = True
+        try:
+            self._loop.remove_reader(self._stdin_fd)
+        except Exception:
+            pass
+        self._input_failure = error
         if (
-            isinstance(error, OSError)
+            hangup_is_eof
+            and isinstance(error, OSError)
             and error.errno in {errno.EPIPE, errno.EIO}
             and self._is_idle_editor()
-            and self._input_failure is None
+            and self._modal_kind is None
         ):
-            self._loop.remove_reader(self._stdin_fd)
-            self._input_failure = error
             self._lines.put_nowait(b"")
             return
-        self._loop.remove_reader(self._stdin_fd)
-        self._input_failure = error
         if not self._is_idle_editor() and self._modal_kind is None:
-            asyncio.create_task(self._session.abort())
-            return
+            task = asyncio.create_task(self._session.abort())
+            task.add_done_callback(_consume_task_exception)
         self._lines.put_nowait(error)
 
     def _on_resize(self) -> None:
@@ -1026,6 +1043,8 @@ class _InteractiveTerminalAdapter:
             self._fail_input(error)
 
     def _deliver(self, raw: bytes | _CompletedLine) -> None:
+        if self._admission_closed:
+            return
         if isinstance(raw, _CompletedLine):
             prompt = _es_trim(raw.text)
             if not prompt:
@@ -1086,7 +1105,8 @@ class _InteractiveTerminalAdapter:
                 self._lines.put_nowait(raw)
                 return
             if not self._is_idle_editor():
-                asyncio.create_task(self._session.abort())
+                task = asyncio.create_task(self._session.abort())
+                task.add_done_callback(_consume_task_exception)
                 return
             self._lines.put_nowait(raw)
             return
@@ -1106,7 +1126,7 @@ class _InteractiveTerminalAdapter:
         except OSError as error:
             if error.errno == errno.EINTR:
                 return
-            self._fail_input(error)
+            self._fail_input(error, hangup_is_eof=True)
             return
         if raw == b"":
             self._deliver(b"")
@@ -1333,46 +1353,86 @@ class _InteractiveTerminalAdapter:
                 return
             self._modal_text += character
 
-    async def _reload_resources(self) -> None:
+    async def _reload_resources(self) -> int | None:
+        reload_task = asyncio.create_task(self._session.reloadProjectResources())
+        reload_task.add_done_callback(_consume_task_exception)
+        exit_status: int | None = None
         try:
-            result = await self._session.reloadProjectResources()
-        except LifecycleError as error:
-            if error.code != "busy":
-                raise
-            self._write_stderr_record(
-                'command rejected name="/reload" reason="busy"\n'
-            )
-        except ResourceAdmissionError as error:
-            name = (
-                ""
-                if error.name is None
-                else f' name="{encode_field(error.name)}"'
-            )
-            path = encode_field(
-                _terminal_relative_path(error.path, self._project_root_path)
-            )
-            self._write_stderr_record(
-                f'resource admission failed kind="{encode_field(error.kind)}"'
-                f'{name} path="{path}" stage="{encode_field(error.stage)}"\n'
-            )
-        except ProjectResourceReloadError as error:
-            self._refresh_live(force=True)
-            self._write_stderr_record(
-                'resource reload failed state="indeterminate"\n'
-            )
-            diagnostics = _extension_diagnostics(
-                error.diagnostics,
-                self._project_root_path,
-            )
-            if diagnostics:
-                self._write_record(
-                    _truncate_block(diagnostics, self._editor.width)
+            while not reload_task.done():
+                item = await self._wait_line_or_control(extra=reload_task)
+                if item == "extra_done":
+                    break
+                if item == "prompt_done":
+                    await self._finish_prompt()
+                    continue
+                if item == "terminate":
+                    self._admission_closed = True
+                    exit_status = self._shutdown_status()
+                    break
+                if item == b"" or item == "quit":
+                    self._admission_closed = True
+                    exit_status = 0
+                    break
+                if item == "interrupt" or item == _INTERRUPT:
+                    continue
+                if isinstance(item, Exception):
+                    self._admission_closed = True
+                    try:
+                        await reload_task
+                    except BaseException:
+                        pass
+                    raise item
+            try:
+                result = await reload_task
+            except LifecycleError as error:
+                if error.code != "busy":
+                    raise
+                if exit_status is not None:
+                    return exit_status
+                self._write_stderr_record(
+                    'command rejected name="/reload" reason="busy"\n'
                 )
-        else:
+                return None
+            except ResourceAdmissionError as error:
+                if exit_status is not None:
+                    return exit_status
+                name = (
+                    ""
+                    if error.name is None
+                    else f' name="{encode_field(error.name)}"'
+                )
+                path = encode_field(
+                    _terminal_relative_path(error.path, self._project_root_path)
+                )
+                self._write_stderr_record(
+                    f'resource admission failed kind="{encode_field(error.kind)}"'
+                    f'{name} path="{path}" stage="{encode_field(error.stage)}"\n'
+                )
+                return None
+            except ProjectResourceReloadError as error:
+                if exit_status is not None:
+                    return exit_status
+                self._refresh_live(force=True)
+                self._write_stderr_record(
+                    'resource reload failed state="indeterminate"\n'
+                )
+                diagnostics = _extension_diagnostics(
+                    error.diagnostics,
+                    self._project_root_path,
+                )
+                if diagnostics:
+                    self._write_record(
+                        _truncate_block(diagnostics, self._editor.width)
+                    )
+                return None
+            if exit_status is not None:
+                return exit_status
             self._write_reload_result(result)
+            return None
         finally:
             self._command_active = False
-            self._refresh_live(force=True)
+            if not self._admission_closed:
+                self._refresh_live(force=True)
 
     def _write_reload_result(self, result: ProjectResourceReloadResult) -> None:
         self._write_record(f"resource reload {result.status}\n")
@@ -1427,6 +1487,14 @@ class _InteractiveTerminalAdapter:
                     break
                 if item == "interrupt" or item == _INTERRUPT:
                     continue
+                if isinstance(item, Exception):
+                    self._admission_closed = True
+                    self._session.abortCompaction()
+                    try:
+                        await compact_task
+                    except BaseException:
+                        pass
+                    raise item
             try:
                 result = await compact_task
             except asyncio.CancelledError:
@@ -1455,7 +1523,8 @@ class _InteractiveTerminalAdapter:
         finally:
             self._shutdown.sigint_aborts_session = True
             self._command_active = False
-            self._refresh_live(force=True)
+            if not self._admission_closed:
+                self._refresh_live(force=True)
 
     def _write_stderr_record(self, data: str) -> None:
         self._editor.yield_for_output()
@@ -1583,9 +1652,7 @@ class _InteractiveTerminalAdapter:
             if changed or force:
                 self._editor.restore_after_output()
         except OSError as error:
-            if error.errno in {errno.EPIPE, errno.EIO}:
-                return
-            raise
+            self._fail_input(error)
 
     def _allocate_live(self) -> tuple[str, ...]:
         session = self._session
@@ -2386,7 +2453,7 @@ class _CommandInput:
                 cells = width
                 capacity = self._width - 1
                 if width > capacity:
-                    raise RuntimeError(_WIDTH_ERROR)
+                    raise OSError(_WIDTH_ERROR)
             else:
                 text += grapheme
                 cells += width
