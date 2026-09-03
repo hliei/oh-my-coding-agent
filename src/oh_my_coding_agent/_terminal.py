@@ -1016,9 +1016,12 @@ class _InteractiveTerminalAdapter:
         if self._input_failure is not None:
             return
         try:
-            self._editor.resize()
-            if self._modal_kind is None:
-                self._refresh_live(force=True)
+            if not self._editor.resize():
+                return
+            if self._modal_kind is not None:
+                self._editor.restore_after_output()
+                return
+            self._refresh_live(force=True)
         except Exception as error:
             self._fail_input(error)
 
@@ -1643,7 +1646,7 @@ class _InteractiveTerminalAdapter:
                 _CompletionCandidate(
                     spelling=spelling,
                     label="[prompt]",
-                    detail=encode_body(detail),
+                    detail=detail,
                     argument_capable=template.argument_hint is not None,
                 )
             )
@@ -1652,7 +1655,7 @@ class _InteractiveTerminalAdapter:
                 _CompletionCandidate(
                     spelling=f"/skill:{skill.name}",
                     label="[skill]",
-                    detail=encode_body(skill.description),
+                    detail=skill.description,
                     argument_capable=True,
                 )
             )
@@ -1854,17 +1857,15 @@ class _CommandInput:
             self._read_size()
         self._paint()
 
-    def resize(self) -> None:
+    def resize(self) -> bool:
         width, height = self._query_size()
         if width < 3 or height < 1:
             self._enter_pause()
-            return
+            return False
         self._width = width
         self._height = height
-        recovering = self._paused
         self._paused = False
-        if recovering or self._echo or self._owned_rows or self._overlay is not None:
-            self._paint()
+        return True
 
     def freeze(self) -> None:
         self._frozen = True
@@ -2250,7 +2251,8 @@ class _CommandInput:
             marker = "> " if index == self._completion_selected else "  "
             rows.append(
                 _truncate_row(
-                    f"{marker}{item.spelling} {item.label} {item.detail}",
+                    f"{marker}{encode_field(item.spelling)} {item.label} "
+                    f"{encode_field(item.detail)}",
                     width,
                     self._grapheme_iter,
                 )
@@ -2437,15 +2439,18 @@ class _CommandInput:
         if self._yielded and not self._text:
             return
         self._home()
+        wrap_width = max(1, self._width - 1)
         live = self._live_lines
         for line in live:
-            write_stdout(line)
+            write_stdout(
+                _truncate_row(line, wrap_width, self._grapheme_iter)
+            )
             write_stdout("\x1b[K\n")
         matches = self._completion_matches()
         self._sync_completion_selection(matches)
         completion_budget = max(0, self._height - len(live) - 1)
         completion = self._completion_rows(
-            matches, completion_budget, self._width
+            matches, completion_budget, wrap_width
         )
         for line in completion:
             write_stdout(line)
@@ -2490,8 +2495,13 @@ class _CommandInput:
         overlay = self._overlay
         assert overlay is not None
         lines = overlay.split("\n")
+        if self._height > 0 and len(lines) > self._height:
+            lines = lines[-self._height :]
+        wrap_width = max(1, self._width - 1)
         for index, line in enumerate(lines):
-            write_stdout(line)
+            write_stdout(
+                _truncate_row(line, wrap_width, self._grapheme_iter)
+            )
             write_stdout("\x1b[K")
             if index < len(lines) - 1:
                 write_stdout("\n")
