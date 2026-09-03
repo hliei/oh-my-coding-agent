@@ -22,8 +22,11 @@ from ._resource_state import (
     ExtensionDiagnostic,
     ExtensionDiagnosticLifecycle,
     ExtensionDiagnosticLoad,
+    ProjectResourceReloadError,
+    ProjectResourceReloadResult,
     ProjectResourceState,
     PromptResourceResolution,
+    ResourceAdmissionError,
     ResourceResolutionReport,
 )
 from ._session import AgentSession, AgentSessionEvent, PendingMessages
@@ -291,7 +294,13 @@ def _comma_row(items: tuple[str, ...] | list[str]) -> str:
     return "  " + ", ".join(encode_field(item) for item in items)
 
 
-def _startup_summary(state: ProjectResourceState, root: str, width: int) -> str:
+def _startup_summary(
+    state: ProjectResourceState,
+    root: str,
+    width: int,
+    *,
+    extension_diagnostics: tuple[ExtensionDiagnostic, ...] | None = None,
+) -> str:
     report = state.report
     if report.discovery == "disabled":
         return _truncate_block("[Project resources] disabled\n", width)
@@ -311,7 +320,12 @@ def _startup_summary(state: ProjectResourceState, root: str, width: int) -> str:
     diagnostics = _resource_diagnostics(report, root)
     if diagnostics:
         body = f"{body}\n{diagnostics}"
-    extensions = _extension_diagnostics(state.extensionDiagnostics, root)
+    extensions = _extension_diagnostics(
+        state.extensionDiagnostics
+        if extension_diagnostics is None
+        else extension_diagnostics,
+        root,
+    )
     if extensions:
         body = f"{body}\n{extensions}"
     return _truncate_block(body, width)
@@ -549,6 +563,7 @@ async def _drive_interactive(
 class _CompletedLine:
     text: str
     alt: bool
+    submission_id: int = 0
 
 
 @dataclass(frozen=True, slots=True)
@@ -557,7 +572,12 @@ class _TerminalSubmission:
     intent: Literal["prompt", "steering", "follow_up"]
 
 
-_QueuedLine = bytes | Exception | _TerminalSubmission | Literal["resources"]
+_QueuedLine = (
+    bytes
+    | Exception
+    | _TerminalSubmission
+    | Literal["reload", "clear_queue", "resources"]
+)
 _LineWait = _QueuedLine | Literal["interrupt", "terminate", "prompt_done"]
 
 
@@ -565,6 +585,7 @@ class _InteractiveTerminalAdapter:
     __slots__ = (
         "_admission_closed",
         "_awaiting_processed",
+        "_command_active",
         "_editor",
         "_enqueue_waiting",
         "_input_failure",
@@ -593,6 +614,7 @@ class _InteractiveTerminalAdapter:
         self._rendered_text = ""
         self._pending_prompt = False
         self._enqueue_waiting = False
+        self._command_active = False
         self._output_held = False
         self._prompt_task: asyncio.Task[None] | None = None
         self._input_failure: Exception | None = None
@@ -720,6 +742,12 @@ class _InteractiveTerminalAdapter:
             if item == "resources":
                 self._show_resources()
                 continue
+            if item == "reload":
+                await self._reload_resources()
+                continue
+            if item == "clear_queue":
+                await self._clear_queue()
+                continue
             if not isinstance(item, _TerminalSubmission):
                 raise RuntimeError("interactive editor submitted an invalid event")
             await self._submit(item)
@@ -840,7 +868,8 @@ class _InteractiveTerminalAdapter:
 
     def _is_active_input(self) -> bool:
         return (
-            self._pending_prompt
+            self._command_active
+            or self._pending_prompt
             or self._enqueue_waiting
             or not self._session.isIdle
         )
@@ -877,8 +906,19 @@ class _InteractiveTerminalAdapter:
             prompt = _es_trim(raw.text)
             if not prompt:
                 return
+            if self._command_active:
+                self._editor.restore_draft()
+                return
             if prompt == "/resources":
                 self._lines.put_nowait("resources")
+                return
+            if prompt == "/reload":
+                self._begin_command(raw)
+                self._lines.put_nowait("reload")
+                return
+            if prompt == "/clear-queue":
+                self._begin_command(raw)
+                self._lines.put_nowait("clear_queue")
                 return
             active = self._is_active_input()
             if raw.alt:
@@ -983,6 +1023,84 @@ class _InteractiveTerminalAdapter:
                 self._editor.width,
             )
         )
+
+    def _begin_command(self, submitted: _CompletedLine) -> None:
+        self._editor.accept_command(submitted.submission_id)
+        self._command_active = True
+        self._refresh_live(force=True)
+
+    async def _reload_resources(self) -> None:
+        try:
+            result = await self._session.reloadProjectResources()
+        except LifecycleError as error:
+            if error.code != "busy":
+                raise
+            self._write_stderr_record(
+                'command rejected name="/reload" reason="busy"\n'
+            )
+        except ResourceAdmissionError as error:
+            name = (
+                ""
+                if error.name is None
+                else f' name="{encode_field(error.name)}"'
+            )
+            path = encode_field(
+                _terminal_relative_path(error.path, self._project_root_path)
+            )
+            self._write_stderr_record(
+                f'resource admission failed kind="{encode_field(error.kind)}"'
+                f'{name} path="{path}" stage="{encode_field(error.stage)}"\n'
+            )
+        except ProjectResourceReloadError as error:
+            self._refresh_live(force=True)
+            self._write_stderr_record(
+                'resource reload failed state="indeterminate"\n'
+            )
+            diagnostics = _extension_diagnostics(
+                error.diagnostics,
+                self._project_root_path,
+            )
+            if diagnostics:
+                self._write_record(
+                    _truncate_block(diagnostics, self._editor.width)
+                )
+        else:
+            self._write_reload_result(result)
+        finally:
+            self._command_active = False
+            self._refresh_live(force=True)
+
+    def _write_reload_result(self, result: ProjectResourceReloadResult) -> None:
+        self._write_record(f"resource reload {result.status}\n")
+        self._write_record(
+            _startup_summary(
+                result.state,
+                self._project_root_path,
+                self._editor.width,
+                extension_diagnostics=result.diagnostics,
+            )
+        )
+
+    async def _clear_queue(self) -> None:
+        try:
+            cleared = await self._session.clearQueue()
+            self._removed_for_admission = None
+            self._queue_snapshot = self._session.pendingMessages
+            self._write_record(
+                "pending queues cleared "
+                f"steering={len(cleared.steering)} "
+                f"followUp={len(cleared.followUp)}; "
+                "drained messages may still proceed\n"
+            )
+        finally:
+            self._command_active = False
+            self._refresh_live(force=True)
+
+    def _write_stderr_record(self, data: str) -> None:
+        self._editor.yield_for_output()
+        if not write_stderr(data):
+            raise OSError("interactive diagnostic write failed")
+        self._refresh_live(force=True)
 
     async def _admit_prompt(self, text: str) -> None:
         self._editor.freeze()
@@ -1203,9 +1321,11 @@ class _CommandInput:
         "_text",
         "_cursor",
         "_draft",
+        "_draft_submission_id",
         "_frozen",
         "_freeze_on_submit",
         "_pending",
+        "_submission_id",
         "_consumed_cr",
         "_paused",
         "_width",
@@ -1224,9 +1344,11 @@ class _CommandInput:
         self._text = ""
         self._cursor = 0
         self._draft = ""
+        self._draft_submission_id = 0
         self._frozen = False
         self._freeze_on_submit = False
         self._pending = bytearray()
+        self._submission_id = 0
         self._consumed_cr = False
         self._paused = False
         self._width = 0
@@ -1309,11 +1431,20 @@ class _CommandInput:
 
     def clear_after_success(self) -> None:
         self._draft = ""
+        self._draft_submission_id = 0
         self._text = ""
         self._cursor = 0
         self._origin = 0
         self._pending.clear()
         self._frozen = False
+
+    def accept_command(self, submission_id: int) -> None:
+        if self._draft_submission_id == submission_id:
+            self._draft = ""
+            self._draft_submission_id = 0
+            self._frozen = False
+            return
+        self.restore_draft()
 
     def handle_idle_interrupt(self) -> None:
         self._text = ""
@@ -1460,13 +1591,19 @@ class _CommandInput:
             self._paint()
             return None
         self._finalize()
+        self._submission_id += 1
         self._draft = line
+        self._draft_submission_id = self._submission_id
         self._text = ""
         self._cursor = 0
         self._origin = 0
         if self._freeze_on_submit:
             self._frozen = True
-        return _CompletedLine(text=line, alt=alt)
+        return _CompletedLine(
+            text=line,
+            alt=alt,
+            submission_id=self._submission_id,
+        )
 
     def _ctrl_d(self) -> bytes | None:
         if self._paused:
