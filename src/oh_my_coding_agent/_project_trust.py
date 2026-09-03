@@ -39,6 +39,26 @@ def interactive_trust_is_pending(cwd: str) -> bool:
     return _default_project_trust() == "ask"
 
 
+def trust_path_has_parent(cwd: str) -> bool:
+    path = os.path.realpath(cwd)
+    return os.path.dirname(path) != path
+
+
+def update_default_project_trust(
+    value: Literal["ask", "always", "never"]
+) -> None:
+    target = os.path.join(
+        os.path.expanduser("~"), ".omh", "agent", "settings.json"
+    )
+
+    def mutate(
+        _document: dict[str, Literal["ask", "always", "never"]],
+    ) -> dict[str, Literal["ask", "always", "never"]]:
+        return {"defaultProjectTrust": value}
+
+    _update_policy_document(target, _validate_settings_document, mutate)
+
+
 def update_project_trust(
     cwd: str, action: Literal["trust", "distrust", "trust_parent"]
 ) -> None:

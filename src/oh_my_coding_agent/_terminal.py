@@ -17,6 +17,11 @@ from oh_my_llm import AssistantMessage, LifecycleError, TextContent, UserMessage
 from oh_my_llm._canonical import encodeCanonical
 
 from ._project_rules import _project_root
+from ._project_trust import (
+    trust_path_has_parent,
+    update_default_project_trust,
+    update_project_trust,
+)
 from ._prompt_resources import _es_trim
 from ._resource_state import (
     ExtensionDiagnostic,
@@ -28,6 +33,7 @@ from ._resource_state import (
     PromptResourceResolution,
     ResourceAdmissionError,
     ResourceResolutionReport,
+    TrustPolicyError,
 )
 from ._session import AgentSession, AgentSessionEvent, PendingMessages
 
@@ -59,6 +65,29 @@ _SIGNAL_STATUS: dict[signal.Signals, int] = {
     signal.SIGHUP: 129,
     signal.SIGTERM: 143,
 }
+_TRUST_MODAL_WITH_PARENT = (
+    "Save project trust for future Sessions:\n"
+    "[t] Trust\n"
+    "[p] Trust parent\n"
+    "[n] Do not trust\n"
+    "[c] Cancel\n"
+    "Select t/p/n/c:"
+)
+_TRUST_MODAL_ROOT = (
+    "Save project trust for future Sessions:\n"
+    "[t] Trust\n"
+    "[n] Do not trust\n"
+    "[c] Cancel\n"
+    "Select t/n/c:"
+)
+_SETTINGS_MODAL = (
+    "Default project trust for future Sessions:\n"
+    "[a] Ask\n"
+    "[y] Always\n"
+    "[n] Never\n"
+    "[c] Cancel\n"
+    "Select a/y/n/c:"
+)
 
 _TerminalClassification = Literal[
     "completed", "model_error", "cancelled", "unconfirmed"
@@ -572,11 +601,17 @@ class _TerminalSubmission:
     intent: Literal["prompt", "steering", "follow_up"]
 
 
+@dataclass(frozen=True, slots=True)
+class _ModalChoice:
+    text: str
+
+
 _QueuedLine = (
     bytes
     | Exception
     | _TerminalSubmission
-    | Literal["reload", "clear_queue", "resources"]
+    | _ModalChoice
+    | Literal["reload", "clear_queue", "resources", "modal_cancel"]
 )
 _LineWait = _QueuedLine | Literal["interrupt", "terminate", "prompt_done"]
 
@@ -592,6 +627,10 @@ class _InteractiveTerminalAdapter:
         "_lines",
         "_live_encoded",
         "_loop",
+        "_modal_kind",
+        "_modal_pending",
+        "_modal_text",
+        "_modal_consumed_cr",
         "_output_held",
         "_project_root_path",
         "_pending_prompt",
@@ -615,6 +654,10 @@ class _InteractiveTerminalAdapter:
         self._pending_prompt = False
         self._enqueue_waiting = False
         self._command_active = False
+        self._modal_kind: Literal["trust", "settings"] | None = None
+        self._modal_pending = bytearray()
+        self._modal_text = ""
+        self._modal_consumed_cr = False
         self._output_held = False
         self._prompt_task: asyncio.Task[None] | None = None
         self._input_failure: Exception | None = None
@@ -719,10 +762,16 @@ class _InteractiveTerminalAdapter:
                     return self._shutdown_status()
                 continue
             if item == "terminate":
+                if self._modal_kind is not None:
+                    self._leave_modal()
                 if self._prompt_task is not None:
                     await self._finish_prompt()
                 return self._shutdown_status()
-            if item == "interrupt" or item == _INTERRUPT:
+            if item == "interrupt" or item == _INTERRUPT or item == "modal_cancel":
+                if self._modal_kind is not None:
+                    self._leave_modal()
+                    self._refresh_live(force=True)
+                    continue
                 if self._is_idle_editor():
                     self._editor.handle_idle_interrupt()
                 else:
@@ -730,7 +779,12 @@ class _InteractiveTerminalAdapter:
                 continue
             if isinstance(item, Exception):
                 raise item
+            if isinstance(item, _ModalChoice):
+                self._settle_modal(item.text)
+                continue
             if item == b"":
+                if self._modal_kind is not None:
+                    self._leave_modal()
                 self._admission_closed = True
                 try:
                     await self._session.clearQueue()
@@ -861,6 +915,9 @@ class _InteractiveTerminalAdapter:
         if hold:
             return
         self._output_held = False
+        if self._modal_kind is not None:
+            self._editor.restore_after_output()
+            return
         self._refresh_live(force=True)
 
     def _is_idle_editor(self) -> bool:
@@ -887,7 +944,7 @@ class _InteractiveTerminalAdapter:
             return
         self._loop.remove_reader(self._stdin_fd)
         self._input_failure = error
-        if not self._is_idle_editor():
+        if not self._is_idle_editor() and self._modal_kind is None:
             asyncio.create_task(self._session.abort())
             return
         self._lines.put_nowait(error)
@@ -897,7 +954,8 @@ class _InteractiveTerminalAdapter:
             return
         try:
             self._editor.resize()
-            self._refresh_live(force=True)
+            if self._modal_kind is None:
+                self._refresh_live(force=True)
         except Exception as error:
             self._fail_input(error)
 
@@ -919,6 +977,12 @@ class _InteractiveTerminalAdapter:
             if prompt == "/clear-queue":
                 self._begin_command(raw)
                 self._lines.put_nowait("clear_queue")
+                return
+            if prompt == "/trust":
+                self._admit_policy_command(raw, "trust")
+                return
+            if prompt == "/settings":
+                self._admit_policy_command(raw, "settings")
                 return
             active = self._is_active_input()
             if raw.alt:
@@ -960,10 +1024,18 @@ class _InteractiveTerminalAdapter:
         try:
             raw = os.read(self._stdin_fd, 4096)
         except OSError as error:
+            if error.errno == errno.EINTR:
+                return
             self._fail_input(error)
             return
         if raw == b"":
             self._deliver(b"")
+            return
+        if self._modal_kind is not None:
+            try:
+                self._feed_modal(raw)
+            except Exception as error:
+                self._fail_input(error)
             return
         try:
             completed = self._editor.feed(
@@ -1028,6 +1100,149 @@ class _InteractiveTerminalAdapter:
         self._editor.accept_command(submitted.submission_id)
         self._command_active = True
         self._refresh_live(force=True)
+
+    def _admit_policy_command(
+        self, submitted: _CompletedLine, kind: Literal["trust", "settings"]
+    ) -> None:
+        active = self._is_active_input()
+        self._editor.accept_command(submitted.submission_id)
+        if active:
+            self._write_stderr_record(
+                f'command rejected name="/{kind}" reason="busy"\n'
+            )
+            return
+        self._command_active = True
+        self._enter_modal(kind)
+
+    def _modal_prompt(self, kind: Literal["trust", "settings"]) -> str:
+        if kind == "settings":
+            return _SETTINGS_MODAL
+        cwd = self._session.sessionManager.getCwd()
+        if trust_path_has_parent(cwd):
+            return _TRUST_MODAL_WITH_PARENT
+        return _TRUST_MODAL_ROOT
+
+    def _enter_modal(self, kind: Literal["trust", "settings"]) -> None:
+        self._modal_kind = kind
+        self._modal_text = ""
+        self._modal_pending.clear()
+        self._modal_consumed_cr = False
+        self._editor.show_overlay(self._modal_prompt(kind))
+
+    def _leave_modal(self) -> None:
+        self._modal_kind = None
+        self._modal_text = ""
+        self._modal_pending.clear()
+        self._modal_consumed_cr = False
+        self._command_active = False
+        self._editor.clear_overlay()
+
+    def _redraw_modal(self) -> None:
+        kind = self._modal_kind
+        if kind is None:
+            return
+        self._modal_text = ""
+        self._editor.show_overlay(self._modal_prompt(kind))
+
+    def _settle_modal(self, text: str) -> None:
+        kind = self._modal_kind
+        if kind is None:
+            return
+        choice = _es_trim(text).lower()
+        if choice == "c":
+            self._leave_modal()
+            self._refresh_live(force=True)
+            return
+        cwd = self._session.sessionManager.getCwd()
+        if kind == "trust":
+            action = _trust_modal_action(choice, trust_path_has_parent(cwd))
+            if action is None:
+                self._redraw_modal()
+                return
+            try:
+                update_project_trust(cwd, action)
+            except TrustPolicyError as error:
+                self._leave_modal()
+                self._write_policy_failure(error)
+                return
+            decision = {
+                "trust": "trusted",
+                "trust_parent": "trusted_parent",
+                "distrust": "untrusted",
+            }[action]
+            self._leave_modal()
+            self._write_record(
+                "project trust saved "
+                f'decision="{decision}"; applies to future Sessions\n'
+            )
+            return
+        setting = _settings_modal_value(choice)
+        if setting is None:
+            self._redraw_modal()
+            return
+        try:
+            update_default_project_trust(setting)
+        except TrustPolicyError as error:
+            self._leave_modal()
+            self._write_policy_failure(error)
+            return
+        self._leave_modal()
+        self._write_record(
+            "default project trust saved "
+            f'value="{setting}"; applies to future Sessions\n'
+        )
+
+    def _write_policy_failure(self, error: TrustPolicyError) -> None:
+        self._write_stderr_record(
+            f'trust policy failed operation="{error.operation}" '
+            f'stage="{error.stage}"\n'
+        )
+
+    def _feed_modal(self, data: bytes) -> None:
+        self._modal_pending.extend(data)
+        while self._modal_pending:
+            first = self._modal_pending[0]
+            if first == 0x1B:
+                if len(self._modal_pending) == 1:
+                    del self._modal_pending[0]
+                    self._lines.put_nowait("modal_cancel")
+                    return
+                action = _take_escape(self._modal_pending)
+                if action is None:
+                    return
+                if action == "reprocess":
+                    continue
+                continue
+            if first < 0x20 or first == 0x7F:
+                del self._modal_pending[0]
+                if first == 0x0A and self._modal_consumed_cr:
+                    self._modal_consumed_cr = False
+                    continue
+                if first == 0x0D:
+                    self._modal_consumed_cr = True
+                    submitted = self._modal_text
+                    self._modal_text = ""
+                    self._lines.put_nowait(_ModalChoice(submitted))
+                    continue
+                self._modal_consumed_cr = False
+                if first == 0x0A:
+                    submitted = self._modal_text
+                    self._modal_text = ""
+                    self._lines.put_nowait(_ModalChoice(submitted))
+                    continue
+                if first == 0x03:
+                    self._lines.put_nowait("modal_cancel")
+                    return
+                if first == 0x04:
+                    self._lines.put_nowait(b"")
+                    return
+                if first in {0x08, 0x7F}:
+                    self._modal_text = self._modal_text[:-1]
+                continue
+            character = _take_complete_character(self._modal_pending)
+            if character is None:
+                return
+            self._modal_text += character
 
     async def _reload_resources(self) -> None:
         try:
@@ -1215,6 +1430,8 @@ class _InteractiveTerminalAdapter:
             changed = encoded != self._live_encoded
             self._live_encoded = encoded
             self._editor.set_live_lines(lines)
+            if self._modal_kind is not None:
+                return
             if self._output_held:
                 return
             if changed or force:
@@ -1257,6 +1474,30 @@ class _InteractiveTerminalAdapter:
     def _shutdown_status(self) -> int:
         assert self._shutdown.signum is not None
         return _SIGNAL_STATUS[self._shutdown.signum]
+
+
+def _trust_modal_action(
+    choice: str, has_parent: bool
+) -> Literal["trust", "distrust", "trust_parent"] | None:
+    if choice == "t":
+        return "trust"
+    if choice == "p" and has_parent:
+        return "trust_parent"
+    if choice == "n":
+        return "distrust"
+    return None
+
+
+def _settings_modal_value(
+    choice: str,
+) -> Literal["ask", "always", "never"] | None:
+    if choice == "a":
+        return "ask"
+    if choice == "y":
+        return "always"
+    if choice == "n":
+        return "never"
+    return None
 
 
 def _decode_interactive_line(raw: bytes, message: str) -> str:
@@ -1336,6 +1577,7 @@ class _CommandInput:
         "_grapheme_iter",
         "_word_iter",
         "_live_lines",
+        "_overlay",
     )
 
     def __init__(self, *, echo: bool, output_fd: int) -> None:
@@ -1357,6 +1599,7 @@ class _CommandInput:
         self._owned_rows = 0
         self._yielded = False
         self._live_lines: tuple[str, ...] = ()
+        self._overlay: str | None = None
         self._grapheme_iter = icu.BreakIterator.createCharacterInstance(_ICU_ROOT)
         self._word_iter = icu.BreakIterator.createWordInstance(_ICU_ROOT)
 
@@ -1370,6 +1613,19 @@ class _CommandInput:
 
     def set_live_lines(self, lines: tuple[str, ...]) -> None:
         self._live_lines = lines
+
+    def show_overlay(self, text: str) -> None:
+        self._overlay = text
+        self._yielded = False
+        if not self._paused:
+            self._paint()
+
+    def clear_overlay(self) -> None:
+        if self._overlay is None:
+            return
+        self.yield_for_output()
+        self._overlay = None
+        self._yielded = False
 
     def ensure_size(self) -> None:
         if self._width == 0:
@@ -1389,7 +1645,7 @@ class _CommandInput:
         self._height = height
         recovering = self._paused
         self._paused = False
-        if recovering or self._echo or self._owned_rows:
+        if recovering or self._echo or self._owned_rows or self._overlay is not None:
             self._paint()
 
     def freeze(self) -> None:
@@ -1739,6 +1995,9 @@ class _CommandInput:
     def _paint(self) -> None:
         if self._paused:
             return
+        if self._overlay is not None:
+            self._paint_overlay()
+            return
         if self._yielded and not self._text:
             return
         self._home()
@@ -1778,6 +2037,24 @@ class _CommandInput:
         if up > 0:
             write_stdout(f"\x1b[{up}A")
         write_stdout(f"\x1b[{cursor_col + 1}G")
+
+    def _paint_overlay(self) -> None:
+        self._home()
+        overlay = self._overlay
+        assert overlay is not None
+        lines = overlay.split("\n")
+        for index, line in enumerate(lines):
+            write_stdout(line)
+            write_stdout("\x1b[K")
+            if index < len(lines) - 1:
+                write_stdout("\n")
+        extra = self._owned_rows - len(lines)
+        if extra > 0:
+            for _ in range(extra):
+                write_stdout("\n\x1b[K")
+            write_stdout(f"\x1b[{extra}A")
+        self._owned_rows = len(lines)
+        self._yielded = False
 
     def _finalize(self) -> None:
         submitted = self._text
