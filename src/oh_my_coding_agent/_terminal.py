@@ -9,7 +9,7 @@ import sys
 import termios
 import tty
 from dataclasses import dataclass
-from typing import Any, BinaryIO, Literal
+from typing import Any, BinaryIO, Callable, Literal
 
 import icu  # type: ignore[import-untyped]
 import wcwidth
@@ -28,7 +28,7 @@ from ._project_trust import (
     update_default_project_trust,
     update_project_trust,
 )
-from ._prompt_resources import _es_trim
+from ._prompt_resources import _ES_WHITESPACE, _es_trim
 from ._resource_state import (
     ExtensionDiagnostic,
     ExtensionDiagnosticLifecycle,
@@ -94,6 +94,42 @@ _SETTINGS_MODAL = (
     "[c] Cancel\n"
     "Select a/y/n/c:"
 )
+_HISTORY_LIMIT = 100
+
+
+@dataclass(frozen=True, slots=True)
+class _BuiltinCommand:
+    spelling: str
+    description: str
+    argument_hint: str | None = None
+
+
+_BUILTIN_COMMANDS = (
+    _BuiltinCommand("/reload", "Reload project resources"),
+    _BuiltinCommand(
+        "/clear-queue", "Clear pending Steering and Follow-up messages"
+    ),
+    _BuiltinCommand(
+        "/resources", "Show complete project resource provenance"
+    ),
+    _BuiltinCommand("/trust", "Save project trust for future Sessions"),
+    _BuiltinCommand(
+        "/settings", "Set default project trust for future Sessions"
+    ),
+    _BuiltinCommand(
+        "/compact", "Manually compact Session context", "[instructions]"
+    ),
+    _BuiltinCommand("/quit", "Exit omh"),
+)
+_BUILTIN_SPELLINGS = frozenset(item.spelling for item in _BUILTIN_COMMANDS)
+
+
+@dataclass(frozen=True, slots=True)
+class _CompletionCandidate:
+    spelling: str
+    label: str
+    detail: str
+    argument_capable: bool
 
 _TerminalClassification = Literal[
     "completed", "model_error", "cancelled", "unconfirmed"
@@ -691,7 +727,11 @@ class _InteractiveTerminalAdapter:
         self._stdin_fd = sys.stdin.buffer.fileno()
         saved_tty, echo = _acquire_end_of_line_editing(self._stdin_fd)
         output_fd = sys.stdout.buffer.fileno()
-        self._editor = _CommandInput(echo=echo, output_fd=output_fd)
+        self._editor = _CommandInput(
+            echo=echo,
+            output_fd=output_fd,
+            completion_provider=self._completion_candidates,
+        )
         self._editor.ensure_size()
         write_stdout(
             _startup_summary(
@@ -1031,6 +1071,7 @@ class _InteractiveTerminalAdapter:
             else:
                 self._enqueue_waiting = True
                 self._editor.freeze()
+            self._editor.remember(prompt)
             self._lines.put_nowait(_TerminalSubmission(prompt, intent))
             return
         if raw == b"":
@@ -1573,6 +1614,50 @@ class _InteractiveTerminalAdapter:
         lines.extend(follow_rows)
         return tuple(lines)
 
+    def _completion_candidates(self) -> tuple[_CompletionCandidate, ...]:
+        items = [
+            _CompletionCandidate(
+                spelling=command.spelling,
+                label="[built-in]",
+                detail=(
+                    f"{command.argument_hint} — {command.description}"
+                    if command.argument_hint is not None
+                    else command.description
+                ),
+                argument_capable=command.argument_hint is not None,
+            )
+            for command in _BUILTIN_COMMANDS
+        ]
+        resources = self._session._completion_prompt_resources()
+        if resources is None:
+            return tuple(items)
+        for template in resources.templates:
+            spelling = f"/{template.name}"
+            if spelling in _BUILTIN_SPELLINGS:
+                detail = "matching built-in form is intercepted"
+            elif template.argument_hint:
+                detail = f"{template.argument_hint} — {template.description}"
+            else:
+                detail = template.description
+            items.append(
+                _CompletionCandidate(
+                    spelling=spelling,
+                    label="[prompt]",
+                    detail=encode_body(detail),
+                    argument_capable=template.argument_hint is not None,
+                )
+            )
+        for skill in resources.skills:
+            items.append(
+                _CompletionCandidate(
+                    spelling=f"/skill:{skill.name}",
+                    label="[skill]",
+                    detail=encode_body(skill.description),
+                    argument_capable=True,
+                )
+            )
+        return tuple(items)
+
     def _shutdown_status(self) -> int:
         assert self._shutdown.signum is not None
         return _SIGNAL_STATUS[self._shutdown.signum]
@@ -1692,9 +1777,22 @@ class _CommandInput:
         "_word_iter",
         "_live_lines",
         "_overlay",
+        "_history",
+        "_history_index",
+        "_history_draft",
+        "_completion_provider",
+        "_completion_selected",
+        "_completion_dismissed_token",
     )
 
-    def __init__(self, *, echo: bool, output_fd: int) -> None:
+    def __init__(
+        self,
+        *,
+        echo: bool,
+        output_fd: int,
+        completion_provider: Callable[[], tuple[_CompletionCandidate, ...]]
+        | None = None,
+    ) -> None:
         self._echo = echo
         self._output_fd = output_fd
         self._text = ""
@@ -1714,6 +1812,12 @@ class _CommandInput:
         self._yielded = False
         self._live_lines: tuple[str, ...] = ()
         self._overlay: str | None = None
+        self._history: list[str] = []
+        self._history_index = -1
+        self._history_draft = ""
+        self._completion_provider = completion_provider
+        self._completion_selected = 0
+        self._completion_dismissed_token: str | None = None
         self._grapheme_iter = icu.BreakIterator.createCharacterInstance(_ICU_ROOT)
         self._word_iter = icu.BreakIterator.createWordInstance(_ICU_ROOT)
 
@@ -1807,6 +1911,20 @@ class _CommandInput:
         self._origin = 0
         self._pending.clear()
         self._frozen = False
+        self._history_index = -1
+        self._history_draft = ""
+        self._completion_dismissed_token = None
+
+    def remember(self, text: str) -> None:
+        if self._history and self._history[0] == text:
+            self._history_index = -1
+            self._history_draft = ""
+            return
+        self._history.insert(0, text)
+        if len(self._history) > _HISTORY_LIMIT:
+            del self._history[_HISTORY_LIMIT:]
+        self._history_index = -1
+        self._history_draft = ""
 
     def accept_command(self, submission_id: int) -> None:
         if self._draft_submission_id == submission_id:
@@ -1822,6 +1940,8 @@ class _CommandInput:
         self._pending.clear()
         self._consumed_cr = False
         self._origin = 0
+        self._completion_dismissed_token = None
+        self._history_index = -1
         if not self._paused:
             self._paint()
 
@@ -1844,6 +1964,7 @@ class _CommandInput:
                 if action is None:
                     break
                 if action == "reprocess":
+                    self._dismiss_completion()
                     continue
                 if action == "alt_enter":
                     line = self._enter(alt=True)
@@ -1870,6 +1991,8 @@ class _CommandInput:
                 break
             self._note_raw(None)
             self._insert(character)
+        if len(self._pending) == 1 and self._pending[0] == 0x1B:
+            self._dismiss_completion()
         return completed
 
     def _control(self, first: int) -> bytes | _CompletedLine | None:
@@ -1884,6 +2007,9 @@ class _CommandInput:
             return self._enter()
         if first == 0x03:
             return self._interrupt()
+        if first == 0x09:
+            self._accept_completion()
+            return None
         if first in {0x08, 0x7F}:
             self._backward_delete()
             return None
@@ -1894,6 +2020,28 @@ class _CommandInput:
     def _navigation(self, action: str) -> bytes | None:
         self._note_raw(None)
         if self._paused or self._frozen or not action:
+            return None
+        if action in {"up", "down"}:
+            matches = self._completion_matches()
+            if matches:
+                self._sync_completion_selection(matches)
+                if action == "up":
+                    if self._completion_selected > 0:
+                        self._completion_selected -= 1
+                elif self._completion_selected + 1 < len(matches):
+                    self._completion_selected += 1
+                if self._echo:
+                    self._paint()
+                return None
+            if action == "up":
+                if self._on_first_visual_line():
+                    self._history_up()
+                else:
+                    self._move_visual(-1)
+            elif self._on_last_visual_line():
+                self._history_down()
+            else:
+                self._move_visual(1)
             return None
         before = self._cursor
         if action == "left":
@@ -1960,6 +2108,9 @@ class _CommandInput:
             self._origin = 0
             self._paint()
             return None
+        self._history_index = -1
+        self._history_draft = ""
+        self._completion_dismissed_token = None
         self._finalize()
         self._submission_id += 1
         self._draft = line
@@ -2033,8 +2184,179 @@ class _CommandInput:
         size = os.get_terminal_size(self._output_fd)
         return size.columns, size.lines
 
-    def _viewport_cap(self) -> int:
-        usable = max(1, self._height - len(self._live_lines))
+    def _slash_token(self) -> str | None:
+        text = self._text
+        if not text.startswith("/"):
+            return None
+        end = 0
+        while end < len(text) and text[end] not in _ES_WHITESPACE:
+            end += 1
+        if self._cursor != end:
+            return None
+        return text[:end]
+
+    def _completion_matches(self) -> tuple[_CompletionCandidate, ...]:
+        if self._overlay is not None or self._paused:
+            return ()
+        token = self._slash_token()
+        if token is None:
+            return ()
+        if self._completion_dismissed_token == token:
+            return ()
+        provider = self._completion_provider
+        if provider is None:
+            return ()
+        return tuple(
+            item for item in provider() if item.spelling.startswith(token)
+        )
+
+    def _sync_completion_selection(
+        self, matches: tuple[_CompletionCandidate, ...]
+    ) -> None:
+        if not matches:
+            self._completion_selected = 0
+            return
+        if self._completion_selected >= len(matches):
+            self._completion_selected = len(matches) - 1
+
+    def _completion_rows(
+        self,
+        matches: tuple[_CompletionCandidate, ...],
+        budget: int,
+        width: int,
+    ) -> tuple[str, ...]:
+        if budget <= 0 or not matches:
+            return ()
+        if len(matches) <= budget:
+            start = 0
+            visible = matches
+            overflow = 0
+        elif budget == 1:
+            return (
+                _truncate_row(
+                    f"… +{len(matches)} matches", width, self._grapheme_iter
+                ),
+            )
+        else:
+            cap = budget - 1
+            selected = self._completion_selected
+            start = 0 if selected < cap else selected - cap + 1
+            start = min(start, len(matches) - cap)
+            visible = matches[start : start + cap]
+            overflow = len(matches) - len(visible)
+        rows: list[str] = []
+        for offset, item in enumerate(visible):
+            index = start + offset
+            marker = "> " if index == self._completion_selected else "  "
+            rows.append(
+                _truncate_row(
+                    f"{marker}{item.spelling} {item.label} {item.detail}",
+                    width,
+                    self._grapheme_iter,
+                )
+            )
+        if overflow:
+            rows.append(
+                _truncate_row(
+                    f"… +{overflow} matches", width, self._grapheme_iter
+                )
+            )
+        return tuple(rows)
+
+    def _dismiss_completion(self) -> None:
+        token = self._slash_token()
+        if token is None:
+            return
+        self._completion_dismissed_token = token
+        if self._echo:
+            self._paint()
+
+    def _accept_completion(self) -> None:
+        if self._paused or self._frozen:
+            return
+        matches = self._completion_matches()
+        if not matches:
+            return
+        self._sync_completion_selection(matches)
+        item = matches[self._completion_selected]
+        token = self._slash_token()
+        if token is None:
+            return
+        rest = self._text[len(token) :]
+        suffix = " " if item.argument_capable else ""
+        self._text = item.spelling + suffix + rest
+        self._cursor = len(item.spelling) + len(suffix)
+        self._completion_dismissed_token = self._slash_token()
+        if self._echo:
+            self._paint()
+
+    def _apply_history_text(self, text: str) -> None:
+        self._text = text
+        self._cursor = len(text)
+        self._origin = 0
+        self._completion_dismissed_token = None
+        if self._echo:
+            self._paint()
+
+    def _history_up(self) -> None:
+        if not self._history:
+            return
+        if self._history_index == -1:
+            self._history_draft = self._text
+        next_index = self._history_index + 1
+        if next_index >= len(self._history):
+            return
+        self._history_index = next_index
+        self._apply_history_text(self._history[next_index])
+
+    def _history_down(self) -> None:
+        if self._history_index < 0:
+            return
+        next_index = self._history_index - 1
+        self._history_index = next_index
+        if next_index == -1:
+            self._apply_history_text(self._history_draft)
+            return
+        self._apply_history_text(self._history[next_index])
+
+    def _on_first_visual_line(self) -> bool:
+        rows = self._layout()
+        row, _col = self._cursor_row_col(rows)
+        return row == 0
+
+    def _on_last_visual_line(self) -> bool:
+        rows = self._layout()
+        row, _col = self._cursor_row_col(rows)
+        return row == len(rows) - 1
+
+    def _move_visual(self, delta: int) -> bool:
+        rows = self._layout()
+        row, col = self._cursor_row_col(rows)
+        target = row + delta
+        if target < 0 or target >= len(rows):
+            return False
+        prompt = 2 if target == 0 else 0
+        goal = max(0, col - prompt)
+        fragment_start = rows[target].start
+        fragment_end = (
+            rows[target + 1].start if target + 1 < len(rows) else len(self._text)
+        )
+        fragment = self._text[fragment_start:fragment_end]
+        used = 0
+        cursor = fragment_start
+        for begin, stop in _grapheme_bounds(fragment, self._grapheme_iter):
+            width = _grapheme_width(fragment[begin:stop])
+            if used + width > goal:
+                break
+            used += width
+            cursor = fragment_start + stop
+        self._cursor = cursor
+        if self._echo:
+            self._paint()
+        return True
+
+    def _viewport_cap(self, extra: int = 0) -> int:
+        usable = max(1, self._height - len(self._live_lines) - extra)
         return min(usable, max(1, max(5, self._height * 30 // 100)))
 
     def _layout(self) -> list[_VisualRow]:
@@ -2086,8 +2408,8 @@ class _CommandInput:
             total += _grapheme_width(text[begin:end])
         return total
 
-    def _follow(self, cursor_row: int, row_count: int) -> int:
-        cap = self._viewport_cap()
+    def _follow(self, cursor_row: int, row_count: int, *, extra: int = 0) -> int:
+        cap = self._viewport_cap(extra)
         if row_count <= cap:
             self._origin = 0
             return 0
@@ -2119,19 +2441,30 @@ class _CommandInput:
         for line in live:
             write_stdout(line)
             write_stdout("\x1b[K\n")
+        matches = self._completion_matches()
+        self._sync_completion_selection(matches)
+        completion_budget = max(0, self._height - len(live) - 1)
+        completion = self._completion_rows(
+            matches, completion_budget, self._width
+        )
+        for line in completion:
+            write_stdout(line)
+            write_stdout("\x1b[K\n")
         if not self._echo:
             write_stdout("> \x1b[K")
-            extra = self._owned_rows - len(live) - 1
+            extra = self._owned_rows - len(live) - len(completion) - 1
             if extra > 0:
                 for _ in range(extra):
                     write_stdout("\n\x1b[K")
                 write_stdout(f"\x1b[{extra}A")
-            self._owned_rows = len(live) + 1
+            self._owned_rows = len(live) + len(completion) + 1
             return
         rows = self._layout()
         cursor_row, cursor_col = self._cursor_row_col(rows)
-        origin = self._follow(cursor_row, len(rows))
-        visible = rows[origin : origin + self._viewport_cap()]
+        origin = self._follow(
+            cursor_row, len(rows), extra=len(completion)
+        )
+        visible = rows[origin : origin + self._viewport_cap(len(completion))]
         for index, row in enumerate(visible):
             prefix = "> " if origin == 0 and index == 0 else ""
             write_stdout(prefix + row.text)
@@ -2139,12 +2472,12 @@ class _CommandInput:
             if index < len(visible) - 1:
                 write_stdout("\n")
         editor_rows = max(len(visible), 1)
-        extra = self._owned_rows - len(live) - editor_rows
+        extra = self._owned_rows - len(live) - len(completion) - editor_rows
         if extra > 0:
             for _ in range(extra):
                 write_stdout("\n\x1b[K")
             write_stdout(f"\x1b[{extra}A")
-        self._owned_rows = len(live) + editor_rows
+        self._owned_rows = len(live) + len(completion) + editor_rows
         last = len(visible) - 1
         target = cursor_row - origin
         up = last - target
@@ -2310,6 +2643,10 @@ def _csi_action(parameter: bytes, final: int) -> str:
         return "left"
     if parameter == b"" and final == 0x43:
         return "right"
+    if parameter == b"" and final == 0x41:
+        return "up"
+    if parameter == b"" and final == 0x42:
+        return "down"
     if parameter == b"1;3" and final == 0x44:
         return "word_left"
     if parameter == b"1;3" and final == 0x43:

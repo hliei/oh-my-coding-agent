@@ -139,6 +139,36 @@ class PendingMessages(metaclass=_PublicValueMeta):
             object.__setattr__(self, field_name, values)
 
 
+@dataclass(frozen=True, slots=True)
+class _CompletionEntry:
+    name: str
+    description: str
+    argument_hint: str | None = None
+
+
+@dataclass(frozen=True, slots=True)
+class _CompletionSnapshot:
+    templates: tuple[_CompletionEntry, ...]
+    skills: tuple[_CompletionEntry, ...]
+
+
+def _build_completion_snapshot(
+    resources: PromptResourceSnapshot,
+) -> _CompletionSnapshot:
+    return _CompletionSnapshot(
+        templates=tuple(
+            _CompletionEntry(
+                item.name, item.description, item.argument_hint
+            )
+            for item in resources.templates
+        ),
+        skills=tuple(
+            _CompletionEntry(item.name, item.description)
+            for item in resources.skills
+        ),
+    )
+
+
 class AgentSessionEvent:
     __slots__ = ()
     type: str
@@ -353,6 +383,7 @@ class AgentSession:
         "_prompt_cancel_requested",
         "_prompt_settlement",
         "_prompt_resources",
+        "_completion_snapshot",
         "_project_rules",
         "_project_resource_state",
         "_prompt_terminal_projection_truncated",
@@ -382,6 +413,7 @@ class AgentSession:
         self._session_manager = session_manager
         self._operational_cwd = operational_cwd
         self._prompt_resources = prompt_resources
+        self._completion_snapshot = _build_completion_snapshot(prompt_resources)
         self._project_rules = project_rules
         self._project_resource_state = project_rules.state(
             skills=prompt_resources.skill_resolutions,
@@ -449,6 +481,12 @@ class AgentSession:
     @property
     def projectResourceState(self) -> ProjectResourceState:
         return self._project_resource_state
+
+    def _completion_prompt_resources(self) -> _CompletionSnapshot | None:
+        state = self._project_resource_state
+        if state.status != "current" or state.report.discovery == "disabled":
+            return None
+        return self._completion_snapshot
 
     @property
     def pendingMessages(self) -> PendingMessages:
@@ -898,6 +936,7 @@ class AgentSession:
             previous.release()
             await _reload_owned_cutoff("publish")
             self._prompt_resources = prompt_resources
+            self._completion_snapshot = _build_completion_snapshot(prompt_resources)
             self._project_rules = project_rules
             self._extensions = extensions
             self._system_prompt = system_prompt
