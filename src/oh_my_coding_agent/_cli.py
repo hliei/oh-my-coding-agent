@@ -21,6 +21,7 @@ from oh_my_coding_agent import (
 )
 from oh_my_llm import LifecycleError, ModelsError
 
+from ._project_rules import _project_root
 from ._project_trust import interactive_trust_is_pending, update_project_trust
 from ._prompt_resources import _es_trim
 from ._session_manager import _resolve_path, _session_id
@@ -31,6 +32,8 @@ from ._terminal import (
     _drive_interactive,
     _public_value_message,
     _session_terminal,
+    _interactive_commands_help,
+    resource_admission_line,
     write_cleanup,
     write_error,
     write_identity,
@@ -42,7 +45,7 @@ from ._terminal import (
 )
 
 
-HELP_TEXT = """\
+HELP_TEXT = f"""\
 omh - coding agent
 
 Usage:
@@ -64,6 +67,8 @@ Options:
   --no-approve, -na    Do not trust project resources for this construction
   --help               Show this help and exit
   --version            Show version and exit
+
+{_interactive_commands_help()}
 
 Prompt:
   One-shot accepts exactly one source: a positional PROMPT, or complete
@@ -372,8 +377,8 @@ async def _drive_command_mode(parsed: _Parsed, prompt: str | None) -> int:
     except TrustPolicyError as error:
         _write_trust_policy_failure(error)
         return 1
-    except ResourceAdmissionError:
-        write_stderr("internal error\n")
+    except ResourceAdmissionError as error:
+        _write_resource_admission_failure(error, cwd)
         return 1
     except OSError:
         write_stderr("I/O error\n")
@@ -528,6 +533,12 @@ def _write_trust_policy_failure(error: TrustPolicyError) -> None:
     )
 
 
+def _write_resource_admission_failure(
+    error: ResourceAdmissionError, cwd: str
+) -> None:
+    write_stderr(resource_admission_line(error, _project_root(cwd) or cwd))
+
+
 def _write_trust_cancel(signum: signal.Signals | None) -> None:
     if signum is None or signum == signal.SIGINT:
         write_stdout("trust cancelled\n")
@@ -624,6 +635,9 @@ async def _drive_session(
         return 1
     except TrustPolicyError as error:
         _write_trust_policy_failure(error)
+        return 1
+    except ResourceAdmissionError as error:
+        _write_resource_admission_failure(error, cwd)
         return 1
     except ValueError as error:
         write_error(_public_value_message(error))

@@ -124,6 +124,22 @@ _BUILTIN_COMMANDS = (
 _BUILTIN_SPELLINGS = frozenset(item.spelling for item in _BUILTIN_COMMANDS)
 
 
+def _interactive_commands_help() -> str:
+    rows = []
+    for command in _BUILTIN_COMMANDS:
+        spelling = command.spelling
+        if command.argument_hint is not None:
+            spelling = f"{spelling} {command.argument_hint}"
+        rows.append((spelling, command.description))
+    width = max(len(spelling) for spelling, _description in rows)
+    lines = ["Interactive commands:"]
+    lines.extend(
+        f"  {spelling.ljust(width)}  {description}"
+        for spelling, description in rows
+    )
+    return "\n".join(lines)
+
+
 @dataclass(frozen=True, slots=True)
 class _CompletionCandidate:
     spelling: str
@@ -227,6 +243,15 @@ def write_identity(session_id: str, kind: str) -> None:
 
 def write_identity_stdout(session_id: str, kind: str) -> None:
     write_stdout(f"session {encode_field(session_id)} {kind}\n")
+
+
+def resource_admission_line(error: ResourceAdmissionError, root: str) -> str:
+    name = "" if error.name is None else f' name="{encode_field(error.name)}"'
+    path = encode_field(_terminal_relative_path(error.path, root))
+    return (
+        f'resource admission failed kind="{encode_field(error.kind)}"'
+        f'{name} path="{path}" stage="{encode_field(error.stage)}"\n'
+    )
 
 
 def _user_text(message: UserMessage) -> str:
@@ -1396,17 +1421,8 @@ class _InteractiveTerminalAdapter:
             except ResourceAdmissionError as error:
                 if exit_status is not None:
                     return exit_status
-                name = (
-                    ""
-                    if error.name is None
-                    else f' name="{encode_field(error.name)}"'
-                )
-                path = encode_field(
-                    _terminal_relative_path(error.path, self._project_root_path)
-                )
                 self._write_stderr_record(
-                    f'resource admission failed kind="{encode_field(error.kind)}"'
-                    f'{name} path="{path}" stage="{encode_field(error.stage)}"\n'
+                    resource_admission_line(error, self._project_root_path)
                 )
                 return None
             except ProjectResourceReloadError as error:
