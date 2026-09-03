@@ -12,11 +12,11 @@ installable distribution.
 
 ## Install
 
-Download `omh-0.1.2-py3-none-any.whl` from the corresponding GitHub Release,
+Download `omh-0.2.0-py3-none-any.whl` from the corresponding GitHub Release,
 then install the command into an isolated tool environment:
 
 ```bash
-uv tool install ./omh-0.1.2-py3-none-any.whl
+uv tool install ./omh-0.2.0-py3-none-any.whl
 ```
 
 This exposes the `omh` command without installing OMH dependencies into the
@@ -46,7 +46,8 @@ Use `omh --help` for session selectors, project trust, and command-mode details.
 `defaultProjectTrust`. Non-built-in slash input that does not expand may
 reach the Model literally. Existing Session files remain recoverable without
 a v0.2 Session migration. Trust and settings policy files are created only
-when a persistent choice is saved.
+when a persistent choice is saved and are not populated by migrating
+existing data.
 
 ## Python interfaces
 
