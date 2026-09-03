@@ -13,7 +13,13 @@ from typing import Any, BinaryIO, Literal
 
 import icu  # type: ignore[import-untyped]
 import wcwidth
-from oh_my_llm import AssistantMessage, LifecycleError, TextContent, UserMessage
+from oh_my_llm import (
+    AssistantMessage,
+    LifecycleError,
+    ModelsError,
+    TextContent,
+    UserMessage,
+)
 from oh_my_llm._canonical import encodeCanonical
 
 from ._project_rules import _project_root
@@ -101,6 +107,7 @@ class _Shutdown:
         self.session: AgentSession | None = None
         self._terminating = asyncio.Event()
         self._interrupt = asyncio.Event()
+        self.sigint_aborts_session = True
 
     def request(self, signum: signal.Signals) -> None:
         if self.signum is not None:
@@ -109,7 +116,7 @@ class _Shutdown:
         session = self.session
         if signum == signal.SIGINT and not self.print_mode and session is not None:
             self._interrupt.set()
-            if not session.isIdle:
+            if not session.isIdle and self.sigint_aborts_session:
                 self._abort()
             return
         self.signum = signum
@@ -606,14 +613,20 @@ class _ModalChoice:
     text: str
 
 
+@dataclass(frozen=True, slots=True)
+class _CompactCommand:
+    instructions: str | None
+
+
 _QueuedLine = (
     bytes
     | Exception
     | _TerminalSubmission
     | _ModalChoice
-    | Literal["reload", "clear_queue", "resources", "modal_cancel"]
+    | _CompactCommand
+    | Literal["reload", "clear_queue", "resources", "modal_cancel", "quit"]
 )
-_LineWait = _QueuedLine | Literal["interrupt", "terminate", "prompt_done"]
+_LineWait = _QueuedLine | Literal["interrupt", "terminate", "prompt_done", "extra_done"]
 
 
 class _InteractiveTerminalAdapter:
@@ -802,6 +815,16 @@ class _InteractiveTerminalAdapter:
             if item == "clear_queue":
                 await self._clear_queue()
                 continue
+            if isinstance(item, _CompactCommand):
+                status = await self._compact(item.instructions)
+                if status is not None:
+                    if self._prompt_task is not None:
+                        await self._finish_prompt()
+                    return status
+                continue
+            if item == "quit":
+                self._admission_closed = True
+                return 0
             if not isinstance(item, _TerminalSubmission):
                 raise RuntimeError("interactive editor submitted an invalid event")
             await self._submit(item)
@@ -984,6 +1007,16 @@ class _InteractiveTerminalAdapter:
             if prompt == "/settings":
                 self._admit_policy_command(raw, "settings")
                 return
+            if prompt == "/quit":
+                self._editor.accept_command(raw.submission_id)
+                self._admission_closed = True
+                self._lines.put_nowait("quit")
+                return
+            compact = _compact_instructions(prompt)
+            if compact is not False:
+                self._begin_command(raw)
+                self._lines.put_nowait(_CompactCommand(compact))
+                return
             active = self._is_active_input()
             if raw.alt:
                 intent: Literal["prompt", "steering", "follow_up"] = (
@@ -1005,6 +1038,9 @@ class _InteractiveTerminalAdapter:
             self._lines.put_nowait(raw)
             return
         if raw == _INTERRUPT:
+            if not self._shutdown.sigint_aborts_session:
+                self._lines.put_nowait(raw)
+                return
             if not self._is_idle_editor():
                 asyncio.create_task(self._session.abort())
                 return
@@ -1049,7 +1085,9 @@ class _InteractiveTerminalAdapter:
             if item == b"":
                 return
 
-    async def _wait_line_or_control(self) -> _LineWait:
+    async def _wait_line_or_control(
+        self, extra: asyncio.Task[Any] | None = None
+    ) -> _LineWait:
         if self._shutdown.signum is not None:
             return "terminate"
         line = asyncio.create_task(self._lines.get())
@@ -1057,19 +1095,26 @@ class _InteractiveTerminalAdapter:
         terminate = asyncio.create_task(self._shutdown.wait())
         waiters: set[asyncio.Task[Any]] = {line, interrupt, terminate}
         prompt_task = self._prompt_task
+        keep: set[asyncio.Task[Any]] = set()
         if prompt_task is not None:
             waiters.add(prompt_task)
+            keep.add(prompt_task)
+        if extra is not None:
+            waiters.add(extra)
+            keep.add(extra)
         done, pending = await asyncio.wait(
             waiters,
             return_when=asyncio.FIRST_COMPLETED,
         )
         for task in pending:
-            if task is not prompt_task:
+            if task not in keep:
                 task.cancel()
         await asyncio.gather(
-            *[task for task in pending if task is not prompt_task],
+            *[task for task in pending if task not in keep],
             return_exceptions=True,
         )
+        if extra is not None and extra in done:
+            return "extra_done"
         if terminate in done or self._shutdown.signum is not None:
             return "terminate"
         if line in done:
@@ -1311,6 +1356,63 @@ class _InteractiveTerminalAdapter:
             self._command_active = False
             self._refresh_live(force=True)
 
+    async def _compact(self, instructions: str | None) -> int | None:
+        compact_task = asyncio.create_task(
+            self._session.compact(instructions)
+        )
+        compact_task.add_done_callback(_consume_task_exception)
+        exit_status: int | None = None
+        self._shutdown.sigint_aborts_session = False
+        try:
+            while not compact_task.done():
+                item = await self._wait_line_or_control(extra=compact_task)
+                if item == "extra_done":
+                    break
+                if item == "prompt_done":
+                    await self._finish_prompt()
+                    continue
+                if item == "terminate":
+                    self._admission_closed = True
+                    self._session.abortCompaction()
+                    exit_status = self._shutdown_status()
+                    break
+                if item == b"" or item == "quit":
+                    self._admission_closed = True
+                    self._session.abortCompaction()
+                    exit_status = 0
+                    break
+                if item == "interrupt" or item == _INTERRUPT:
+                    continue
+            try:
+                result = await compact_task
+            except asyncio.CancelledError:
+                self._write_record("compaction cancelled\n")
+                return exit_status
+            except LifecycleError as error:
+                if error.code != "busy":
+                    raise
+                self._write_stderr_record(
+                    'command rejected name="/compact" reason="busy"\n'
+                )
+                return exit_status
+            except ValueError as error:
+                if not write_error(_public_value_message(error)):
+                    raise OSError("interactive diagnostic write failed")
+                return exit_status
+            except ModelsError:
+                self._write_record("compaction failed\n")
+                return exit_status
+            self._write_record(
+                "compaction completed "
+                f"tokensBefore={result.tokensBefore} "
+                f"estimatedTokensAfter={result.estimatedTokensAfter}\n"
+            )
+            return exit_status
+        finally:
+            self._shutdown.sigint_aborts_session = True
+            self._command_active = False
+            self._refresh_live(force=True)
+
     def _write_stderr_record(self, data: str) -> None:
         self._editor.yield_for_output()
         if not write_stderr(data):
@@ -1545,7 +1647,19 @@ def _public_value_message(error: ValueError) -> str:
         "CreateAgentSessionOptions.cwd"
     ):
         return "invalid cwd"
+    if message == "Session history is too small to compact":
+        return message
     return "invalid value"
+
+
+def _compact_instructions(prompt: str) -> str | None | Literal[False]:
+    if prompt == "/compact":
+        return None
+    if prompt.startswith("/compact "):
+        instructions = _es_trim(prompt[len("/compact ") :])
+        if instructions:
+            return instructions
+    return False
 
 
 @dataclass(frozen=True, slots=True)
