@@ -718,6 +718,7 @@ class _InteractiveTerminalAdapter:
         "_session",
         "_shutdown",
         "_stdin_fd",
+        "_chrome_released",
     )
 
     def __init__(
@@ -740,6 +741,7 @@ class _InteractiveTerminalAdapter:
         self._input_failure: Exception | None = None
         self._live_encoded = ""
         self._admission_closed = False
+        self._chrome_released = False
         self._queue_snapshot = session.pendingMessages
         self._removed_for_admission: tuple[str, str] | None = None
         self._awaiting_processed: list[tuple[str, str]] = []
@@ -772,6 +774,7 @@ class _InteractiveTerminalAdapter:
 
         reader_registered = False
         winch_registered = False
+        editor_status: int | None = None
         try:
             self._editor.begin()
             self._loop.add_reader(self._stdin_fd, self._input_ready)
@@ -785,7 +788,8 @@ class _InteractiveTerminalAdapter:
                     lambda _num, _frame: self._on_resize(),
                 )
                 winch_registered = True
-            return await self._run_editor()
+            editor_status = await self._run_editor()
+            return editor_status
         except LifecycleError as error:
             self._admission_closed = True
             write_lifecycle(error.code, str(error))
@@ -824,6 +828,11 @@ class _InteractiveTerminalAdapter:
                     self._loop.remove_signal_handler(signal.SIGWINCH)
                 except (NotImplementedError, RuntimeError, OSError):
                     signal.signal(signal.SIGWINCH, signal.SIG_DFL)
+            discarded_status = None
+            if editor_status is not None:
+                discarded_status = self._discard_owned_chrome(reported_io)
+                if discarded_status is not None:
+                    reported_io = True
             try:
                 _restore_tty(self._stdin_fd, saved_tty)
             except OSError as error:
@@ -834,6 +843,8 @@ class _InteractiveTerminalAdapter:
                 elif not reported_io:
                     write_stderr("I/O error\n")
                     return 1
+            if discarded_status is not None:
+                return discarded_status
 
     async def _run_editor(self) -> int:
         while True:
@@ -1055,7 +1066,7 @@ class _InteractiveTerminalAdapter:
         self._lines.put_nowait(error)
 
     def _on_resize(self) -> None:
-        if self._input_failure is not None:
+        if self._input_failure is not None or self._chrome_released:
             return
         try:
             if not self._editor.resize():
@@ -1646,7 +1657,7 @@ class _InteractiveTerminalAdapter:
         self._refresh_live(force=True)
 
     def _schedule_refresh(self) -> None:
-        if self._input_failure is not None:
+        if self._input_failure is not None or self._chrome_released:
             return
         try:
             self._refresh_live()
@@ -1654,7 +1665,7 @@ class _InteractiveTerminalAdapter:
             self._fail_input(error)
 
     def _refresh_live(self, *, force: bool = False) -> None:
-        if self._input_failure is not None:
+        if self._input_failure is not None or self._chrome_released:
             return
         try:
             lines = self._allocate_live()
@@ -1748,6 +1759,20 @@ class _InteractiveTerminalAdapter:
     def _shutdown_status(self) -> int:
         assert self._shutdown.signum is not None
         return _SIGNAL_STATUS[self._shutdown.signum]
+
+    def _discard_owned_chrome(self, reported_io: bool) -> int | None:
+        self._chrome_released = True
+        try:
+            self._editor.discard_owned()
+        except OSError as error:
+            if (
+                self._shutdown.signum is None
+                and error.errno not in {errno.EPIPE, errno.EIO}
+                and not reported_io
+            ):
+                write_stderr("I/O error\n")
+                return 1
+        return None
 
 
 def _trust_modal_action(
@@ -1972,6 +1997,14 @@ class _CommandInput:
         write_stdout("\r")
         self._owned_rows = 0
         self._yielded = True
+
+    def discard_owned(self) -> None:
+        paused = self._paused
+        self._paused = False
+        try:
+            self.yield_for_output()
+        finally:
+            self._paused = paused
 
     def restore_after_output(self) -> None:
         self._yielded = False
