@@ -1524,8 +1524,9 @@ class _InteractiveTerminalAdapter:
                 )
                 return exit_status
             except ValueError as error:
-                if not write_error(_public_value_message(error)):
-                    raise OSError("interactive diagnostic write failed")
+                self._write_stderr_record(
+                    f"error: {encode_field(_public_value_message(error))}\n"
+                )
                 return exit_status
             except ModelsError:
                 self._write_record("compaction failed\n")
