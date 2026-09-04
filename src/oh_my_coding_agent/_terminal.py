@@ -914,6 +914,10 @@ class _InteractiveTerminalAdapter:
                 continue
             if item == "quit":
                 self._admission_closed = True
+                if self._prompt_task is not None:
+                    asyncio.create_task(self._session.abort()).add_done_callback(
+                        _consume_task_exception
+                    )
                 return 0
             if not isinstance(item, _TerminalSubmission):
                 raise RuntimeError("interactive editor submitted an invalid event")
