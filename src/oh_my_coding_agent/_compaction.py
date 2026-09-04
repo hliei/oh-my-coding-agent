@@ -1,7 +1,6 @@
 from __future__ import annotations
 
 from dataclasses import dataclass
-import json
 import math
 from typing import cast
 
@@ -13,6 +12,7 @@ from oh_my_llm import (
     ToolResultMessage,
     UserMessage,
 )
+from oh_my_llm._canonical import encodeCanonical
 
 from ._session_manager import (
     CompactionEntry,
@@ -144,7 +144,7 @@ def estimate_message_tokens(message: AgentMessage) -> int:
                 characters += len(item.text)
             elif isinstance(item, ToolCall):
                 characters += len(item.name) + len(
-                    json.dumps(item.arguments, separators=(",", ":"), sort_keys=True)
+                    _canonical_json(item.arguments)
                 )
     elif isinstance(message, ToolResultMessage):
         characters = sum(len(item.text) for item in message.content)
@@ -317,6 +317,10 @@ def _entry_message(entry: SessionEntry) -> AgentMessage | None:
     return entry.message if isinstance(entry, SessionMessageEntry) else None
 
 
+def _canonical_json(value: object) -> str:
+    return encodeCanonical(value).decode("utf-8")
+
+
 def _serialize_conversation(messages: tuple[AgentMessage, ...]) -> str:
     parts: list[str] = []
     for message in messages:
@@ -336,12 +340,7 @@ def _serialize_conversation(messages: tuple[AgentMessage, ...]) -> str:
                 item.text for item in message.content if isinstance(item, TextContent)
             ]
             calls = [
-                f"{item.name}("
-                + ", ".join(
-                    f"{key}={json.dumps(value, separators=(',', ':'))}"
-                    for key, value in item.arguments.items()
-                )
-                + ")"
+                f"{item.name}({_canonical_json(item.arguments)})"
                 for item in message.content
                 if isinstance(item, ToolCall)
             ]
