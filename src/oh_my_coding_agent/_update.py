@@ -2,6 +2,7 @@ from __future__ import annotations
 
 from dataclasses import dataclass
 from importlib import metadata
+import os
 import re
 from typing import cast
 
@@ -42,11 +43,42 @@ class _EligibleRelease:
 
 def run_self_update() -> int:
     try:
-        release = _discover_release()
-        installed = _installed_version()
+        version = _pending_update_version()
     except Exception:
         return 1
-    return 1 if _is_newer_version(release.version, installed) else 0
+    return 1 if version is not None else 0
+
+
+def check_for_update_notice() -> str | None:
+    """Return the fixed Update Notice text for a newer Eligible Update Release,
+    otherwise ``None``. Any failure resolves silently to ``None`` so the caller
+    receives no diagnostic detail and cannot change command status."""
+
+    try:
+        version = _pending_update_version()
+    except Exception:
+        return None
+    if version is None:
+        return None
+    return f"New omh version {version} is available. Run omh update"
+
+
+def startup_update_check_enabled() -> bool:
+    """Return ``True`` unless ``OMH_SKIP_VERSION_CHECK`` is set to a nonempty
+    value. An empty or absent variable retains the ordinary startup check."""
+
+    return not os.environ.get("OMH_SKIP_VERSION_CHECK", "")
+
+
+def _pending_update_version() -> str | None:
+    """Return the eligible newer Release version relative to the installed
+    Distribution, or ``None`` when there is nothing to announce."""
+
+    release = _discover_release()
+    installed = _installed_version()
+    if _is_newer_version(release.version, installed):
+        return release.version
+    return None
 
 
 def _discover_release() -> _EligibleRelease:

@@ -42,6 +42,7 @@ from ._resource_state import (
     TrustPolicyError,
 )
 from ._session import AgentSession, AgentSessionEvent, PendingMessages
+from ._update import check_for_update_notice, startup_update_check_enabled
 
 
 _BIDI = frozenset(
@@ -719,6 +720,7 @@ class _InteractiveTerminalAdapter:
         "_shutdown",
         "_stdin_fd",
         "_chrome_released",
+        "_update_notice_future",
     )
 
     def __init__(
@@ -726,6 +728,7 @@ class _InteractiveTerminalAdapter:
     ) -> None:
         self._session = session
         self._shutdown = shutdown
+        self._update_notice_future: asyncio.Future[str | None] | None = None
         cwd = session.sessionManager.getCwd()
         self._project_root_path = _project_root(cwd) or cwd
         self._rendered_text = ""
@@ -788,6 +791,13 @@ class _InteractiveTerminalAdapter:
                     lambda _num, _frame: self._on_resize(),
                 )
                 winch_registered = True
+            if startup_update_check_enabled():
+                self._update_notice_future = self._loop.run_in_executor(
+                    None, check_for_update_notice
+                )
+                self._update_notice_future.add_done_callback(
+                    self._on_update_notice_ready
+                )
             editor_status = await self._run_editor()
             return editor_status
         except LifecycleError as error:
@@ -807,6 +817,8 @@ class _InteractiveTerminalAdapter:
             write_stderr("internal error\n")
             return 1
         finally:
+            if self._update_notice_future is not None:
+                self._update_notice_future.cancel()
             reported_io = self._input_failure is not None
             try:
                 stdout_fd = sys.stdout.fileno()
@@ -1659,6 +1671,27 @@ class _InteractiveTerminalAdapter:
         if self._output_held:
             self._output_held = False
         self._refresh_live(force=True)
+
+    def _on_update_notice_ready(
+        self, future: asyncio.Future[str | None]
+    ) -> None:
+        if future.cancelled():
+            return
+        try:
+            text = future.result()
+        except Exception:
+            return
+        if text is None:
+            return
+        if self._admission_closed or self._input_failure is not None:
+            return
+        if not self._is_idle_editor():
+            # Ticket 03 will hold the notice and release it at ``AgentSettled``.
+            return
+        try:
+            self._write_record(f"{text}\n")
+        except Exception as error:
+            self._fail_input(error)
 
     def _schedule_refresh(self) -> None:
         if self._input_failure is not None or self._chrome_released:
