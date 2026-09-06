@@ -43,6 +43,7 @@ from ._terminal import (
     write_stdout,
     write_usage,
 )
+from ._update import run_self_update
 
 
 HELP_TEXT = f"""\
@@ -91,6 +92,14 @@ Status:
   130 SIGINT
   129 SIGHUP
   143 SIGTERM
+"""
+
+UPDATE_HELP_TEXT = """\
+omh update - update omh
+
+Usage:
+  omh update
+  omh update --help
 """
 
 _VALUE_FLAGS = {
@@ -174,7 +183,18 @@ class _Selected:
 
 def main() -> None:
     try:
-        parsed = _parse(sys.argv[1:])
+        argv = sys.argv[1:]
+        if argv[:1] == ["update"]:
+            if argv == ["update", "--help"]:
+                write_stdout(UPDATE_HELP_TEXT)
+                raise SystemExit(0)
+            if argv != ["update"]:
+                raise _Usage("invalid update arguments")
+            status = run_self_update()
+            if status != 0:
+                write_stderr("update failed\n")
+            raise SystemExit(status)
+        parsed = _parse(argv)
         _reject_help_version_combinations(parsed)
         if parsed.help:
             write_stdout(HELP_TEXT)
