@@ -12,11 +12,13 @@ import os
 from pathlib import Path
 import re
 import shutil
+import signal
 import stat
 import subprocess
 import sys
 import tempfile
-from typing import BinaryIO, Iterator, cast
+from types import FrameType
+from typing import Any, BinaryIO, Callable, Iterator, cast
 from urllib.parse import urljoin, urlsplit
 from zipfile import BadZipFile, ZipFile
 
@@ -68,6 +70,12 @@ class _UpdateOwnership:
     python_minor: str
 
 
+class _PreUvSignal(Exception):
+    def __init__(self, signum: signal.Signals) -> None:
+        super().__init__(signum)
+        self.status = 128 + signum.value
+
+
 def run_self_update() -> tuple[int, str | None]:
     try:
         pending = _pending_update_release()
@@ -81,17 +89,21 @@ def run_self_update() -> tuple[int, str | None]:
     except Exception:
         return 1, f"Update manually from {release.page_url}\n"
     try:
-        with _acquire_update_lock():
-            with _verified_update_wheel(release) as wheel:
-                _install_update_wheel(ownership, wheel)
-                updated = _prove_uv_ownership(release.version)
-                if (
-                    updated.environment != ownership.environment
-                    or updated.entry_point != ownership.entry_point
-                    or updated.python != ownership.python
-                    or updated.python_minor != ownership.python_minor
-                ):
-                    raise ValueError("update postcondition")
+        with _cancel_on_pre_uv_signal() as begin_uv:
+            with _acquire_update_lock():
+                with _verified_update_wheel(release) as wheel:
+                    begin_uv()
+                    _install_update_wheel(ownership, wheel)
+                    updated = _prove_uv_ownership(release.version)
+                    if (
+                        updated.environment != ownership.environment
+                        or updated.entry_point != ownership.entry_point
+                        or updated.python != ownership.python
+                        or updated.python_minor != ownership.python_minor
+                    ):
+                        raise ValueError("update postcondition")
+    except _PreUvSignal as cancellation:
+        return cancellation.status, None
     except Exception:
         return 1, None
     return 0, None
@@ -289,6 +301,32 @@ def _listed_omh_tool(listing: str, installed_version: str) -> tuple[Path, Path, 
 
 
 @contextmanager
+def _cancel_on_pre_uv_signal() -> Iterator[Callable[[], None]]:
+    selected = (signal.SIGINT, signal.SIGHUP, signal.SIGTERM)
+    previous: dict[signal.Signals, Any] = {}
+    active = True
+
+    def restore() -> None:
+        nonlocal active
+        if not active:
+            return
+        active = False
+        for signum, handler in previous.items():
+            signal.signal(signum, handler)
+
+    def cancel(number: int, _frame: FrameType | None) -> None:
+        raise _PreUvSignal(signal.Signals(number))
+
+    try:
+        for signum in selected:
+            previous[signum] = signal.getsignal(signum)
+            signal.signal(signum, cancel)
+        yield restore
+    finally:
+        restore()
+
+
+@contextmanager
 def _acquire_update_lock() -> Iterator[None]:
     directory = Path.home() / ".cache" / "omh"
     directory.mkdir(mode=0o700, parents=True, exist_ok=True)
@@ -319,23 +357,25 @@ def _acquire_update_lock() -> Iterator[None]:
 def _verified_update_wheel(release: _EligibleRelease) -> Iterator[Path]:
     if release.wheel.size > _MAX_WHEEL_BYTES:
         raise ValueError("candidate wheel size")
-    directory = Path(tempfile.mkdtemp(prefix="omh-update-"))
-    directory.chmod(0o700)
-    wheel = directory / release.wheel.name
-    descriptor = os.open(
-        wheel,
-        os.O_WRONLY | os.O_CREAT | os.O_EXCL | os.O_CLOEXEC | os.O_NOFOLLOW,
-        0o600,
-    )
-    try:
-        os.fchmod(descriptor, 0o600)
-        with os.fdopen(descriptor, "wb") as output:
+    with tempfile.TemporaryDirectory(prefix="omh-update-") as temporary:
+        directory = Path(temporary)
+        directory.chmod(0o700)
+        wheel = directory / release.wheel.name
+        descriptor = os.open(
+            wheel,
+            os.O_WRONLY | os.O_CREAT | os.O_EXCL | os.O_CLOEXEC | os.O_NOFOLLOW,
+            0o600,
+        )
+        try:
+            output = os.fdopen(descriptor, "wb")
+        except BaseException:
+            os.close(descriptor)
+            raise
+        with output:
+            os.fchmod(output.fileno(), 0o600)
             _download_update_wheel(release.wheel, output)
         _verify_update_wheel(wheel, release.version)
         yield wheel
-    finally:
-        wheel.unlink(missing_ok=True)
-        directory.rmdir()
 
 
 def _download_update_wheel(candidate: _CandidateWheel, output: BinaryIO) -> None:
@@ -398,7 +438,7 @@ def _require_credential_free_https(url: str) -> None:
 def _verify_update_wheel(wheel: Path, version: str) -> None:
     try:
         with ZipFile(wheel) as archive:
-            metadata_member, wheel_member = _wheel_metadata_members(archive)
+            metadata_member, wheel_member = _wheel_metadata_members(archive, version)
             metadata_message = _parse_wheel_message(
                 _read_bounded_member(archive, metadata_member)
             )
@@ -409,16 +449,22 @@ def _verify_update_wheel(wheel: Path, version: str) -> None:
         raise ValueError("candidate wheel archive") from error
     name = _unique_header(metadata_message, "Name")
     wheel_version = _unique_header(metadata_message, "Version")
+    metadata_version = _unique_header(metadata_message, "Metadata-Version")
+    archive_version = _unique_header(wheel_message, "Wheel-Version")
+    root_is_purelib = _unique_header(wheel_message, "Root-Is-Purelib")
     tags = wheel_message.get_all("Tag", failobj=[])
     if (
-        re.sub(r"[-_.]+", "-", name).lower() != "omh"
+        re.fullmatch(r"[1-9][0-9]*\.[0-9]+", metadata_version) is None
+        or archive_version != "1.0"
+        or root_is_purelib != "true"
+        or re.sub(r"[-_.]+", "-", name).lower() != "omh"
         or wheel_version != version
         or tags != ["py3-none-any"]
     ):
         raise ValueError("candidate wheel metadata")
 
 
-def _wheel_metadata_members(archive: ZipFile) -> tuple[str, str]:
+def _wheel_metadata_members(archive: ZipFile, version: str) -> tuple[str, str]:
     metadata_members = [
         member.filename
         for member in archive.infolist()
@@ -437,7 +483,7 @@ def _wheel_metadata_members(archive: ZipFile) -> tuple[str, str]:
         len(metadata_parts) != 2
         or len(wheel_parts) != 2
         or metadata_parts[0] != wheel_parts[0]
-        or not metadata_parts[0].endswith(".dist-info")
+        or metadata_parts[0] != f"omh-{version}.dist-info"
     ):
         raise ValueError("candidate wheel metadata members")
     return metadata_members[0], wheel_members[0]
