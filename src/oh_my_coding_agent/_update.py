@@ -70,7 +70,7 @@ class _UpdateOwnership:
     python_minor: str
 
 
-class _PreUvSignal(Exception):
+class _HandledUpdateSignal(Exception):
     def __init__(self, signum: signal.Signals) -> None:
         super().__init__(signum)
         self.status = 128 + signum.value
@@ -89,10 +89,10 @@ def run_self_update() -> tuple[int, str | None]:
     except Exception:
         return 1, f"Update manually from {release.page_url}\n"
     try:
-        with _cancel_on_pre_uv_signal() as begin_uv:
+        with _handle_update_signals() as run_uv:
             with _acquire_update_lock():
                 with _verified_update_wheel(release) as wheel:
-                    _install_update_wheel(ownership, wheel, begin_uv)
+                    _install_update_wheel(ownership, wheel, run_uv)
                     updated = _prove_uv_ownership(release.version)
                     if (
                         updated.environment != ownership.environment
@@ -101,7 +101,7 @@ def run_self_update() -> tuple[int, str | None]:
                         or updated.python_minor != ownership.python_minor
                     ):
                         raise ValueError("update postcondition")
-    except _PreUvSignal as cancellation:
+    except _HandledUpdateSignal as cancellation:
         return cancellation.status, None
     except Exception:
         return 1, None
@@ -300,9 +300,11 @@ def _listed_omh_tool(listing: str, installed_version: str) -> tuple[Path, Path, 
 
 
 @contextmanager
-def _cancel_on_pre_uv_signal() -> Iterator[Callable[[], None]]:
+def _handle_update_signals() -> Iterator[Callable[[tuple[str, ...]], int]]:
     selected = (signal.SIGINT, signal.SIGHUP, signal.SIGTERM)
     previous: dict[signal.Signals, Any] = {}
+    child: subprocess.Popen[bytes] | None = None
+    forwarded: signal.Signals | None = None
     active = True
 
     def restore() -> None:
@@ -314,13 +316,42 @@ def _cancel_on_pre_uv_signal() -> Iterator[Callable[[], None]]:
             signal.signal(signum, handler)
 
     def cancel(number: int, _frame: FrameType | None) -> None:
-        raise _PreUvSignal(signal.Signals(number))
+        nonlocal forwarded
+        signum = signal.Signals(number)
+        if child is None or child.poll() is not None:
+            raise _HandledUpdateSignal(signum)
+        if forwarded is None:
+            forwarded = signum
+        try:
+            child.send_signal(signum)
+        except OSError:
+            pass
+
+    def run(arguments: tuple[str, ...]) -> int:
+        nonlocal child
+        previous_mask = signal.pthread_sigmask(signal.SIG_BLOCK, selected)
+
+        def restore_child_mask() -> None:
+            signal.pthread_sigmask(signal.SIG_SETMASK, previous_mask)
+
+        try:
+            child = subprocess.Popen(
+                arguments,
+                stdin=subprocess.DEVNULL,
+                preexec_fn=restore_child_mask,
+            )
+        finally:
+            signal.pthread_sigmask(signal.SIG_SETMASK, previous_mask)
+        status = child.wait()
+        if forwarded is not None:
+            raise _HandledUpdateSignal(forwarded)
+        return status
 
     try:
         for signum in selected:
             previous[signum] = signal.getsignal(signum)
             signal.signal(signum, cancel)
-        yield restore
+        yield run
     finally:
         restore()
 
@@ -516,9 +547,9 @@ def _unique_header(message: Message, name: str) -> str:
 def _install_update_wheel(
     ownership: _UpdateOwnership,
     wheel: Path,
-    begin_uv: Callable[[], None],
+    run_uv: Callable[[tuple[str, ...]], int],
 ) -> None:
-    process = subprocess.Popen(
+    status = run_uv(
         (
             os.fspath(ownership.uv),
             "tool",
@@ -526,11 +557,9 @@ def _install_update_wheel(
             "--python",
             os.fspath(ownership.python),
             os.fspath(wheel),
-        ),
-        stdin=subprocess.DEVNULL,
+        )
     )
-    begin_uv()
-    if process.wait() != 0:
+    if status != 0:
         raise ValueError("uv install")
 
 
