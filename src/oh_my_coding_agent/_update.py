@@ -320,6 +320,7 @@ def _verified_update_wheel(release: _EligibleRelease) -> Iterator[Path]:
     if release.wheel.size > _MAX_WHEEL_BYTES:
         raise ValueError("candidate wheel size")
     directory = Path(tempfile.mkdtemp(prefix="omh-update-"))
+    directory.chmod(0o700)
     wheel = directory / release.wheel.name
     descriptor = os.open(
         wheel,
@@ -327,6 +328,7 @@ def _verified_update_wheel(release: _EligibleRelease) -> Iterator[Path]:
         0o600,
     )
     try:
+        os.fchmod(descriptor, 0o600)
         with os.fdopen(descriptor, "wb") as output:
             _download_update_wheel(release.wheel, output)
         _verify_update_wheel(wheel, release.version)
