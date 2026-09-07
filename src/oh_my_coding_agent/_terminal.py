@@ -712,6 +712,7 @@ class _InteractiveTerminalAdapter:
         "_output_held",
         "_project_root_path",
         "_pending_prompt",
+        "_pending_update_notice",
         "_prompt_task",
         "_queue_snapshot",
         "_removed_for_admission",
@@ -721,6 +722,7 @@ class _InteractiveTerminalAdapter:
         "_stdin_fd",
         "_chrome_released",
         "_update_notice_future",
+        "_update_notice_settled",
     )
 
     def __init__(
@@ -729,10 +731,12 @@ class _InteractiveTerminalAdapter:
         self._session = session
         self._shutdown = shutdown
         self._update_notice_future: asyncio.Future[str | None] | None = None
+        self._update_notice_settled = False
         cwd = session.sessionManager.getCwd()
         self._project_root_path = _project_root(cwd) or cwd
         self._rendered_text = ""
         self._pending_prompt = False
+        self._pending_update_notice: str | None = None
         self._enqueue_waiting = False
         self._command_active = False
         self._modal_kind: Literal["trust", "settings"] | None = None
@@ -1030,6 +1034,8 @@ class _InteractiveTerminalAdapter:
                 self._write_record(f"run {classification}\n")
             elif isinstance(event, AgentSessionEvent.AgentSettled):
                 self._write_record("session settled\n")
+                self._update_notice_settled = True
+                self._release_pending_update_notice()
         if isinstance(event, AgentSessionEvent.QueueUpdate):
             self._refresh_live(force=True)
         self._loop.call_soon(self._schedule_refresh)
@@ -1580,6 +1586,7 @@ class _InteractiveTerminalAdapter:
         self._editor.freeze()
         prior_messages = self._session.messages
         prior_entries = self._session.sessionManager.getEntries()
+        self._update_notice_settled = False
         task = asyncio.create_task(self._session.prompt(text))
         self._prompt_task = task
         nudge = asyncio.get_running_loop().create_future()
@@ -1598,6 +1605,7 @@ class _InteractiveTerminalAdapter:
         try:
             task.result()
         except ValueError as error:
+            self._pending_update_notice = None
             if (
                 self._session.messages != prior_messages
                 or self._session.sessionManager.getEntries() != prior_entries
@@ -1686,12 +1694,30 @@ class _InteractiveTerminalAdapter:
         if self._admission_closed or self._input_failure is not None:
             return
         if not self._is_idle_editor():
-            # Ticket 03 will hold the notice and release it at ``AgentSettled``.
-            return
+            if not (
+                self._session.isIdle
+                and self._prompt_task is not None
+                and self._update_notice_settled
+            ):
+                if self._prompt_task is not None:
+                    self._pending_update_notice = text
+                return
         try:
             self._write_record(f"{text}\n")
         except Exception as error:
             self._fail_input(error)
+
+    def _release_pending_update_notice(self) -> None:
+        text = self._pending_update_notice
+        self._pending_update_notice = None
+        if (
+            text is None
+            or self._admission_closed
+            or self._input_failure is not None
+            or self._chrome_released
+        ):
+            return
+        self._write_record(f"{text}\n")
 
     def _schedule_refresh(self) -> None:
         if self._input_failure is not None or self._chrome_released:
