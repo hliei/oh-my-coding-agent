@@ -92,8 +92,7 @@ def run_self_update() -> tuple[int, str | None]:
         with _cancel_on_pre_uv_signal() as begin_uv:
             with _acquire_update_lock():
                 with _verified_update_wheel(release) as wheel:
-                    begin_uv()
-                    _install_update_wheel(ownership, wheel)
+                    _install_update_wheel(ownership, wheel, begin_uv)
                     updated = _prove_uv_ownership(release.version)
                     if (
                         updated.environment != ownership.environment
@@ -514,8 +513,12 @@ def _unique_header(message: Message, name: str) -> str:
     return values[0]
 
 
-def _install_update_wheel(ownership: _UpdateOwnership, wheel: Path) -> None:
-    completed = subprocess.run(
+def _install_update_wheel(
+    ownership: _UpdateOwnership,
+    wheel: Path,
+    begin_uv: Callable[[], None],
+) -> None:
+    process = subprocess.Popen(
         (
             os.fspath(ownership.uv),
             "tool",
@@ -525,9 +528,9 @@ def _install_update_wheel(ownership: _UpdateOwnership, wheel: Path) -> None:
             os.fspath(wheel),
         ),
         stdin=subprocess.DEVNULL,
-        check=False,
     )
-    if completed.returncode != 0:
+    begin_uv()
+    if process.wait() != 0:
         raise ValueError("uv install")
 
 
