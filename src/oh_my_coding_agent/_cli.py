@@ -53,11 +53,12 @@ Usage:
   omh [options]
   omh --print [options] [PROMPT]
   omh update
+  omh update --help
 
 Command Modes:
   omh          Interactive REPL. Requires TTY stdin and stdout.
   omh --print  One-shot. Performs one text Run and exits.
-  omh update   Self Update. See `omh update --help`.
+  omh update   Self Update. `--help` is the only accepted option.
 
 Options:
   --print              Select one-shot Command Mode
