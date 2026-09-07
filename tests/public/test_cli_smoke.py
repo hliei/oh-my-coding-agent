@@ -31,6 +31,6 @@ def test_help_and_version_need_no_credentials_or_session_files(tmp_path: Path) -
     assert help_run.stdout.startswith(b"omh - coding agent\n")
     assert b"omh --print" in help_run.stdout
     assert version_run.returncode == 0
-    assert version_run.stdout == b"omh 0.2.0\n"
+    assert version_run.stdout == b"omh 0.2.1\n"
     assert version_run.stderr == b""
     assert list(tmp_path.iterdir()) == []

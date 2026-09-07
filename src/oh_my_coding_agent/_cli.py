@@ -52,10 +52,12 @@ omh - coding agent
 Usage:
   omh [options]
   omh --print [options] [PROMPT]
+  omh update
 
 Command Modes:
   omh          Interactive REPL. Requires TTY stdin and stdout.
   omh --print  One-shot. Performs one text Run and exits.
+  omh update   Self Update. See `omh update --help`.
 
 Options:
   --print              Select one-shot Command Mode
