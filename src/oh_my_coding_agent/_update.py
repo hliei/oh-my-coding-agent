@@ -318,7 +318,7 @@ def _handle_update_signals() -> Iterator[Callable[[tuple[str, ...]], int]]:
     def cancel(number: int, _frame: FrameType | None) -> None:
         nonlocal forwarded
         signum = signal.Signals(number)
-        if child is None or child.poll() is not None:
+        if child is None:
             raise _HandledUpdateSignal(signum)
         if forwarded is None:
             forwarded = signum
@@ -342,16 +342,21 @@ def _handle_update_signals() -> Iterator[Callable[[tuple[str, ...]], int]]:
             )
         finally:
             signal.pthread_sigmask(signal.SIG_SETMASK, previous_mask)
-        status = child.wait()
-        if forwarded is not None:
-            raise _HandledUpdateSignal(forwarded)
-        return status
+        return child.wait()
 
     try:
         for signum in selected:
             previous[signum] = signal.getsignal(signum)
             signal.signal(signum, cancel)
-        yield run
+        try:
+            yield run
+        except BaseException as error:
+            if forwarded is not None:
+                raise _HandledUpdateSignal(forwarded) from error
+            raise
+        else:
+            if forwarded is not None:
+                raise _HandledUpdateSignal(forwarded)
     finally:
         restore()
 
