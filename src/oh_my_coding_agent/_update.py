@@ -1,14 +1,24 @@
 from __future__ import annotations
 
+from contextlib import contextmanager
 from dataclasses import dataclass
+from email import policy
+from email.message import Message
+from email.parser import BytesParser
+import fcntl
+import hashlib
 from importlib import metadata
 import os
 from pathlib import Path
 import re
 import shutil
+import stat
 import subprocess
 import sys
-from typing import cast
+import tempfile
+from typing import BinaryIO, Iterator, cast
+from urllib.parse import urljoin, urlsplit
+from zipfile import BadZipFile, ZipFile
 
 import httpx
 
@@ -19,6 +29,8 @@ _ASSET_API_PREFIX = "https://api.github.com/repos/hliei/omh/releases/assets/"
 _DIGEST = re.compile(r"sha256:[0-9a-f]{64}\Z")
 _MAX_SEMVER_LENGTH = 256
 _MAX_SAFE_INTEGER = 9_007_199_254_740_991
+_MAX_WHEEL_BYTES = 32 * 1024 * 1024
+_MAX_WHEEL_METADATA_BYTES = 64 * 1024
 _MAX_UV_PROBE_OUTPUT = 65_536
 _OWNED_ENTRY_POINT = "oh_my_coding_agent._cli:main"
 _SEMVER = re.compile(
@@ -52,6 +64,7 @@ class _UpdateOwnership:
     uv: Path
     environment: Path
     entry_point: Path
+    python: Path
     python_minor: str
 
 
@@ -64,10 +77,24 @@ def run_self_update() -> tuple[int, str | None]:
         return 0, None
     release, installed_version = pending
     try:
-        _prove_uv_ownership(installed_version)
+        ownership = _prove_uv_ownership(installed_version)
     except Exception:
         return 1, f"Update manually from {release.page_url}\n"
-    return 1, None
+    try:
+        with _acquire_update_lock():
+            with _verified_update_wheel(release) as wheel:
+                _install_update_wheel(ownership, wheel)
+                updated = _prove_uv_ownership(release.version)
+                if (
+                    updated.environment != ownership.environment
+                    or updated.entry_point != ownership.entry_point
+                    or updated.python != ownership.python
+                    or updated.python_minor != ownership.python_minor
+                ):
+                    raise ValueError("update postcondition")
+    except Exception:
+        return 1, None
+    return 0, None
 
 
 def check_for_update_notice() -> str | None:
@@ -183,6 +210,7 @@ def _prove_uv_ownership(installed_version: str) -> _UpdateOwnership:
         uv=uv,
         environment=environment,
         entry_point=listed_entry,
+        python=executable.resolve(strict=True),
         python_minor=f"{sys.version_info.major}.{sys.version_info.minor}",
     )
 
@@ -258,6 +286,201 @@ def _listed_omh_tool(listing: str, installed_version: str) -> tuple[Path, Path, 
         Path(entry_matches[0].group("entry")),
         header_match.group("python"),
     )
+
+
+@contextmanager
+def _acquire_update_lock() -> Iterator[None]:
+    directory = Path.home() / ".cache" / "omh"
+    directory.mkdir(mode=0o700, parents=True, exist_ok=True)
+    path = directory / "update.lock"
+    descriptor = os.open(
+        path,
+        os.O_RDWR | os.O_CREAT | os.O_CLOEXEC | os.O_NOFOLLOW,
+        0o600,
+    )
+    try:
+        details = os.fstat(descriptor)
+        if not stat.S_ISREG(details.st_mode) or details.st_uid != os.getuid():
+            raise ValueError("update lock")
+        os.fchmod(descriptor, 0o600)
+        try:
+            fcntl.flock(descriptor, fcntl.LOCK_EX | fcntl.LOCK_NB)
+        except BlockingIOError as error:
+            raise ValueError("update lock") from error
+        try:
+            yield
+        finally:
+            fcntl.flock(descriptor, fcntl.LOCK_UN)
+    finally:
+        os.close(descriptor)
+
+
+@contextmanager
+def _verified_update_wheel(release: _EligibleRelease) -> Iterator[Path]:
+    if release.wheel.size > _MAX_WHEEL_BYTES:
+        raise ValueError("candidate wheel size")
+    directory = Path(tempfile.mkdtemp(prefix="omh-update-"))
+    wheel = directory / release.wheel.name
+    descriptor = os.open(
+        wheel,
+        os.O_WRONLY | os.O_CREAT | os.O_EXCL | os.O_CLOEXEC | os.O_NOFOLLOW,
+        0o600,
+    )
+    try:
+        with os.fdopen(descriptor, "wb") as output:
+            _download_update_wheel(release.wheel, output)
+        _verify_update_wheel(wheel, release.version)
+        yield wheel
+    finally:
+        wheel.unlink(missing_ok=True)
+        directory.rmdir()
+
+
+def _download_update_wheel(candidate: _CandidateWheel, output: BinaryIO) -> None:
+    url = _ASSET_API_PREFIX + str(candidate.asset_id)
+    redirects = 0
+    byte_count = 0
+    digest = hashlib.sha256()
+    with httpx.Client(
+        follow_redirects=False,
+        timeout=30.0,
+        trust_env=False,
+        headers={
+            "Accept": "application/octet-stream",
+            "Accept-Encoding": "identity",
+            "User-Agent": "omh updater",
+            "X-GitHub-Api-Version": "2026-03-10",
+        },
+    ) as client:
+        while True:
+            _require_credential_free_https(url)
+            with client.stream("GET", url) as response:
+                if response.status_code in {301, 302, 303, 307, 308}:
+                    if redirects >= 5:
+                        raise ValueError("candidate wheel redirects")
+                    location = response.headers.get("Location")
+                    if location is None:
+                        raise ValueError("candidate wheel redirect")
+                    url = urljoin(url, location)
+                    redirects += 1
+                    continue
+                response.raise_for_status()
+                content_encoding = response.headers.get("Content-Encoding")
+                if content_encoding not in {None, "identity"}:
+                    raise ValueError("candidate wheel encoding")
+                for chunk in response.iter_bytes():
+                    byte_count += len(chunk)
+                    if byte_count > candidate.size or byte_count > _MAX_WHEEL_BYTES:
+                        raise ValueError("candidate wheel size")
+                    output.write(chunk)
+                    digest.update(chunk)
+                break
+    if byte_count != candidate.size:
+        raise ValueError("candidate wheel size")
+    if "sha256:" + digest.hexdigest() != candidate.digest:
+        raise ValueError("candidate wheel digest")
+
+
+def _require_credential_free_https(url: str) -> None:
+    parsed = urlsplit(url)
+    if (
+        parsed.scheme != "https"
+        or parsed.hostname is None
+        or parsed.username is not None
+        or parsed.password is not None
+        or parsed.fragment
+    ):
+        raise ValueError("candidate wheel url")
+
+
+def _verify_update_wheel(wheel: Path, version: str) -> None:
+    try:
+        with ZipFile(wheel) as archive:
+            metadata_member, wheel_member = _wheel_metadata_members(archive)
+            metadata_message = _parse_wheel_message(
+                _read_bounded_member(archive, metadata_member)
+            )
+            wheel_message = _parse_wheel_message(
+                _read_bounded_member(archive, wheel_member)
+            )
+    except (BadZipFile, OSError, RuntimeError) as error:
+        raise ValueError("candidate wheel archive") from error
+    name = _unique_header(metadata_message, "Name")
+    wheel_version = _unique_header(metadata_message, "Version")
+    tags = wheel_message.get_all("Tag", failobj=[])
+    if (
+        re.sub(r"[-_.]+", "-", name).lower() != "omh"
+        or wheel_version != version
+        or tags != ["py3-none-any"]
+    ):
+        raise ValueError("candidate wheel metadata")
+
+
+def _wheel_metadata_members(archive: ZipFile) -> tuple[str, str]:
+    metadata_members = [
+        member.filename
+        for member in archive.infolist()
+        if member.filename.split("/")[-1] == "METADATA"
+    ]
+    wheel_members = [
+        member.filename
+        for member in archive.infolist()
+        if member.filename.split("/")[-1] == "WHEEL"
+    ]
+    if len(metadata_members) != 1 or len(wheel_members) != 1:
+        raise ValueError("candidate wheel metadata members")
+    metadata_parts = metadata_members[0].split("/")
+    wheel_parts = wheel_members[0].split("/")
+    if (
+        len(metadata_parts) != 2
+        or len(wheel_parts) != 2
+        or metadata_parts[0] != wheel_parts[0]
+        or not metadata_parts[0].endswith(".dist-info")
+    ):
+        raise ValueError("candidate wheel metadata members")
+    return metadata_members[0], wheel_members[0]
+
+
+def _read_bounded_member(archive: ZipFile, name: str) -> bytes:
+    member = archive.getinfo(name)
+    if member.file_size > _MAX_WHEEL_METADATA_BYTES:
+        raise ValueError("candidate wheel metadata size")
+    with archive.open(member) as source:
+        value = source.read(_MAX_WHEEL_METADATA_BYTES + 1)
+    if len(value) > _MAX_WHEEL_METADATA_BYTES:
+        raise ValueError("candidate wheel metadata size")
+    return value
+
+
+def _parse_wheel_message(value: bytes) -> Message:
+    message = BytesParser(policy=policy.compat32).parsebytes(value)
+    if message.defects or message.is_multipart():
+        raise ValueError("candidate wheel metadata")
+    return message
+
+
+def _unique_header(message: Message, name: str) -> str:
+    values = message.get_all(name, failobj=[])
+    if len(values) != 1 or not values[0]:
+        raise ValueError("candidate wheel metadata")
+    return values[0]
+
+
+def _install_update_wheel(ownership: _UpdateOwnership, wheel: Path) -> None:
+    completed = subprocess.run(
+        (
+            os.fspath(ownership.uv),
+            "tool",
+            "install",
+            "--python",
+            os.fspath(ownership.python),
+            os.fspath(wheel),
+        ),
+        stdin=subprocess.DEVNULL,
+        check=False,
+    )
+    if completed.returncode != 0:
+        raise ValueError("uv install")
 
 
 def _discover_release() -> _EligibleRelease:
