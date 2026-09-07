@@ -236,30 +236,28 @@ def _listed_omh_tool(listing: str, installed_version: str) -> tuple[Path, Path, 
     )
     entry = re.compile(r"- omh \((?P<entry>[^\r\n]+)\)")
     lines = listing.splitlines()
-    matches: list[tuple[Path, Path, str]] = []
-    for index, line in enumerate(lines):
-        header_match = header.fullmatch(line)
-        if header_match is None:
-            continue
-        entry_lines: list[str] = []
-        for following in lines[index + 1 :]:
-            if not following.startswith("- "):
-                break
-            entry_lines.append(following)
-        entry_matches = [
-            match for line in entry_lines if (match := entry.fullmatch(line)) is not None
-        ]
-        if len(entry_matches) == 1:
-            matches.append(
-                (
-                    Path(header_match.group("environment")),
-                    Path(entry_matches[0].group("entry")),
-                    header_match.group("python"),
-                )
-            )
-    if len(matches) != 1:
+    omh_indexes = [index for index, line in enumerate(lines) if line.startswith("omh ")]
+    if len(omh_indexes) != 1:
         raise ValueError("uv tool listing")
-    return matches[0]
+    index = omh_indexes[0]
+    header_match = header.fullmatch(lines[index])
+    if header_match is None:
+        raise ValueError("uv tool listing")
+    entry_lines: list[str] = []
+    for following in lines[index + 1 :]:
+        if not following.startswith("- "):
+            break
+        entry_lines.append(following)
+    entry_matches = [
+        match for line in entry_lines if (match := entry.fullmatch(line)) is not None
+    ]
+    if len(entry_matches) != 1:
+        raise ValueError("uv tool listing")
+    return (
+        Path(header_match.group("environment")),
+        Path(entry_matches[0].group("entry")),
+        header_match.group("python"),
+    )
 
 
 def _discover_release() -> _EligibleRelease:
