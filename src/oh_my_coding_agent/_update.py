@@ -304,7 +304,7 @@ def _handle_update_signals() -> Iterator[Callable[[tuple[str, ...]], int]]:
     selected = (signal.SIGINT, signal.SIGHUP, signal.SIGTERM)
     previous: dict[signal.Signals, Any] = {}
     child: subprocess.Popen[bytes] | None = None
-    forwarded: signal.Signals | None = None
+    handled_signal: signal.Signals | None = None
     active = True
 
     def restore() -> None:
@@ -316,12 +316,12 @@ def _handle_update_signals() -> Iterator[Callable[[tuple[str, ...]], int]]:
             signal.signal(signum, handler)
 
     def cancel(number: int, _frame: FrameType | None) -> None:
-        nonlocal forwarded
+        nonlocal handled_signal
         signum = signal.Signals(number)
         if child is None:
             raise _HandledUpdateSignal(signum)
-        if forwarded is None:
-            forwarded = signum
+        if handled_signal is None:
+            handled_signal = signum
         try:
             child.send_signal(signum)
         except OSError:
@@ -351,12 +351,12 @@ def _handle_update_signals() -> Iterator[Callable[[tuple[str, ...]], int]]:
         try:
             yield run
         except BaseException as error:
-            if forwarded is not None:
-                raise _HandledUpdateSignal(forwarded) from error
+            if handled_signal is not None:
+                raise _HandledUpdateSignal(handled_signal) from error
             raise
         else:
-            if forwarded is not None:
-                raise _HandledUpdateSignal(forwarded)
+            if handled_signal is not None:
+                raise _HandledUpdateSignal(handled_signal)
     finally:
         restore()
 
