@@ -3,7 +3,11 @@ from __future__ import annotations
 from dataclasses import dataclass
 from importlib import metadata
 import os
+from pathlib import Path
 import re
+import shutil
+import subprocess
+import sys
 from typing import cast
 
 import httpx
@@ -15,6 +19,8 @@ _ASSET_API_PREFIX = "https://api.github.com/repos/hliei/omh/releases/assets/"
 _DIGEST = re.compile(r"sha256:[0-9a-f]{64}\Z")
 _MAX_SEMVER_LENGTH = 256
 _MAX_SAFE_INTEGER = 9_007_199_254_740_991
+_MAX_UV_PROBE_OUTPUT = 65_536
+_OWNED_ENTRY_POINT = "oh_my_coding_agent._cli:main"
 _SEMVER = re.compile(
     r"v?(0|[1-9][0-9]*)\."
     r"(0|[1-9][0-9]*)\."
@@ -41,12 +47,27 @@ class _EligibleRelease:
     wheel: _CandidateWheel
 
 
-def run_self_update() -> int:
+@dataclass(frozen=True)
+class _UpdateOwnership:
+    uv: Path
+    environment: Path
+    entry_point: Path
+    python_minor: str
+
+
+def run_self_update() -> tuple[int, str | None]:
     try:
-        version = _pending_update_version()
+        pending = _pending_update_release()
     except Exception:
-        return 1
-    return 1 if version is not None else 0
+        return 1, None
+    if pending is None:
+        return 0, None
+    release, installed_version = pending
+    try:
+        _prove_uv_ownership(installed_version)
+    except Exception:
+        return 1, f"Update manually from {release.page_url}\n"
+    return 1, None
 
 
 def check_for_update_notice() -> str | None:
@@ -74,11 +95,171 @@ def _pending_update_version() -> str | None:
     """Return the eligible newer Release version relative to the installed
     Distribution, or ``None`` when there is nothing to announce."""
 
+    pending = _pending_update_release()
+    return None if pending is None else pending[0].version
+
+
+def _pending_update_release() -> tuple[_EligibleRelease, str] | None:
     release = _discover_release()
     installed = _installed_version()
     if _is_newer_version(release.version, installed):
-        return release.version
+        return release, installed
     return None
+
+
+def _prove_uv_ownership(installed_version: str) -> _UpdateOwnership:
+    uv = _resolved_command("uv")
+    resolved_entry_point = _resolved_command("omh")
+    distribution = metadata.distribution("omh")
+    if distribution.version != installed_version:
+        raise ValueError("distribution version")
+    if distribution.metadata.get("Name") != "omh":
+        raise ValueError("distribution name")
+    if distribution.read_text("INSTALLER") != "uv":
+        raise ValueError("distribution installer")
+    entry_points = tuple(
+        entry_point
+        for entry_point in distribution.entry_points
+        if entry_point.group == "console_scripts" and entry_point.name == "omh"
+    )
+    if len(entry_points) != 1 or entry_points[0].value != _OWNED_ENTRY_POINT:
+        raise ValueError("distribution entry point")
+
+    environment = _resolve_existing_directory(Path(sys.prefix))
+    if _resolve_existing_directory(Path(sys.exec_prefix)) != environment:
+        raise ValueError("interpreter environment")
+    environment_bin = _resolve_existing_directory(environment / "bin")
+    executable = Path(sys.executable)
+    if not executable.is_absolute() or executable.parent.resolve(strict=True) != environment_bin:
+        raise ValueError("interpreter executable")
+    if not executable.samefile(environment_bin / "python"):
+        raise ValueError("interpreter executable")
+    distribution_root = _resolve_existing_directory(
+        cast(Path, distribution.locate_file(""))
+    )
+    if not distribution_root.is_relative_to(environment):
+        raise ValueError("distribution environment")
+
+    tool_directory_text = _run_uv_probe(
+        uv,
+        ("tool", "dir", "--offline", "--no-config", "--color", "never", "--no-progress"),
+    )
+    tool_directory_lines = tool_directory_text.splitlines()
+    if len(tool_directory_lines) != 1:
+        raise ValueError("uv tool directory")
+    tool_directory = _resolve_existing_directory(Path(tool_directory_lines[0]))
+    expected_environment = _resolve_existing_directory(tool_directory / "omh")
+    if expected_environment != environment:
+        raise ValueError("uv tool environment")
+
+    listing = _run_uv_probe(
+        uv,
+        (
+            "tool",
+            "list",
+            "--show-paths",
+            "--show-python",
+            "--offline",
+            "--no-config",
+            "--color",
+            "never",
+            "--no-progress",
+        ),
+    )
+    listed_environment, listed_entry_point, listed_python = _listed_omh_tool(
+        listing, installed_version
+    )
+    if _resolve_existing_directory(listed_environment) != environment:
+        raise ValueError("listed environment")
+    if listed_python != (
+        f"{sys.version_info.major}.{sys.version_info.minor}.{sys.version_info.micro}"
+    ):
+        raise ValueError("listed interpreter")
+    listed_entry = _resolve_existing_file(listed_entry_point)
+    environment_entry = _resolve_existing_file(environment_bin / "omh")
+    if listed_entry != resolved_entry_point or listed_entry != environment_entry:
+        raise ValueError("resolved entry point")
+    return _UpdateOwnership(
+        uv=uv,
+        environment=environment,
+        entry_point=listed_entry,
+        python_minor=f"{sys.version_info.major}.{sys.version_info.minor}",
+    )
+
+
+def _resolved_command(name: str) -> Path:
+    value = shutil.which(name)
+    if value is None:
+        raise ValueError("missing command")
+    return _resolve_existing_file(Path(value))
+
+
+def _resolve_existing_file(path: Path) -> Path:
+    if not path.is_absolute():
+        raise ValueError("relative path")
+    resolved = path.resolve(strict=True)
+    if not resolved.is_file():
+        raise ValueError("not a file")
+    return resolved
+
+
+def _resolve_existing_directory(path: Path) -> Path:
+    if not path.is_absolute():
+        raise ValueError("relative path")
+    resolved = path.resolve(strict=True)
+    if not resolved.is_dir():
+        raise ValueError("not a directory")
+    return resolved
+
+
+def _run_uv_probe(uv: Path, arguments: tuple[str, ...]) -> str:
+    completed = subprocess.run(
+        (os.fspath(uv), *arguments),
+        stdin=subprocess.DEVNULL,
+        stdout=subprocess.PIPE,
+        stderr=subprocess.PIPE,
+        timeout=10,
+        check=False,
+    )
+    if completed.returncode != 0:
+        raise ValueError("uv probe")
+    if len(completed.stdout) > _MAX_UV_PROBE_OUTPUT:
+        raise ValueError("uv probe output")
+    return completed.stdout.decode("utf-8", errors="strict")
+
+
+def _listed_omh_tool(listing: str, installed_version: str) -> tuple[Path, Path, str]:
+    header = re.compile(
+        rf"omh v{re.escape(installed_version)} "
+        r"\[CPython (?P<python>[0-9]+\.[0-9]+\.[0-9]+)\] "
+        r"\((?P<environment>[^\r\n]+)\)"
+    )
+    entry = re.compile(r"- omh \((?P<entry>[^\r\n]+)\)")
+    lines = listing.splitlines()
+    matches: list[tuple[Path, Path, str]] = []
+    for index, line in enumerate(lines):
+        header_match = header.fullmatch(line)
+        if header_match is None:
+            continue
+        entry_lines: list[str] = []
+        for following in lines[index + 1 :]:
+            if not following.startswith("- "):
+                break
+            entry_lines.append(following)
+        entry_matches = [
+            match for line in entry_lines if (match := entry.fullmatch(line)) is not None
+        ]
+        if len(entry_matches) == 1:
+            matches.append(
+                (
+                    Path(header_match.group("environment")),
+                    Path(entry_matches[0].group("entry")),
+                    header_match.group("python"),
+                )
+            )
+    if len(matches) != 1:
+        raise ValueError("uv tool listing")
+    return matches[0]
 
 
 def _discover_release() -> _EligibleRelease:

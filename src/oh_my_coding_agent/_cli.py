@@ -190,7 +190,9 @@ def main() -> None:
                 raise SystemExit(0)
             if argv != ["update"]:
                 raise _Usage("invalid update arguments")
-            status = run_self_update()
+            status, guidance = run_self_update()
+            if guidance is not None:
+                write_stderr(guidance)
             if status != 0:
                 write_stderr("update failed\n")
             raise SystemExit(status)
