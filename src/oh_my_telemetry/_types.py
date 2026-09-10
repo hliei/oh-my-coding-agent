@@ -37,6 +37,22 @@ class _ErrorSpanStatus(TypedDict, total=False):
 
 SpanStatus = _OkSpanStatus | _ErrorSpanStatus
 
+
+class RecordedTelemetryEvent(TypedDict):
+    name: str
+    attributes: dict[str, AttributeValue]
+
+
+class RecordedTelemetrySpan(TypedDict, total=False):
+    id: Required[int]
+    parentId: Required[int | None]
+    name: Required[str]
+    attributes: Required[dict[str, AttributeValue]]
+    events: Required[list[RecordedTelemetryEvent]]
+    status: Required[SpanStatus]
+    settled: Required[bool]
+    endSequence: NotRequired[int]
+
 _T = TypeVar("_T")
 
 
