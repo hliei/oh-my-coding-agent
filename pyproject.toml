@@ -32,6 +32,7 @@ packages = [
   "src/oh_my_llm",
   "src/oh_my_core",
   "src/oh_my_coding_agent",
+  "src/oh_my_telemetry",
 ]
 
 [tool.pytest.ini_options]
