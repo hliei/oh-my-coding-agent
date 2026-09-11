@@ -1,7 +1,17 @@
 from __future__ import annotations
 
 from collections.abc import Awaitable, Callable
-from typing import Literal, NotRequired, Protocol, Required, TypeVar, TypedDict, overload
+from typing import (
+    Any,
+    Literal,
+    NotRequired,
+    Protocol,
+    Required,
+    TypeVar,
+    TypedDict,
+    cast,
+    overload,
+)
 
 
 AttributeValue = (
@@ -232,3 +242,47 @@ class TelemetrySpan(TelemetryContext, Protocol):
     def setAttributes(self, attributes: SpanAttributes) -> None: ...
 
     def setStatus(self, status: SpanStatus) -> None: ...
+
+
+class TypedSpanStarter(Protocol):
+    @overload
+    def __call__(
+        self,
+        name: str,
+        attributes: SpanAttributes,
+        callback: Callable[
+            [TelemetrySpan, TypedSpanStarter], Awaitable[_T]
+        ],
+    ) -> Awaitable[_T]: ...
+
+    @overload
+    def __call__(
+        self,
+        name: str,
+        attributes: SpanAttributes,
+        callback: Callable[[TelemetrySpan, TypedSpanStarter], _T],
+    ) -> Awaitable[_T]: ...
+
+
+def _bind_typed_span_starter(
+    telemetryContext: TelemetryContext,
+) -> TypedSpanStarter:
+    def start_span(
+        name: str,
+        attributes: SpanAttributes,
+        callback: Callable[[TelemetrySpan, TypedSpanStarter], Any],
+    ) -> Awaitable[Any]:
+        return telemetryContext.startSpan(
+            {"name": name, "attributes": attributes},
+            lambda span: callback(span, _bind_typed_span_starter(span)),
+        )
+
+    return cast(TypedSpanStarter, start_span)
+
+
+def createTypedSpanStarter(
+    telemetryContext: TelemetryContext,
+    schemas: list[_SchemaT],
+) -> TypedSpanStarter:
+    del schemas
+    return _bind_typed_span_starter(telemetryContext)

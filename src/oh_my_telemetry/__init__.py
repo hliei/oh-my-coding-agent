@@ -18,6 +18,8 @@ from ._types import (
     TelemetrySpan,
     TelemetrySpanDefinition,
     TelemetryStartAttributeDefinition,
+    TypedSpanStarter,
+    createTypedSpanStarter,
     defineTelemetrySchema,
 )
 
@@ -40,7 +42,9 @@ __all__ = (
     "TelemetrySpan",
     "TelemetrySpanDefinition",
     "TelemetryStartAttributeDefinition",
+    "TypedSpanStarter",
     "InMemoryTelemetryContext",
     "NOOP_TELEMETRY_CONTEXT",
+    "createTypedSpanStarter",
     "defineTelemetrySchema",
 )
