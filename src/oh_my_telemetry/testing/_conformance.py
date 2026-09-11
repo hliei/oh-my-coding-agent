@@ -51,10 +51,71 @@ class _ConformanceCase:
 
     async def run(self) -> None:
         fixture = await self._factory()
+        primary: BaseException | None = None
         try:
             await self._body(fixture)
-        finally:
-            await fixture.aclose()
+        except BaseException as error:
+            primary = error
+
+        cleanup = await _settle_cleanup(fixture)
+        if primary is None and cleanup.cancellation is not None:
+            primary = cleanup.cancellation
+        if primary is not None:
+            secondary = cleanup.failure
+            if (
+                cleanup.cancellation is not None
+                and cleanup.cancellation is not primary
+            ):
+                secondary = (
+                    cleanup.cancellation
+                    if secondary is None
+                    else BaseExceptionGroup(
+                        "fixture cleanup secondary failures",
+                        [cleanup.cancellation, secondary],
+                    )
+                )
+            if secondary is None:
+                raise primary.with_traceback(primary.__traceback__)
+            raise primary.with_traceback(primary.__traceback__) from secondary
+        if cleanup.failure is not None:
+            raise cleanup.failure
+
+
+@dataclass(frozen=True, slots=True)
+class _CleanupResult:
+    failure: BaseException | None
+
+
+@dataclass(frozen=True, slots=True)
+class _CleanupSettlement:
+    cancellation: asyncio.CancelledError | None
+    failure: BaseException | None
+
+
+async def _capture_cleanup(
+    fixture: TelemetryAdapterFixture,
+) -> _CleanupResult:
+    try:
+        await fixture.aclose()
+    except BaseException as error:
+        return _CleanupResult(error)
+    return _CleanupResult(None)
+
+
+async def _settle_cleanup(
+    fixture: TelemetryAdapterFixture,
+) -> _CleanupSettlement:
+    cleanup = asyncio.create_task(_capture_cleanup(fixture))
+    cancellation: asyncio.CancelledError | None = None
+    while True:
+        try:
+            result = await asyncio.shield(cleanup)
+        except asyncio.CancelledError as error:
+            if cancellation is None:
+                cancellation = error
+            continue
+        break
+    return _CleanupSettlement(cancellation, result.failure)
 
 
 def _find_span(
