@@ -80,7 +80,7 @@ def _start_callback(
     completion = _RepeatableCompletion[Any](loop)
     try:
         callback_result = callback(callback_span)
-    except Exception as error:
+    except BaseException as error:
         settle(error)
         completion.set_exception(error)
         return completion

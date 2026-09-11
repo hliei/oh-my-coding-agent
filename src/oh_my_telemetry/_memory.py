@@ -58,6 +58,35 @@ def _ok_status() -> SpanStatus:
     return {"status": "ok"}
 
 
+def _copy_status(status: SpanStatus) -> SpanStatus:
+    source = cast(Mapping[str, object], status)
+    if source["status"] == "ok":
+        return {"status": "ok"}
+    error = source.get("error")
+    if error is None:
+        return {"status": "error"}
+    details = cast(Mapping[str, object], error)
+    return {
+        "status": "error",
+        "error": {
+            "name": cast(str, details["name"]),
+            "message": cast(str, details["message"]),
+        },
+    }
+
+
+def _automatic_error_status(error: BaseException) -> SpanStatus:
+    try:
+        name = type(error).__name__
+        message = str(error)
+    except BaseException:
+        return {"status": "error"}
+    return {
+        "status": "error",
+        "error": {"name": name, "message": message},
+    }
+
+
 @dataclass
 class _RecordedSpan:
     id: int
@@ -67,6 +96,7 @@ class _RecordedSpan:
     settled: bool = False
     end_sequence: int | None = None
     status: SpanStatus = field(default_factory=_ok_status)
+    explicit_status: bool = False
 
 
 class _InMemoryState:
@@ -88,14 +118,8 @@ class _InMemoryState:
     def settle(self, span: _RecordedSpan, error: BaseException | None) -> None:
         if span.settled:
             return
-        if error is not None:
-            span.status = {
-                "status": "error",
-                "error": {
-                    "name": type(error).__name__,
-                    "message": str(error),
-                },
-            }
+        if error is not None and not span.explicit_status:
+            span.status = _automatic_error_status(error)
         span.settled = True
         span.end_sequence = self.next_end_sequence
         self.next_end_sequence += 1
@@ -132,19 +156,33 @@ class _InMemoryTelemetrySpan:
     ) -> None:
         if self._recorded.settled:
             return
-        self._recorded.events.append(
-            {"name": name, "attributes": _copy_attributes(attributes)}
-        )
+        try:
+            event: dict[str, object] = {
+                "name": name,
+                "attributes": _copy_attributes(attributes),
+            }
+        except BaseException:
+            return
+        self._recorded.events.append(event)
 
     def setAttributes(self, attributes: SpanAttributes) -> None:
         if self._recorded.settled:
             return
-        self._recorded.attributes = _merge_attributes(
-            self._recorded.attributes, attributes
-        )
+        try:
+            merged = _merge_attributes(self._recorded.attributes, attributes)
+        except BaseException:
+            return
+        self._recorded.attributes = merged
 
     def setStatus(self, status: SpanStatus) -> None:
-        return None
+        if self._recorded.settled:
+            return
+        try:
+            copied = _copy_status(status)
+        except BaseException:
+            return
+        self._recorded.status = copied
+        self._recorded.explicit_status = True
 
 
 class InMemoryTelemetryContext:
@@ -171,10 +209,12 @@ class InMemoryTelemetryContext:
         callback: Callable[[TelemetrySpan], Any],
     ) -> Awaitable[Any]:
         loop = asyncio.get_running_loop()
-        span = self._state.create_root(
-            options["name"],
-            _copy_attributes(options.get("attributes")),
-        )
+        try:
+            name = options["name"]
+            attributes = _copy_attributes(options.get("attributes"))
+        except BaseException:
+            return NOOP_TELEMETRY_CONTEXT.startSpan(options, callback)
+        span = self._state.create_root(name, attributes)
         callback_span = _InMemoryTelemetrySpan(span)
         return _start_callback(
             loop,
