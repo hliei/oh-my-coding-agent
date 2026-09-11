@@ -90,6 +90,7 @@ def _automatic_error_status(error: BaseException) -> SpanStatus:
 @dataclass
 class _RecordedSpan:
     id: int
+    parent_id: int | None
     name: str
     attributes: dict[str, object] = field(default_factory=dict)
     events: list[dict[str, object]] = field(default_factory=list)
@@ -105,11 +106,17 @@ class _InMemoryState:
         self.next_span_id = 1
         self.next_end_sequence = 1
 
-    def create_root(
-        self, name: str, attributes: dict[str, object]
+    def create(
+        self,
+        name: str,
+        attributes: dict[str, object],
+        parent_id: int | None,
     ) -> _RecordedSpan:
         span = _RecordedSpan(
-            id=self.next_span_id, name=name, attributes=attributes
+            id=self.next_span_id,
+            parent_id=parent_id,
+            name=name,
+            attributes=attributes,
         )
         self.next_span_id += 1
         self.spans.append(span)
@@ -125,8 +132,31 @@ class _InMemoryState:
         self.next_end_sequence += 1
 
 
+def _admit_recorded_span(
+    state: _InMemoryState,
+    parent_id: int | None,
+    options: SpanOptions,
+    callback: Callable[[TelemetrySpan], Any],
+) -> Awaitable[Any]:
+    loop = asyncio.get_running_loop()
+    try:
+        name = options["name"]
+        attributes = _copy_attributes(options.get("attributes"))
+    except BaseException:
+        return NOOP_TELEMETRY_CONTEXT.startSpan(options, callback)
+    recorded = state.create(name, attributes, parent_id)
+    callback_span = _InMemoryTelemetrySpan(state, recorded)
+    return _start_callback(
+        loop,
+        callback_span,
+        callback,
+        lambda error: state.settle(recorded, error),
+    )
+
+
 class _InMemoryTelemetrySpan:
-    def __init__(self, recorded: _RecordedSpan) -> None:
+    def __init__(self, state: _InMemoryState, recorded: _RecordedSpan) -> None:
+        self._state = state
         self._recorded = recorded
 
     @overload
@@ -148,8 +178,11 @@ class _InMemoryTelemetrySpan:
         options: SpanOptions,
         callback: Callable[[TelemetrySpan], Any],
     ) -> Awaitable[Any]:
-        start = cast(Any, NOOP_TELEMETRY_CONTEXT.startSpan)
-        return cast(Awaitable[Any], start(options, callback))
+        if self._recorded.settled:
+            return NOOP_TELEMETRY_CONTEXT.startSpan(options, callback)
+        return _admit_recorded_span(
+            self._state, self._recorded.id, options, callback
+        )
 
     def addEvent(
         self, name: str, attributes: SpanAttributes | None = None
@@ -208,20 +241,7 @@ class InMemoryTelemetryContext:
         options: SpanOptions,
         callback: Callable[[TelemetrySpan], Any],
     ) -> Awaitable[Any]:
-        loop = asyncio.get_running_loop()
-        try:
-            name = options["name"]
-            attributes = _copy_attributes(options.get("attributes"))
-        except BaseException:
-            return NOOP_TELEMETRY_CONTEXT.startSpan(options, callback)
-        span = self._state.create_root(name, attributes)
-        callback_span = _InMemoryTelemetrySpan(span)
-        return _start_callback(
-            loop,
-            callback_span,
-            callback,
-            lambda error: self._state.settle(span, error),
-        )
+        return _admit_recorded_span(self._state, None, options, callback)
 
     def getSpans(self) -> list[RecordedTelemetrySpan]:
         snapshots: list[RecordedTelemetrySpan] = []
@@ -244,7 +264,7 @@ class InMemoryTelemetryContext:
                 )
             snapshot: RecordedTelemetrySpan = {
                 "id": span.id,
-                "parentId": None,
+                "parentId": span.parent_id,
                 "name": span.name,
                 "attributes": cast(
                     dict[str, Any], _copy_attributes(span.attributes)
