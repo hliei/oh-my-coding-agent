@@ -1,13 +1,14 @@
 from __future__ import annotations
 
 import asyncio
-from collections.abc import Awaitable, Callable
+from collections.abc import Awaitable, Callable, Mapping
 from dataclasses import dataclass, field
 from typing import Any, TypeVar, cast, overload
 
 from ._noop import NOOP_TELEMETRY_CONTEXT
 from ._operation import _start_callback
 from ._types import (
+    RecordedTelemetryEvent,
     RecordedTelemetrySpan,
     SpanAttributes,
     SpanOptions,
@@ -19,6 +20,40 @@ from ._types import (
 _T = TypeVar("_T")
 
 
+def _copy_attribute_value(value: object) -> object:
+    return list(value) if isinstance(value, list) else value
+
+
+def _copy_attributes(
+    attributes: Mapping[str, object] | None,
+) -> dict[str, object]:
+    copied: dict[str, object] = {}
+    if attributes is None:
+        return copied
+    for name, value in attributes.items():
+        if value is not None:
+            copied[name] = _copy_attribute_value(value)
+    return copied
+
+
+def _merge_attributes(
+    current: Mapping[str, object], attributes: Mapping[str, object]
+) -> dict[str, object]:
+    merged = _copy_attributes(current)
+    merged.update(_copy_attributes(attributes))
+    return merged
+
+
+def _snapshot_event(event: Mapping[str, object]) -> RecordedTelemetryEvent:
+    return {
+        "name": cast(str, event["name"]),
+        "attributes": cast(
+            dict[str, Any],
+            _copy_attributes(cast(Mapping[str, object], event["attributes"])),
+        ),
+    }
+
+
 def _ok_status() -> SpanStatus:
     return {"status": "ok"}
 
@@ -27,6 +62,8 @@ def _ok_status() -> SpanStatus:
 class _RecordedSpan:
     id: int
     name: str
+    attributes: dict[str, object] = field(default_factory=dict)
+    events: list[dict[str, object]] = field(default_factory=list)
     settled: bool = False
     end_sequence: int | None = None
     status: SpanStatus = field(default_factory=_ok_status)
@@ -38,8 +75,12 @@ class _InMemoryState:
         self.next_span_id = 1
         self.next_end_sequence = 1
 
-    def create_root(self, name: str) -> _RecordedSpan:
-        span = _RecordedSpan(id=self.next_span_id, name=name)
+    def create_root(
+        self, name: str, attributes: dict[str, object]
+    ) -> _RecordedSpan:
+        span = _RecordedSpan(
+            id=self.next_span_id, name=name, attributes=attributes
+        )
         self.next_span_id += 1
         self.spans.append(span)
         return span
@@ -61,6 +102,9 @@ class _InMemoryState:
 
 
 class _InMemoryTelemetrySpan:
+    def __init__(self, recorded: _RecordedSpan) -> None:
+        self._recorded = recorded
+
     @overload
     def startSpan(
         self,
@@ -86,10 +130,18 @@ class _InMemoryTelemetrySpan:
     def addEvent(
         self, name: str, attributes: SpanAttributes | None = None
     ) -> None:
-        return None
+        if self._recorded.settled:
+            return
+        self._recorded.events.append(
+            {"name": name, "attributes": _copy_attributes(attributes)}
+        )
 
     def setAttributes(self, attributes: SpanAttributes) -> None:
-        return None
+        if self._recorded.settled:
+            return
+        self._recorded.attributes = _merge_attributes(
+            self._recorded.attributes, attributes
+        )
 
     def setStatus(self, status: SpanStatus) -> None:
         return None
@@ -119,8 +171,11 @@ class InMemoryTelemetryContext:
         callback: Callable[[TelemetrySpan], Any],
     ) -> Awaitable[Any]:
         loop = asyncio.get_running_loop()
-        span = self._state.create_root(options["name"])
-        callback_span = _InMemoryTelemetrySpan()
+        span = self._state.create_root(
+            options["name"],
+            _copy_attributes(options.get("attributes")),
+        )
+        callback_span = _InMemoryTelemetrySpan(span)
         return _start_callback(
             loop,
             callback_span,
@@ -151,8 +206,10 @@ class InMemoryTelemetryContext:
                 "id": span.id,
                 "parentId": None,
                 "name": span.name,
-                "attributes": {},
-                "events": [],
+                "attributes": cast(
+                    dict[str, Any], _copy_attributes(span.attributes)
+                ),
+                "events": [_snapshot_event(event) for event in span.events],
                 "status": status,
                 "settled": span.settled,
             }
