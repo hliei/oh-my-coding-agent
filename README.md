@@ -12,11 +12,11 @@ installable distribution.
 
 ## Install
 
-Download `omh-0.2.1-py3-none-any.whl` from the corresponding GitHub Release,
+Download `omh-0.3.0-py3-none-any.whl` from the corresponding GitHub Release,
 then install the command into an isolated tool environment:
 
 ```bash
-uv tool install ./omh-0.2.1-py3-none-any.whl
+uv tool install ./omh-0.3.0-py3-none-any.whl
 ```
 
 This exposes the `omh` command without installing OMH dependencies into the
@@ -55,9 +55,10 @@ existing data.
 that contains Update Check, Update Notice, and Self Update behavior.
 
 Manual bootstrap for `v0.2.0` and earlier: those Distributions cannot
-discover or install updater code remotely. Install `v0.2.1` once by hand
-from the corresponding GitHub Release using the same command shown under
-[Install](#install). After that, ordinary updates below apply.
+discover or install updater code remotely. Install `omh-0.2.1-py3-none-any.whl`
+once by hand from the corresponding GitHub Release with
+`uv tool install ./omh-0.2.1-py3-none-any.whl`. After that, ordinary updates
+below apply.
 
 From `v0.2.1` onward, an installed uv-tool omh does the following:
 

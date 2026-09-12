@@ -10,7 +10,7 @@ import oh_my_telemetry
 
 def test_distribution_metadata_and_public_packages_are_available() -> None:
     distribution = metadata.distribution("omh")
-    assert distribution.version == "0.2.1"
+    assert distribution.version == "0.3.0"
     assert distribution.metadata["License-Expression"] == "MIT"
     assert distribution.metadata["Description-Content-Type"] == "text/markdown"
     assert oh_my_llm.__all__
