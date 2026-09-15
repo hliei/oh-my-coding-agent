@@ -1,8 +1,8 @@
-# omh
+# oh-my-coding-agent
 
-omh is a small Python coding-agent product. It provides a terminal coding
-agent, a reusable agent runtime, and a unified model interface as one
-installable distribution.
+oh-my-coding-agent is a small Python coding-agent product, distributed as
+`omh`. It provides a terminal coding agent, a reusable agent runtime, and a
+unified model interface as one installable distribution.
 
 ## Requirements
 
